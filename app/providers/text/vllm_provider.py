@@ -70,10 +70,15 @@ class VllmTextProvider(TextProvider):
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
-        max_tokens = defaults.pop("max_tokens", 2048)
+        max_tokens = defaults.pop("max_tokens", 4096)
         temperature = defaults.pop("temperature", 0.7)
         top_p = defaults.pop("top_p", 0.9)
         response_format = defaults.pop("response_format", None)
+        thinking = defaults.pop("thinking", True)
+
+        # With thinking enabled, model needs more tokens for <think> block
+        if thinking and max_tokens < 4096:
+            max_tokens = 4096
 
         sampling = SamplingParams(
             max_tokens=max_tokens,
@@ -82,8 +87,8 @@ class VllmTextProvider(TextProvider):
         )
 
         # JSON mode: add instruction to system prompt
+        messages = list(messages)
         if response_format == "json_object":
-            messages = list(messages)
             if messages and messages[0].get("role") == "system":
                 messages[0] = {
                     **messages[0],
@@ -92,7 +97,7 @@ class VllmTextProvider(TextProvider):
             else:
                 messages.insert(0, {"role": "system", "content": "Respond with valid JSON only."})
 
-        prompt = self._format_messages(messages)
+        prompt = self._format_messages(messages, thinking=thinking)
         request_id = str(uuid.uuid4())
 
         output_text = ""
@@ -105,9 +110,6 @@ class VllmTextProvider(TextProvider):
             output_text = final.outputs[0].text
             completion_tokens = len(final.outputs[0].token_ids)
         prompt_tokens = len(final.prompt_token_ids) if final.prompt_token_ids else 0
-
-        # Strip <think>...</think> blocks from response
-        output_text = _strip_think_blocks(output_text)
 
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
@@ -128,24 +130,19 @@ class VllmTextProvider(TextProvider):
             },
         }
 
-    def _format_messages(self, messages: list[dict]) -> str:
-        """Format chat messages into a prompt string.
-        Uses ChatML format with /no_think to disable thinking mode.
+    def _format_messages(self, messages: list[dict], thinking: bool = True) -> str:
+        """Format chat messages into ChatML prompt.
+        Adds /no_think tag when thinking is disabled.
         """
         parts = []
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             parts.append(f"<|im_start|>{role}\n{content}<|im_end|>")
-        parts.append("<|im_start|>assistant\n")
+        if thinking:
+            parts.append("<|im_start|>assistant\n")
+        else:
+            parts.append("<|im_start|>assistant\n/no_think\n")
         return "\n".join(parts)
 
 
-import re
-
-_THINK_PATTERN = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
-
-
-def _strip_think_blocks(text: str) -> str:
-    """Remove <think>...</think> blocks from model output."""
-    return _THINK_PATTERN.sub("", text).strip()

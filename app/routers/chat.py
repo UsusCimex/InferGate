@@ -35,6 +35,8 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
         params["max_tokens"] = body.max_tokens
     if body.response_format is not None:
         params["response_format"] = body.response_format.type
+    if body.thinking is not None:
+        params["thinking"] = body.thinking
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
