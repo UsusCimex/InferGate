@@ -1,0 +1,29 @@
+id: llama3.1-8b
+display_name: "Llama 3.1 8B"
+category: text
+provider_class: VllmTextProvider
+enabled: false
+
+model:
+  hub_id: "meta-llama/Llama-3.1-8B-Instruct"
+  vram_mb: 8000
+  torch_dtype: float16
+  default_params:
+    max_tokens: 2048
+    temperature: 0.7
+    top_p: 0.9
+  context_length: 32768
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: medium
+  timeout_seconds: 60
+  max_concurrent: 1
+
+metadata:
+  license: "Llama 3.1 Community"
+  description: "Meta Llama 3.1 8B Instruct"
+  tags: ["meta", "llama"]

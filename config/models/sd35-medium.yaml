@@ -1,0 +1,34 @@
+id: sd35-medium
+display_name: "Stable Diffusion 3.5 Medium"
+category: image
+provider_class: DiffusersImageProvider
+enabled: true
+
+model:
+  hub_id: "stabilityai/stable-diffusion-3.5-medium"
+  revision: "main"
+  torch_dtype: float16
+  cpu_offload: true
+  drop_t5: true
+  vram_mb: 5000
+  default_params:
+    num_inference_steps: 28
+    guidance_scale: 7.0
+    width: 1024
+    height: 1024
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: low
+  timeout_seconds: 120
+  max_concurrent: 1
+
+metadata:
+  license: "Stability AI Community"
+  description: "Stable Diffusion 3.5 Medium"
+  tags: ["stable-diffusion", "medium"]

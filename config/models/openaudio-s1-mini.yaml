@@ -1,0 +1,29 @@
+id: openaudio-s1-mini
+display_name: "OpenAudio S1 Mini"
+category: tts
+provider_class: FishSpeechTtsProvider
+enabled: false
+
+model:
+  hub_id: "fishaudio/openaudio-s1-mini"
+  vram_mb: 4000
+  default_params:
+    voice: "default"
+    speed: 1.0
+    output_format: wav
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 1024
+
+queue:
+  priority: high
+  timeout_seconds: 60
+  max_concurrent: 1
+
+metadata:
+  license: Apache-2.0
+  description: "OpenAudio S1 Mini — 0.5B multilingual TTS by Fish Audio"
+  tags: ["multilingual", "quality"]

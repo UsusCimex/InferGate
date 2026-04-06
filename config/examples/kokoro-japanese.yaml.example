@@ -1,0 +1,30 @@
+id: kokoro-japanese
+display_name: "Kokoro 82M (Japanese)"
+category: tts
+provider_class: KokoroTtsProvider
+enabled: true
+
+model:
+  hub_id: "hexgrad/Kokoro-82M"
+  vram_mb: 1000
+  device: cpu
+  default_params:
+    voice: "jf_alpha"
+    speed: 1.0
+    output_format: mp3
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 512
+
+queue:
+  priority: high
+  timeout_seconds: 30
+  max_concurrent: 2
+
+metadata:
+  license: MIT
+  description: "Kokoro 82M with Japanese voice"
+  tags: ["japanese", "lightweight", "cpu"]

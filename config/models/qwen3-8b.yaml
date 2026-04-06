@@ -1,0 +1,29 @@
+id: qwen3-8b
+display_name: "Qwen 3 8B"
+category: text
+provider_class: VllmTextProvider
+enabled: false
+
+model:
+  hub_id: "Qwen/Qwen3-8B"
+  vram_mb: 7000
+  torch_dtype: float16
+  default_params:
+    max_tokens: 2048
+    temperature: 0.7
+    top_p: 0.9
+  context_length: 32768
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: medium
+  timeout_seconds: 60
+  max_concurrent: 1
+
+metadata:
+  license: Apache-2.0
+  description: "Qwen 3 8B base instruct model"
+  tags: ["multilingual"]
