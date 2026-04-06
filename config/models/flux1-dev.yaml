@@ -1,0 +1,33 @@
+id: flux1-dev
+display_name: "FLUX.1 Dev"
+category: image
+provider_class: DiffusersImageProvider
+enabled: false
+
+model:
+  hub_id: "black-forest-labs/FLUX.1-dev"
+  revision: "main"
+  torch_dtype: float16
+  variant: fp16
+  vram_mb: 12000
+  default_params:
+    num_inference_steps: 28
+    guidance_scale: 3.5
+    width: 1024
+    height: 1024
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: low
+  timeout_seconds: 300
+  max_concurrent: 1
+
+metadata:
+  license: "FLUX.1-dev Non-Commercial"
+  description: "High quality FLUX model, 28-step generation"
+  tags: ["quality", "flux", "non-commercial"]

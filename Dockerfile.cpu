@@ -1,0 +1,29 @@
+# Базовый образ: Python (без GPU)
+FROM python:3.12-slim
+
+# Быстрый пакетный менеджер
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Системные зависимости
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Слой 1: TTS-зависимости (kokoro)
+COPY requirements/tts.txt requirements/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements/tts.txt
+
+# Слой 2: Базовые зависимости (fastapi, pydantic)
+COPY requirements/base.txt requirements/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements/base.txt
+
+# Слой 3: Код приложения
+COPY app/ ./app/
+COPY scripts/ ./scripts/
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

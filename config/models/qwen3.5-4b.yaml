@@ -1,0 +1,32 @@
+id: qwen3.5-4b
+display_name: "Qwen 3.5 4B"
+category: text
+provider_class: VllmTextProvider
+enabled: true
+
+model:
+  hub_id: "cyankiwi/Qwen3.5-4B-AWQ-4bit"
+  vram_mb: 4000
+  torch_dtype: float16
+  quantization: compressed-tensors
+  enforce_eager: true
+  gpu_memory_utilization: 0.90
+  default_params:
+    max_tokens: 2048
+    temperature: 0.7
+    top_p: 0.9
+  context_length: 8192
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: medium
+  timeout_seconds: 120
+  max_concurrent: 1
+
+metadata:
+  license: Apache-2.0
+  description: "Compact Qwen model, AWQ 4-bit quantized for 12 GB GPUs"
+  tags: ["compact", "multilingual", "quantized"]

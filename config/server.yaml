@@ -1,0 +1,40 @@
+host: "0.0.0.0"
+port: 8000
+log_level: info
+workers: 1
+
+auth:
+  enabled: false
+  api_keys: []
+
+gpu:
+  max_loaded_models: 2
+  pinned_models: ["kokoro-82m", "qwen3.5-4b", "sd35-medium"]
+  device: "cuda:0"
+
+queue:
+  max_size: 50
+  default_timeout_seconds: 120
+
+cache:
+  enabled: true
+  directory: "./cache"
+  max_total_size_gb: 10
+  eviction_policy: lru
+  cleanup_interval_minutes: 30
+
+cors:
+  allow_origins: ["*"]
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+models_dir: "./models"
+
+defaults:
+  image: sd35-medium
+  text: qwen3.5-4b
+  tts: kokoro-82m
+
+rate_limit:
+  enabled: false
+  requests_per_minute: 60

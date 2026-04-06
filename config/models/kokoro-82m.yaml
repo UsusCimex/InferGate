@@ -1,0 +1,30 @@
+id: kokoro-82m
+display_name: "Kokoro 82M"
+category: tts
+provider_class: KokoroTtsProvider
+enabled: true
+
+model:
+  hub_id: "hexgrad/Kokoro-82M"
+  vram_mb: 0
+  device: cpu
+  default_params:
+    voice: "af_heart"
+    speed: 1.0
+    output_format: mp3
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 1024
+
+queue:
+  priority: high
+  timeout_seconds: 30
+  max_concurrent: 2
+
+metadata:
+  license: MIT
+  description: "Ultra-lightweight TTS, runs on CPU"
+  tags: ["lightweight", "cpu", "fast"]

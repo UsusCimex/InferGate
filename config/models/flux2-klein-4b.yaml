@@ -1,0 +1,33 @@
+id: flux2-klein-4b
+display_name: "FLUX.2 Klein 4B"
+category: image
+provider_class: DiffusersImageProvider
+enabled: false
+
+model:
+  hub_id: "black-forest-labs/FLUX.2-klein-4B"
+  revision: "main"
+  torch_dtype: bfloat16
+  cpu_offload: true
+  vram_mb: 6000
+  default_params:
+    num_inference_steps: 4
+    guidance_scale: 0.0
+    width: 1024
+    height: 1024
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: low
+  timeout_seconds: 60
+  max_concurrent: 1
+
+metadata:
+  license: Apache-2.0
+  description: "FLUX.2 Klein 4B — fast, open, sub-second generation"
+  tags: ["fast", "flux2", "apache2", "open"]
