@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 @pytest_asyncio.fixture
 async def app_with_access_log():
-    from app.logging_middleware import AccessLogMiddleware
+    from app.middleware.access_log import AccessLogMiddleware
 
     inner_app = FastAPI()
 
@@ -30,7 +30,7 @@ async def app_with_access_log():
 
 @pytest_asyncio.fixture
 async def app_with_rate_limit():
-    from app.rate_limit import RateLimitMiddleware
+    from app.middleware.rate_limit import RateLimitMiddleware
 
     inner_app = FastAPI()
 
@@ -50,7 +50,7 @@ async def app_with_rate_limit():
 
 @pytest_asyncio.fixture
 async def app_with_auth():
-    from app.auth import ApiKeyMiddleware
+    from app.middleware.auth import ApiKeyMiddleware
 
     inner_app = FastAPI()
 
