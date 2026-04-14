@@ -14,10 +14,10 @@ class ResponseFormat(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     model: str | None = None
-    messages: list[ChatMessage]
-    temperature: float | None = None
-    top_p: float | None = None
-    max_tokens: int | None = None
+    messages: list[ChatMessage] = Field(..., min_length=1, max_length=500)
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    top_p: float | None = Field(None, ge=0.0, le=1.0)
+    max_tokens: int | None = Field(None, ge=1, le=131072)
     stream: bool = False
     response_format: ResponseFormat | None = None
     thinking: bool | None = None  # None = use model default, True/False = override
