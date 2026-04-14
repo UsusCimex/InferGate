@@ -13,10 +13,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.auth import ApiKeyMiddleware
-from app.logging_middleware import AccessLogMiddleware
+from app.middleware import AccessLogMiddleware, ApiKeyMiddleware, RateLimitMiddleware
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
-from app.rate_limit import RateLimitMiddleware
 from app.config import load_model_configs, load_server_config
 from app.routers import audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
