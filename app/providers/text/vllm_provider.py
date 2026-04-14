@@ -33,13 +33,14 @@ class VllmTextProvider(TextProvider):
         enforce_eager = self.config.model.get("enforce_eager", False)
         quantization = self.config.model.get("quantization", None)
         kv_cache_dtype = self.config.model.get("kv_cache_dtype", "auto")
+        trust_remote_code = self.config.model.get("trust_remote_code", False)
 
         engine_args = AsyncEngineArgs(
             model=hub_id,
             download_dir=model_dir,
             dtype=dtype_name,
             max_model_len=context_length,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code,
             gpu_memory_utilization=gpu_memory,
             enforce_eager=enforce_eager,
             quantization=quantization,
