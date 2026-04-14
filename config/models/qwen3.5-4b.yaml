@@ -10,6 +10,7 @@ model:
   torch_dtype: float16
   quantization: compressed-tensors
   enforce_eager: true
+  trust_remote_code: true
   gpu_memory_utilization: 0.90
   default_params:
     max_tokens: 4096
