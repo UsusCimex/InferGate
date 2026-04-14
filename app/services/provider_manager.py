@@ -27,6 +27,17 @@ class ProviderManager:
         self._state_lock = asyncio.Lock()  # protects _loaded_order and state changes
         self._model_locks: dict[str, asyncio.Lock] = {}  # per-model load serialization
 
+    def validate_config(self) -> None:
+        """Validate that pinned models don't exceed max_loaded capacity."""
+        gpu_pinned = [m for m in self._pinned if self._is_gpu_model(m)]
+        if len(gpu_pinned) >= self._max_loaded:
+            logger.warning(
+                "Pinned GPU models (%d) >= max_loaded_models (%d). "
+                "Non-pinned models cannot be loaded.",
+                len(gpu_pinned),
+                self._max_loaded,
+            )
+
     def discover_models(self, configs: list[ModelConfig]) -> None:
         """Register providers from model configs."""
         for config in configs:
