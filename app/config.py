@@ -23,7 +23,6 @@ class GpuConfig(BaseModel):
 
 class QueueConfig(BaseModel):
     max_size: int = 50
-    default_timeout_seconds: int = 120
 
 
 class CacheGlobalConfig(BaseModel):
