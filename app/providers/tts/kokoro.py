@@ -25,7 +25,7 @@ class KokoroTtsProvider(TtsProvider):
         hub_id = self.config.model["hub_id"]
         logger.info("Loading %s from %s", self.model_id, hub_id)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         self._pipeline = await loop.run_in_executor(
             None, lambda: kokoro.KPipeline(lang_code="a")
         )
@@ -48,7 +48,7 @@ class KokoroTtsProvider(TtsProvider):
         speed = defaults.pop("speed", 1.0)
         output_format = defaults.pop("output_format", "mp3")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # Kokoro generates audio samples
         samples_list = await loop.run_in_executor(
