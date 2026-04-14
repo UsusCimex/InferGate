@@ -84,3 +84,7 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 ## Testing
 
 Tests use fake providers (`FakeImageProvider`, `FakeTextProvider`, `FakeTtsProvider`) defined in `tests/conftest.py`. The `services` fixture provides a fully initialized service layer via `app.state`; the `client` fixture provides an async FastAPI test client via httpx. Tests are async (pytest-asyncio). Includes concurrency tests for scheduler, cache, and model loading.
+
+## Git Conventions
+
+- Do NOT add `Co-Authored-By` lines to commit messages. Keep commits clean — only the commit title and optional body describing what was done.
