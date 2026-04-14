@@ -47,6 +47,14 @@ class VllmTextProvider(TextProvider):
             kv_cache_dtype=kv_cache_dtype,
         )
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
+
+        # Get tokenizer for proper chat template formatting
+        try:
+            self._tokenizer = await self._engine.get_tokenizer()
+        except Exception:
+            self._tokenizer = None
+            logger.warning("Could not get tokenizer for %s, falling back to ChatML", self.model_id)
+
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
 
@@ -136,9 +144,19 @@ class VllmTextProvider(TextProvider):
         }
 
     def _format_messages(self, messages: list[dict], thinking: bool = True) -> str:
-        """Format chat messages into ChatML prompt.
-        Adds /no_think tag when thinking is disabled.
+        """Format chat messages using tokenizer's chat template when available.
+        Falls back to ChatML format for models without a template.
         """
+        # Use tokenizer's built-in chat template (works for Llama, Mistral, Qwen, etc.)
+        if self._tokenizer and hasattr(self._tokenizer, "apply_chat_template"):
+            try:
+                return self._tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            except Exception:
+                pass  # Fall through to manual ChatML
+
+        # Fallback: manual ChatML format
         parts = []
         for msg in messages:
             role = msg.get("role", "user")
