@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, JSONResponse
 
 from app.schemas.audio import SpeechRequest
@@ -19,12 +19,14 @@ CONTENT_TYPES = {
 
 
 @router.post("/v1/audio/speech")
-async def create_speech(body: SpeechRequest, request: Request):
-    manager = get_provider_manager()
-    scheduler = get_gpu_scheduler()
-    cache = get_cache_manager()
-    defaults = get_defaults()
-
+async def create_speech(
+    body: SpeechRequest,
+    request: Request,
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+    cache=Depends(get_cache_manager),
+    defaults=Depends(get_defaults),
+):
     model_id = body.model or defaults.get("tts")
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)

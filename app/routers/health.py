@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 
 from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_start_time
 
@@ -10,17 +11,19 @@ router = APIRouter()
 
 
 @router.get("/health")
-async def health():
+async def health(cache=Depends(get_cache_manager)):
+    if cache._db is None:
+        return JSONResponse({"status": "unhealthy", "reason": "cache DB not initialized"}, status_code=503)
     return {"status": "ok"}
 
 
 @router.get("/metrics")
-async def metrics():
-    manager = get_provider_manager()
-    scheduler = get_gpu_scheduler()
-    cache = get_cache_manager()
-    start_time = get_start_time()
-
+async def metrics(
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+    cache=Depends(get_cache_manager),
+    start_time=Depends(get_start_time),
+):
     queue_info = scheduler.queue_info()
     cache_stats = await cache.stats()
 

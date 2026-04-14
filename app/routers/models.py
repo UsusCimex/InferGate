@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from app.dependencies import get_provider_manager
@@ -10,15 +10,13 @@ router = APIRouter()
 
 
 @router.get("/v1/models")
-async def list_models():
-    manager = get_provider_manager()
+async def list_models(manager=Depends(get_provider_manager)):
     models = manager.list_models()
     return {"object": "list", "data": models}
 
 
 @router.post("/v1/models/{model_id}/load")
-async def load_model(model_id: str):
-    manager = get_provider_manager()
+async def load_model(model_id: str, manager=Depends(get_provider_manager)):
     try:
         await manager.load_model(model_id)
         return {"status": "ok", "model": model_id, "loaded": True}
@@ -30,8 +28,7 @@ async def load_model(model_id: str):
 
 
 @router.post("/v1/models/{model_id}/unload")
-async def unload_model(model_id: str):
-    manager = get_provider_manager()
+async def unload_model(model_id: str, manager=Depends(get_provider_manager)):
     try:
         await manager.unload_model(model_id)
         return {"status": "ok", "model": model_id, "loaded": False}
