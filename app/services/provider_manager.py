@@ -181,10 +181,6 @@ class ProviderManager:
         """Return list of currently loaded model IDs."""
         return list(self._loaded_order)
 
-    def resolve_default(self, category: str, defaults: dict[str, str]) -> str | None:
-        """Resolve default model for a category."""
-        return defaults.get(category)
-
     async def shutdown(self, timeout_per_model: float = 30.0) -> None:
         """Unload all models on shutdown with per-model timeout."""
         for model_id in list(self._loaded_order):
