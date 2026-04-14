@@ -5,6 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.responses import StreamingResponse
 
 from app.schemas.chat import ChatCompletionRequest
 from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_defaults
@@ -40,6 +41,18 @@ async def chat_completions(
         params["response_format"] = body.response_format.type
     if body.thinking is not None:
         params["thinking"] = body.thinking
+
+    # Streaming mode
+    if body.stream:
+        messages = [m.model_dump() for m in body.messages]
+        return StreamingResponse(
+            provider.generate_stream(messages, **params),
+            media_type="text/event-stream",
+            headers={
+                "X-InferGate-Model": model_id,
+                "Cache-Control": "no-cache",
+            },
+        )
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
