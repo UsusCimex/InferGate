@@ -1,0 +1,53 @@
+# Worker image — parameterized by dependency type.
+# Build args:
+#   BASE_IMAGE    — base Docker image (default: PyTorch+CUDA for GPU models)
+#   INSTALL_ML    — install vllm/diffusers/transformers (default: false)
+#   INSTALL_TTS   — install kokoro/soundfile (default: false)
+
+ARG BASE_IMAGE=pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+FROM ${BASE_IMAGE}
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl gcc && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Base deps (always needed: fastapi, pydantic, etc.)
+COPY requirements/base.txt requirements/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --no-cache-dir --system -r requirements/base.txt
+
+# Optional: ML deps (for text/image workers)
+ARG INSTALL_ML=false
+COPY requirements/ml.txt requirements/
+RUN if [ "$INSTALL_ML" = "true" ]; then \
+      uv pip install --no-cache-dir --system -r requirements/ml.txt; \
+    fi
+
+# Optional: TTS deps (for TTS workers)
+ARG INSTALL_TTS=false
+COPY requirements/tts.txt requirements/
+RUN if [ "$INSTALL_TTS" = "true" ]; then \
+      uv pip install --no-cache-dir --system -r requirements/tts.txt; \
+    fi
+
+# Application code
+COPY app/ ./app/
+
+# Non-root user
+RUN useradd -m -s /bin/bash infergate && \
+    mkdir -p /app/models && chown -R infergate:infergate /app/models
+USER infergate
+
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+EXPOSE 8001
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 --start-period=120s \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+CMD ["uvicorn", "app.worker:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
