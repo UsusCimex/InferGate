@@ -136,18 +136,24 @@ class CacheManager:
             await self._evict_for_model(model_id, max_model_bytes, size_bytes)
         await self._evict_global(size_bytes)
 
-        file_path.write_bytes(data)
-
         ttl_hours = cache_config.get("ttl_hours")
         ttl_expires = time.time() + ttl_hours * 3600 if ttl_hours is not None else None
 
-        await self._db.execute(
-            """INSERT OR REPLACE INTO cache_entries
-               (key, model_id, file_path, size_bytes, created_at, last_accessed, ttl_expires, hit_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0)""",
-            (key, model_id, str(file_path), size_bytes, time.time(), time.time(), ttl_expires),
-        )
-        await self._db.commit()
+        # Write to temp file first, then commit DB, then atomic rename
+        tmp_path = file_path.with_suffix(".tmp")
+        try:
+            tmp_path.write_bytes(data)
+            await self._db.execute(
+                """INSERT OR REPLACE INTO cache_entries
+                   (key, model_id, file_path, size_bytes, created_at, last_accessed, ttl_expires, hit_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0)""",
+                (key, model_id, str(file_path), size_bytes, time.time(), time.time(), ttl_expires),
+            )
+            await self._db.commit()
+            tmp_path.replace(file_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     async def invalidate_key(self, key: str) -> bool:
         if not self._db:
