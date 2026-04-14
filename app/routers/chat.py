@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from app.schemas.chat import ChatCompletionRequest
@@ -12,12 +13,14 @@ router = APIRouter()
 
 
 @router.post("/v1/chat/completions")
-async def chat_completions(body: ChatCompletionRequest, request: Request):
-    manager = get_provider_manager()
-    scheduler = get_gpu_scheduler()
-    cache = get_cache_manager()
-    defaults = get_defaults()
-
+async def chat_completions(
+    body: ChatCompletionRequest,
+    request: Request,
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+    cache=Depends(get_cache_manager),
+    defaults=Depends(get_defaults),
+):
     model_id = body.model or defaults.get("text")
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)
@@ -46,19 +49,22 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
     cache_status = "DISABLED"
 
     if should_cache:
-        import json
         cached = await cache.get(cache_key)
         if cached:
             elapsed = int((time.monotonic() - start) * 1000)
-            result = json.loads(cached)
-            return JSONResponse(
-                result,
-                headers={
-                    "X-InferGate-Cache": "HIT",
-                    "X-InferGate-Model": model_id,
-                    "X-InferGate-Generation-Ms": str(elapsed),
-                },
-            )
+            try:
+                result = json.loads(cached)
+            except (json.JSONDecodeError, ValueError):
+                await cache.invalidate_key(cache_key)
+            else:
+                return JSONResponse(
+                    result,
+                    headers={
+                        "X-InferGate-Cache": "HIT",
+                        "X-InferGate-Model": model_id,
+                        "X-InferGate-Generation-Ms": str(elapsed),
+                    },
+                )
         cache_status = "MISS"
     elif no_cache:
         cache_status = "SKIP"
@@ -74,7 +80,6 @@ async def chat_completions(body: ChatCompletionRequest, request: Request):
 
     # Cache result
     if should_cache:
-        import json
         await cache.put(cache_key, json.dumps(result).encode(), model_id, cache_cfg)
 
     elapsed = int((time.monotonic() - start) * 1000)

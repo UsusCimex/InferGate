@@ -17,7 +17,6 @@ from app.auth import ApiKeyMiddleware
 from app.logging_middleware import AccessLogMiddleware
 from app.rate_limit import RateLimitMiddleware
 from app.config import load_model_configs, load_server_config
-from app.dependencies import init_dependencies
 from app.routers import audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
@@ -62,13 +61,11 @@ async def lifespan(app: FastAPI):
 
     defaults = server_cfg.defaults.model_dump()
 
-    init_dependencies(
-        provider_manager=manager,
-        gpu_scheduler=scheduler,
-        cache_manager=cache_mgr,
-        defaults=defaults,
-        start_time=time.time(),
-    )
+    app.state.provider_manager = manager
+    app.state.gpu_scheduler = scheduler
+    app.state.cache_manager = cache_mgr
+    app.state.defaults = defaults
+    app.state.start_time = time.time()
 
     # Preload default models so first requests are fast
     # Order: text (vLLM) first, then others — avoids distutils/setuptools conflicts

@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from app.schemas.images import ImageGenerationRequest, ImageGenerationResponse, ImageData
@@ -13,12 +13,14 @@ router = APIRouter()
 
 
 @router.post("/v1/images/generations")
-async def generate_images(body: ImageGenerationRequest, request: Request):
-    manager = get_provider_manager()
-    scheduler = get_gpu_scheduler()
-    cache = get_cache_manager()
-    defaults = get_defaults()
-
+async def generate_images(
+    body: ImageGenerationRequest,
+    request: Request,
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+    cache=Depends(get_cache_manager),
+    defaults=Depends(get_defaults),
+):
     model_id = body.model or defaults.get("image")
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)

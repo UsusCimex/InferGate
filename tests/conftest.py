@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import time
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,7 +8,6 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelConfig, ModelCacheConfig, ModelQueueConfig, ModelMetadata
-from app.dependencies import init_dependencies
 from app.providers.base import ImageProvider, TextProvider, TtsProvider
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler
@@ -122,14 +119,6 @@ async def services(tmp_path):
 
     defaults = {"image": "test-image", "text": "test-text", "tts": "test-tts"}
 
-    init_dependencies(
-        provider_manager=manager,
-        gpu_scheduler=scheduler,
-        cache_manager=cache_mgr,
-        defaults=defaults,
-        start_time=time.time(),
-    )
-
     yield {
         "manager": manager,
         "scheduler": scheduler,
@@ -150,6 +139,13 @@ async def client(services):
     from app.services.gpu_scheduler import RequestTimeoutError, QueueFullError
 
     app = FastAPI()
+
+    # Set dependencies on app.state (used by Depends-based DI)
+    app.state.provider_manager = services["manager"]
+    app.state.gpu_scheduler = services["scheduler"]
+    app.state.cache_manager = services["cache"]
+    app.state.defaults = services["defaults"]
+    app.state.start_time = time.time()
 
     @app.exception_handler(ModelNotFoundError)
     async def model_not_found_handler(request, exc):
