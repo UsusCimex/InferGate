@@ -6,8 +6,6 @@ from typing import Any, Awaitable
 
 logger = logging.getLogger(__name__)
 
-PRIORITY_MAP = {"high": 0, "medium": 1, "low": 2}
-
 
 class RequestTimeoutError(Exception):
     pass
