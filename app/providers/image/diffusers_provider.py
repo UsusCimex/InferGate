@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import io
 import logging
 from typing import Any
@@ -9,6 +10,10 @@ from app.providers.base import ImageProvider
 from app.providers.registry import register_provider
 
 logger = logging.getLogger(__name__)
+
+_GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="gpu-inference"
+)
 
 
 @register_provider
@@ -57,7 +62,7 @@ class DiffusersImageProvider(ImageProvider):
                 pipe.to("cuda")
             return pipe
 
-        self._pipeline = await loop.run_in_executor(None, _load)
+        self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
 
