@@ -9,6 +9,7 @@ from starlette.responses import StreamingResponse
 
 from app.schemas.chat import ChatCompletionRequest
 from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_defaults
+from app.monitoring import is_prometheus_available, CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION
 
 router = APIRouter()
 
@@ -70,6 +71,8 @@ async def chat_completions(
             except (json.JSONDecodeError, ValueError):
                 await cache.invalidate_key(cache_key)
             else:
+                if is_prometheus_available():
+                    CACHE_HITS.labels(model_id=model_id).inc()
                 return JSONResponse(
                     result,
                     headers={
@@ -80,6 +83,8 @@ async def chat_completions(
                 )
         cache_status = "MISS"
         await cache.record_miss(model_id)
+        if is_prometheus_available():
+            CACHE_MISSES.labels(model_id=model_id).inc()
     elif no_cache:
         cache_status = "SKIP"
 
@@ -88,9 +93,14 @@ async def chat_completions(
     priority = config.queue.priority
     messages = [m.model_dump() for m in body.messages]
 
+    inference_start = time.monotonic()
     result = await scheduler.submit(
         model_id, priority, provider.generate(messages, **params), timeout
     )
+    if is_prometheus_available():
+        INFERENCE_DURATION.labels(model_id=model_id, category="text").observe(
+            time.monotonic() - inference_start
+        )
 
     # Cache result
     if should_cache:

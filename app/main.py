@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from app.auth import ApiKeyMiddleware
 from app.logging_middleware import AccessLogMiddleware
+from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
 from app.rate_limit import RateLimitMiddleware
 from app.config import load_model_configs, load_server_config
 from app.routers import audio, cache, chat, health, images, models
@@ -124,8 +125,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Access logging (replaces noisy uvicorn default log)
+    # Observability: request ID, Prometheus metrics, access logging
     app.add_middleware(AccessLogMiddleware)
+    app.add_middleware(PrometheusMiddleware)
+    app.add_middleware(RequestIdMiddleware)
 
     # CORS — applied before auth so preflight requests work
     server_cfg = load_server_config()

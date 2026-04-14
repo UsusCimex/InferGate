@@ -7,6 +7,7 @@ from fastapi.responses import Response, JSONResponse
 
 from app.schemas.audio import SpeechRequest
 from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_defaults
+from app.monitoring import is_prometheus_available, CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION
 
 router = APIRouter()
 
@@ -53,6 +54,8 @@ async def create_speech(
         if cached:
             elapsed = int((time.monotonic() - start) * 1000)
             content_type = CONTENT_TYPES.get(body.response_format, "application/octet-stream")
+            if is_prometheus_available():
+                CACHE_HITS.labels(model_id=model_id).inc()
             return Response(
                 content=cached,
                 media_type=content_type,
@@ -64,6 +67,8 @@ async def create_speech(
             )
         cache_status = "MISS"
         await cache.record_miss(model_id)
+        if is_prometheus_available():
+            CACHE_MISSES.labels(model_id=model_id).inc()
     elif no_cache:
         cache_status = "SKIP"
 
@@ -71,9 +76,14 @@ async def create_speech(
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 
+    inference_start = time.monotonic()
     audio_bytes = await scheduler.submit(
         model_id, priority, provider.synthesize(body.input, **params), timeout
     )
+    if is_prometheus_available():
+        INFERENCE_DURATION.labels(model_id=model_id, category="tts").observe(
+            time.monotonic() - inference_start
+        )
 
     if should_cache:
         await cache.put(cache_key, audio_bytes, model_id, cache_cfg)

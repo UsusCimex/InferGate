@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.schemas.images import ImageGenerationRequest, ImageGenerationResponse, ImageData
 from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_defaults
+from app.monitoring import is_prometheus_available, CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION
 
 router = APIRouter()
 
@@ -49,6 +50,8 @@ async def generate_images(
                 created=int(time.time()),
                 data=[ImageData(b64_json=b64)],
             )
+            if is_prometheus_available():
+                CACHE_HITS.labels(model_id=model_id).inc()
             return JSONResponse(
                 resp.model_dump(),
                 headers={
@@ -59,6 +62,8 @@ async def generate_images(
             )
         cache_status = "MISS"
         await cache.record_miss(model_id)
+        if is_prometheus_available():
+            CACHE_MISSES.labels(model_id=model_id).inc()
     elif no_cache:
         cache_status = "SKIP"
 
@@ -68,9 +73,14 @@ async def generate_images(
 
     data_list = []
     for _ in range(body.n):
+        inference_start = time.monotonic()
         png_bytes = await scheduler.submit(
             model_id, priority, provider.generate(body.prompt, **params), timeout
         )
+        if is_prometheus_available():
+            INFERENCE_DURATION.labels(model_id=model_id, category="image").observe(
+                time.monotonic() - inference_start
+            )
         if should_cache:
             await cache.put(cache_key, png_bytes, model_id, cache_cfg)
 
