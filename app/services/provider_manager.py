@@ -24,7 +24,8 @@ class ProviderManager:
         self._max_loaded = max_loaded
         self._model_dir = model_dir
         self._pinned = set(pinned or [])
-        self._lock = asyncio.Lock()
+        self._state_lock = asyncio.Lock()  # protects _loaded_order and state changes
+        self._model_locks: dict[str, asyncio.Lock] = {}  # per-model load serialization
 
     def discover_models(self, configs: list[ModelConfig]) -> None:
         """Register providers from model configs."""
@@ -53,20 +54,37 @@ class ProviderManager:
         provider = self._registry.get(model_id)
         return provider is not None and provider.vram_mb > 0
 
+    def _get_model_lock(self, model_id: str) -> asyncio.Lock:
+        if model_id not in self._model_locks:
+            self._model_locks[model_id] = asyncio.Lock()
+        return self._model_locks[model_id]
+
     async def ensure_loaded(self, model_id: str) -> BaseProvider:
         """Load model if not loaded. LRU swap if no slots available."""
-        async with self._lock:
+        # Fast path: already loaded — just touch LRU
+        async with self._state_lock:
             provider = self.get(model_id)
             if provider.is_loaded():
                 self._touch_lru(model_id)
                 return provider
 
-            # Only count GPU models toward max_loaded_models limit
-            if self._is_gpu_model(model_id):
-                await self._make_room()
+        # Slow path: per-model lock so only one load at a time per model,
+        # but other models remain accessible
+        async with self._get_model_lock(model_id):
+            # Re-check after acquiring lock (another request may have loaded it)
+            if provider.is_loaded():
+                async with self._state_lock:
+                    self._touch_lru(model_id)
+                return provider
+
+            async with self._state_lock:
+                if self._is_gpu_model(model_id):
+                    await self._make_room()
 
             await provider.load(self._model_dir)
-            self._loaded_order.append(model_id)
+
+            async with self._state_lock:
+                self._loaded_order.append(model_id)
             return provider
 
     async def load_model(self, model_id: str) -> None:
@@ -75,13 +93,14 @@ class ProviderManager:
 
     async def unload_model(self, model_id: str) -> None:
         """Explicitly unload a model."""
-        async with self._lock:
+        async with self._get_model_lock(model_id):
             provider = self.get(model_id)
             if not provider.is_loaded():
                 return
             await provider.unload()
-            if model_id in self._loaded_order:
-                self._loaded_order.remove(model_id)
+            async with self._state_lock:
+                if model_id in self._loaded_order:
+                    self._loaded_order.remove(model_id)
 
     async def _make_room(self) -> None:
         """Unload LRU GPU models until there's room."""
