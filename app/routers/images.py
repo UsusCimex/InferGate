@@ -71,10 +71,11 @@ async def generate_images(body: ImageGenerationRequest, request: Request):
         if should_cache:
             await cache.put(cache_key, png_bytes, model_id, cache_cfg)
 
-        if body.response_format == "b64_json":
-            data_list.append(ImageData(b64_json=base64.b64encode(png_bytes).decode()))
+        b64 = base64.b64encode(png_bytes).decode()
+        if body.response_format == "url":
+            data_list.append(ImageData(url=f"data:image/png;base64,{b64}"))
         else:
-            data_list.append(ImageData(b64_json=base64.b64encode(png_bytes).decode()))
+            data_list.append(ImageData(b64_json=b64))
 
     elapsed = int((time.monotonic() - start) * 1000)
     resp = ImageGenerationResponse(created=int(time.time()), data=data_list)
