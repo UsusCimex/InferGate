@@ -46,11 +46,31 @@ class ProviderManager:
                 logger.info("Skipping disabled model: %s", config.id)
                 continue
             try:
-                provider_cls = get_provider_class(config.provider_class)
-                self._registry[config.id] = provider_cls(config)
-                logger.info("Registered model: %s (%s)", config.id, config.provider_class)
+                if config.worker_url:
+                    provider = self._create_remote_provider(config)
+                    logger.info("Registered remote model: %s -> %s", config.id, config.worker_url)
+                else:
+                    provider_cls = get_provider_class(config.provider_class)
+                    provider = provider_cls(config)
+                    logger.info("Registered model: %s (%s)", config.id, config.provider_class)
+                self._registry[config.id] = provider
             except ValueError as e:
                 logger.warning("Failed to register %s: %s", config.id, e)
+
+    @staticmethod
+    def _create_remote_provider(config: ModelConfig) -> BaseProvider:
+        """Create a remote provider based on model category."""
+        from app.providers.remote import RemoteImageProvider, RemoteTextProvider, RemoteTtsProvider
+
+        category_map: dict[str, type[BaseProvider]] = {
+            "text": RemoteTextProvider,
+            "image": RemoteImageProvider,
+            "tts": RemoteTtsProvider,
+        }
+        cls = category_map.get(config.category)
+        if cls is None:
+            raise ValueError(f"No remote provider for category '{config.category}'")
+        return cls(config)
 
     def get(self, model_id: str) -> BaseProvider:
         """Get provider by ID."""
