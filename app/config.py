@@ -91,6 +91,7 @@ class ModelConfig(BaseModel):
     category: str
     provider_class: str
     enabled: bool = True
+    worker_url: str | None = None  # if set, gateway proxies to this worker via HTTP
     model: dict[str, Any] = {}
     cache: ModelCacheConfig = ModelCacheConfig()
     queue: ModelQueueConfig = ModelQueueConfig()
@@ -104,6 +105,14 @@ def load_server_config(path: str | Path = "config/server.yaml") -> ServerConfig:
     with open(path) as f:
         data = yaml.safe_load(f) or {}
     return ServerConfig(**data)
+
+
+def load_single_model_config(path: str | Path) -> ModelConfig:
+    """Load a single model config from a YAML file (used by workers)."""
+    path = Path(path)
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    return ModelConfig(**data)
 
 
 def load_model_configs(models_dir: str | Path = "config/models") -> list[ModelConfig]:
