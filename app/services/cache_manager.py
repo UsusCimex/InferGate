@@ -5,19 +5,14 @@ import json
 import logging
 import shutil
 import time
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
 
+from app.config import CacheStrategy
+
 logger = logging.getLogger(__name__)
-
-
-class CacheStrategy(str, Enum):
-    ALWAYS = "always"
-    SEED_ONLY = "seed_only"
-    NEVER = "never"
 
 
 class CacheManager:
