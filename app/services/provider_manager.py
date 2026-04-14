@@ -165,11 +165,14 @@ class ProviderManager:
         """Resolve default model for a category."""
         return defaults.get(category)
 
-    async def shutdown(self) -> None:
-        """Unload all models on shutdown."""
+    async def shutdown(self, timeout_per_model: float = 30.0) -> None:
+        """Unload all models on shutdown with per-model timeout."""
         for model_id in list(self._loaded_order):
             try:
-                await self._registry[model_id].unload()
+                async with asyncio.timeout(timeout_per_model):
+                    await self._registry[model_id].unload()
+            except TimeoutError:
+                logger.warning("Timeout unloading %s after %.0fs", model_id, timeout_per_model)
             except Exception as e:
                 logger.warning("Error unloading %s: %s", model_id, e)
         self._loaded_order.clear()
