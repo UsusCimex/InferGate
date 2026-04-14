@@ -6,11 +6,11 @@ import setuptools  # noqa: F401
 import asyncio
 import logging
 import time
+import warnings
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from fastapi.responses import JSONResponse
 
 from app.auth import ApiKeyMiddleware
@@ -30,8 +30,6 @@ async def lifespan(app: FastAPI):
     """Application lifespan: initialize services on startup, cleanup on shutdown."""
     server_cfg = load_server_config()
     model_cfgs = load_model_configs()
-
-    import warnings
 
     logging.basicConfig(
         level=getattr(logging, server_cfg.log_level.upper(), logging.INFO),
