@@ -52,13 +52,13 @@ curl http://localhost:8000/health
 Каждая модель в своём контейнере с собственными зависимостями. Нет конфликтов библиотек.
 
 ```bash
-docker compose -f docker-compose.distributed.yml up -d
+docker compose -f deploy/docker-compose.distributed.yml up -d
 ```
 
 ### Docker (только CPU)
 
 ```bash
-docker compose -f docker-compose.cpu.yml up -d
+docker compose -f deploy/docker-compose.cpu.yml up -d
 ```
 
 Лёгкий образ без GPU-зависимостей. Доступны только TTS-модели (Kokoro).
@@ -374,16 +374,18 @@ infergate/
 ├── config/
 │   ├── server.yaml
 │   └── models/                     # 1 YAML = 1 модель
-├── monitoring/
-│   ├── prometheus.yml              # Конфиг Prometheus для scraping
-│   └── docker-compose.monitoring.yml  # Prometheus + Grafana stack
+├── deploy/                         # Варианты развёртывания
+│   ├── Dockerfile.cpu              #   CPU-only образ
+│   ├── Dockerfile.gateway          #   Лёгкий gateway (~500MB)
+│   ├── Dockerfile.worker           #   Worker с параметризуемыми зависимостями
+│   ├── docker-compose.cpu.yml      #   CPU-only compose
+│   ├── docker-compose.distributed.yml  # Distributed (gateway + workers)
+│   └── monitoring/                 #   Prometheus + Grafana stack
+│       ├── prometheus.yml
+│       └── docker-compose.monitoring.yml
 ├── tests/                          # 98 тестов, 82% покрытия
-├── Dockerfile                      # Монолитный GPU-образ
-├── Dockerfile.gateway              # Лёгкий gateway (~500MB)
-├── Dockerfile.worker               # Worker с параметризуемыми зависимостями
-├── docker-compose.yml              # Монолит
-├── docker-compose.cpu.yml          # CPU-only
-├── docker-compose.distributed.yml  # Distributed (gateway + workers)
+├── Dockerfile                      # Основной GPU-образ
+├── docker-compose.yml              # Основной compose (монолит)
 └── pyproject.toml
 ```
 
@@ -403,7 +405,7 @@ Client → Gateway (500MB, без GPU)
 ### Запуск
 
 ```bash
-docker compose -f docker-compose.distributed.yml up -d
+docker compose -f deploy/docker-compose.distributed.yml up -d
 ```
 
 ### Как подключить модель к worker
@@ -467,7 +469,7 @@ uvicorn app.worker:app --host 0.0.0.0 --port 8001
 
 ```bash
 # Вместе с основным compose
-docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d
+docker compose -f docker-compose.yml -f deploy/monitoring/docker-compose.monitoring.yml up -d
 ```
 
 - Prometheus: `http://localhost:9090`
