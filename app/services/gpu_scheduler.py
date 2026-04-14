@@ -26,6 +26,8 @@ class GpuScheduler:
         self._active_tasks = 0
         self._total_submitted = 0
         self._total_completed = 0
+        self._lock = asyncio.Lock()
+        self._last_position = 0
 
     def register_model(self, model_id: str, max_concurrent: int) -> None:
         """Create a semaphore for a model (from YAML queue.max_concurrent)."""
@@ -39,38 +41,40 @@ class GpuScheduler:
         timeout: float,
     ) -> Any:
         """Submit task to the scheduler. Waits for GPU semaphore."""
-        if self._active_tasks >= self._max_queue_size:
-            raise QueueFullError(
-                f"Queue is full ({self._active_tasks}/{self._max_queue_size})"
-            )
+        async with self._lock:
+            if self._active_tasks >= self._max_queue_size:
+                raise QueueFullError(
+                    f"Queue is full ({self._active_tasks}/{self._max_queue_size})"
+                )
 
-        semaphore = self._model_semaphores.get(model_id)
-        if semaphore is None:
-            # Fallback — allow 1 concurrent
-            semaphore = asyncio.Semaphore(1)
-            self._model_semaphores[model_id] = semaphore
+            semaphore = self._model_semaphores.get(model_id)
+            if semaphore is None:
+                semaphore = asyncio.Semaphore(1)
+                self._model_semaphores[model_id] = semaphore
 
-        position = self._active_tasks + 1
-        self._active_tasks += 1
-        self._total_submitted += 1
-        self._last_position = position
+            self._active_tasks += 1
+            self._total_submitted += 1
+            self._last_position = self._active_tasks
+
         try:
             async with asyncio.timeout(timeout):
                 async with semaphore:
                     result = await coro
-                    self._total_completed += 1
+                    async with self._lock:
+                        self._total_completed += 1
                     return result
         except TimeoutError:
             raise RequestTimeoutError(
                 f"Generation timed out after {timeout}s for model {model_id}"
             )
         finally:
-            self._active_tasks -= 1
+            async with self._lock:
+                self._active_tasks -= 1
 
     @property
     def last_position(self) -> int:
         """Queue position of the last submitted task."""
-        return getattr(self, "_last_position", 0)
+        return self._last_position
 
     def queue_info(self) -> dict:
         """Current queue state for /metrics."""
