@@ -1,0 +1,112 @@
+# Multi-container deployment: each model in its own isolated container.
+# Each worker has its own dependencies — no version conflicts.
+#
+# Usage:
+#   docker compose -f docker-compose.distributed.yml up -d
+#
+# Model YAML files must include worker_url pointing to the worker service name.
+# Example: worker_url: "http://worker-text:8001"
+
+services:
+  # Gateway — lightweight, no GPU, handles routing/caching/auth
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ./config:/app/config:ro
+      - ./cache:/app/cache
+    restart: unless-stopped
+    depends_on:
+      worker-text:
+        condition: service_healthy
+      worker-image:
+        condition: service_healthy
+      worker-tts:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Text generation worker (vLLM + transformers)
+  worker-text:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        INSTALL_ML: "true"
+    volumes:
+      - ./config/models/qwen3.5-4b.yaml:/app/config/model.yaml:ro
+      - ./models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    shm_size: "1g"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  # Image generation worker (diffusers)
+  worker-image:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        INSTALL_ML: "true"
+    volumes:
+      - ./config/models/sd35-medium.yaml:/app/config/model.yaml:ro
+      - ./models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # TTS worker (kokoro, CPU-only — no GPU needed)
+  worker-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        BASE_IMAGE: "python:3.12-slim"
+        INSTALL_TTS: "true"
+    volumes:
+      - ./config/models/kokoro-82m.yaml:/app/config/model.yaml:ro
+      - ./models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
