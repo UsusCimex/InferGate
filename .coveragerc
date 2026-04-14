@@ -1,0 +1,17 @@
+[run]
+source = app
+branch = True
+omit =
+    # GPU providers require actual hardware — tested via integration tests
+    app/providers/image/diffusers_provider.py
+    app/providers/text/vllm_provider.py
+    app/providers/tts/kokoro.py
+    app/providers/tts/fish_speech.py
+    # main.py lifespan tested via integration; create_app is the entrypoint
+    app/main.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    pass
