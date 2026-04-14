@@ -216,10 +216,10 @@ class CacheManager:
         await self._db.execute("DELETE FROM cache_entries")
         await self._db.commit()
 
-        # Remove all model subdirectories but keep _meta.db
+        # Remove all model subdirectories but keep SQLite files
         for child in self._base_dir.iterdir():
-            if child.name == "_meta.db":
-                continue
+            if child.name.startswith("_meta.db"):
+                continue  # skip _meta.db, _meta.db-wal, _meta.db-shm
             if child.is_dir():
                 shutil.rmtree(child, ignore_errors=True)
             elif child.is_file():
