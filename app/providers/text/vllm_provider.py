@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, AsyncIterator
 
 from app.providers.base import TextProvider
 from app.providers.registry import register_provider
@@ -142,6 +143,77 @@ class VllmTextProvider(TextProvider):
                 "total_tokens": prompt_tokens + completion_tokens,
             },
         }
+
+    async def generate_stream(self, messages: list[dict], **params: Any) -> AsyncIterator[str]:
+        """Stream chat completion as SSE chunks."""
+        from vllm import SamplingParams
+
+        defaults = dict(self.config.model.get("default_params", {}))
+        defaults.update(params)
+
+        max_tokens = defaults.pop("max_tokens", 4096)
+        temperature = defaults.pop("temperature", 0.7)
+        top_p = defaults.pop("top_p", 0.9)
+        response_format = defaults.pop("response_format", None)
+        thinking = defaults.pop("thinking", True)
+
+        if thinking and max_tokens < 4096:
+            max_tokens = 4096
+
+        sampling = SamplingParams(
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
+
+        messages = list(messages)
+        if response_format == "json_object":
+            if messages and messages[0].get("role") == "system":
+                messages[0] = {
+                    **messages[0],
+                    "content": messages[0]["content"] + "\nRespond with valid JSON only.",
+                }
+            else:
+                messages.insert(0, {"role": "system", "content": "Respond with valid JSON only."})
+
+        prompt = self._format_messages(messages, thinking=thinking)
+        request_id = str(uuid.uuid4())
+        completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        created = int(time.time())
+
+        prev_text_len = 0
+        async for output in self._engine.generate(prompt, sampling, request_id):
+            if output.outputs:
+                new_text = output.outputs[0].text[prev_text_len:]
+                prev_text_len = len(output.outputs[0].text)
+                if new_text:
+                    chunk = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": self.model_id,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": new_text},
+                            "finish_reason": None,
+                        }],
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+
+        # Final chunk with finish_reason
+        final_chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": self.model_id,
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": "stop",
+            }],
+        }
+        yield f"data: {json.dumps(final_chunk)}\n\n"
+        yield "data: [DONE]\n\n"
 
     def _format_messages(self, messages: list[dict], thinking: bool = True) -> str:
         """Format chat messages using tokenizer's chat template when available.
