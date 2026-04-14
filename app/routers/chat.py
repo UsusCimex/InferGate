@@ -79,6 +79,7 @@ async def chat_completions(
                     },
                 )
         cache_status = "MISS"
+        await cache.record_miss(model_id)
     elif no_cache:
         cache_status = "SKIP"
 

@@ -63,6 +63,7 @@ async def create_speech(
                 },
             )
         cache_status = "MISS"
+        await cache.record_miss(model_id)
     elif no_cache:
         cache_status = "SKIP"
 

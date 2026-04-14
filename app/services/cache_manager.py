@@ -52,12 +52,30 @@ class CacheManager:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_model ON cache_entries(model_id)"
         )
+        # Track cache misses separately for accurate hit rate
+        await self._db.execute("""
+            CREATE TABLE IF NOT EXISTS cache_stats (
+                model_id TEXT PRIMARY KEY,
+                miss_count INTEGER DEFAULT 0
+            )
+        """)
         await self._db.commit()
 
     async def close(self) -> None:
         if self._db:
             await self._db.close()
             self._db = None
+
+    async def record_miss(self, model_id: str) -> None:
+        """Record a cache miss for accurate hit rate tracking."""
+        if not self._db:
+            return
+        await self._db.execute(
+            """INSERT INTO cache_stats (model_id, miss_count) VALUES (?, 1)
+               ON CONFLICT(model_id) DO UPDATE SET miss_count = miss_count + 1""",
+            (model_id,),
+        )
+        await self._db.commit()
 
     def should_cache(self, cache_config: dict, request_params: dict) -> bool:
         """Determine whether to cache based on model's cache strategy."""
@@ -273,7 +291,13 @@ class CacheManager:
             row = await cursor.fetchone()
             entries, size_bytes, hits = row if row else (0, 0, 0)
 
-        misses = entries  # each entry was a miss when first created
+        async with self._db.execute(
+            "SELECT COALESCE(miss_count, 0) FROM cache_stats WHERE model_id = ?",
+            (model_id,),
+        ) as cursor:
+            miss_row = await cursor.fetchone()
+            misses = miss_row[0] if miss_row else entries
+
         hit_rate = round(hits / (hits + misses) * 100, 1) if (hits + misses) > 0 else 0.0
 
         return {
