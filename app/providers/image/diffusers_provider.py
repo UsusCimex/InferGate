@@ -47,7 +47,7 @@ class DiffusersImageProvider(ImageProvider):
         cpu_offload = self.config.model.get("cpu_offload", False)
 
         logger.info("Loading %s from %s", self.model_id, hub_id)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _load():
             pipe = DiffusionPipeline.from_pretrained(hub_id, **kwargs)
@@ -95,7 +95,7 @@ class DiffusersImageProvider(ImageProvider):
         defaults.pop("response_format", None)
         defaults.pop("n", None)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         image = await loop.run_in_executor(
             None,
             lambda: self._pipeline(prompt, **defaults).images[0],

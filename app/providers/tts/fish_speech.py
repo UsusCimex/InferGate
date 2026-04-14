@@ -23,7 +23,7 @@ class FishSpeechTtsProvider(TtsProvider):
         hub_id = self.config.model["hub_id"]
         logger.info("Loading %s from %s", self.model_id, hub_id)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _load():
             try:
@@ -73,7 +73,7 @@ class FishSpeechTtsProvider(TtsProvider):
         defaults.pop("voice", None)
         defaults.pop("speed", None)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # Try new API first (OpenAudio S1-mini), fall back to old
         if hasattr(self._model, "synthesize"):
