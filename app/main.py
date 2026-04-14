@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
         pinned=server_cfg.gpu.pinned_models,
     )
     manager.discover_models(model_cfgs)
+    manager.validate_config()
 
     scheduler = GpuScheduler(max_queue_size=server_cfg.queue.max_size)
     for cfg in model_cfgs:
