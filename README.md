@@ -1,6 +1,6 @@
 # InferGate
 
-Self-hosted OpenAI-совместимый AI-сервер. Единый gateway для локальных open-source моделей генерации изображений, текста и озвучки.
+Self-hosted OpenAI-совместимый AI-шлюз для локальных моделей. Единый gateway для генерации изображений, текста и озвучки.
 
 Любое приложение, работающее с OpenAI API, может переключиться на InferGate сменой `base_url`.
 
@@ -15,44 +15,52 @@ Self-hosted OpenAI-совместимый AI-сервер. Единый gateway 
 5. [Кэширование](#5-кэширование)
 6. [Добавление новой модели](#6-добавление-новой-модели)
 7. [Конфигурация](#7-конфигурация)
-8. [Структура проекта](#8-структура-проекта)
-9. [Docker-сборка](#9-docker-сборка)
-10. [Системные требования](#10-системные-требования)
-11. [TODO](#11-todo)
-12. [Тестирование](#12-тестирование)
-13. [Лицензия](#13-лицензия)
+8. [Архитектура](#8-архитектура)
+9. [Distributed-режим](#9-distributed-режим)
+10. [Docker-сборка](#10-docker-сборка)
+11. [Тестирование](#11-тестирование)
+12. [Системные требования](#12-системные-требования)
+13. [TODO](#13-todo)
+14. [Лицензия](#14-лицензия)
 
 ---
 
 ## 1. Быстрый старт
 
-### Docker (GPU)
+### Docker (GPU) — монолит
 
 ```bash
 git clone https://github.com/UsusCimex/infergate.git
 cd infergate
 
-# Собрать образ (первая сборка ~15-20 мин, далее секунды)
+# Собрать образ
 docker compose build
 
 # Скачать веса моделей
 docker compose run --rm infergate python scripts/download_models.py --all
 
-# Запустить сервер
+# Запустить
 docker compose up -d
 
 # Проверить
 curl http://localhost:8000/health
 ```
 
+### Docker (Distributed) — изолированные контейнеры
+
+Каждая модель в своём контейнере с собственными зависимостями. Нет конфликтов библиотек.
+
+```bash
+docker compose -f docker-compose.distributed.yml up -d
+```
+
 ### Docker (только CPU)
 
 ```bash
-docker compose -f docker-compose.cpu.yml build
 docker compose -f docker-compose.cpu.yml up -d
 ```
 
-CPU-вариант использует лёгкий образ без GPU-зависимостей. Доступны только TTS-модели (Kokoro).
+Лёгкий образ без GPU-зависимостей. Доступны только TTS-модели (Kokoro).
 
 ### Локальная разработка
 
@@ -78,13 +86,22 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="any")
 
 # Текст
 response = client.chat.completions.create(
-    model="qwen3.5-9b",
+    model="qwen3.5-4b",
     messages=[{"role": "user", "content": "Привет!"}]
 )
 
+# Текст (streaming)
+stream = client.chat.completions.create(
+    model="qwen3.5-4b",
+    messages=[{"role": "user", "content": "Расскажи историю"}],
+    stream=True
+)
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="")
+
 # Изображение
 response = client.images.generate(
-    model="flux1-schnell",
+    model="sd35-medium",
     prompt="Кот в космосе"
 )
 
@@ -102,12 +119,17 @@ response = client.audio.speech.create(
 # Текст
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "qwen3.5-9b", "messages": [{"role": "user", "content": "Привет!"}]}'
+  -d '{"model": "qwen3.5-4b", "messages": [{"role": "user", "content": "Привет!"}]}'
+
+# Текст (streaming)
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "qwen3.5-4b", "messages": [{"role": "user", "content": "Привет!"}], "stream": true}'
 
 # Изображение
 curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
-  -d '{"model": "flux1-schnell", "prompt": "Кот в космосе"}'
+  -d '{"model": "sd35-medium", "prompt": "Кот в космосе"}'
 
 # Озвучка
 curl http://localhost:8000/v1/audio/speech \
@@ -119,31 +141,32 @@ curl http://localhost:8000/v1/audio/speech \
 
 ## 3. Поддерживаемые модели
 
-| Модель | Категория | Провайдер | Лицензия |
-|--------|-----------|-----------|----------|
-| FLUX.1 Schnell | Изображения | diffusers | Apache 2.0 |
-| FLUX.1 Dev | Изображения | diffusers | Non-Commercial |
-| FLUX.2 Klein 4B | Изображения | diffusers | Apache 2.0 |
-| Stable Diffusion 3.5 Medium | Изображения | diffusers | Community |
-| Qwen 3.5 9B / 4B | Текст | vLLM | Apache 2.0 |
-| Qwen 3 8B | Текст | vLLM | Apache 2.0 |
-| Llama 3.1 8B | Текст | vLLM | Llama Community |
-| Kokoro 82M | Озвучка | kokoro | MIT |
-| OpenAudio S1 Mini | Озвучка | fish-speech | Apache 2.0 |
+| Модель | Категория | Провайдер | VRAM | Лицензия |
+|--------|-----------|-----------|------|----------|
+| Stable Diffusion 3.5 Medium | Изображения | diffusers | 5 GB | Community |
+| FLUX.1 Schnell | Изображения | diffusers | 8 GB | Apache 2.0 |
+| FLUX.1 Dev | Изображения | diffusers | 12 GB | Non-Commercial |
+| FLUX.2 Klein 4B | Изображения | diffusers | 6 GB | Apache 2.0 |
+| Qwen 3.5 4B (AWQ) | Текст | vLLM | 4 GB | Apache 2.0 |
+| Qwen 3.5 9B | Текст | vLLM | 8 GB | Apache 2.0 |
+| Qwen 3 8B | Текст | vLLM | 7 GB | Apache 2.0 |
+| Llama 3.1 8B | Текст | vLLM | 8 GB | Llama Community |
+| Kokoro 82M | Озвучка | kokoro | CPU | MIT |
+| OpenAudio S1 Mini | Озвучка | fish-speech | 4 GB | Apache 2.0 |
 
-Любая diffusers-совместимая модель добавляется одним YAML-файлом без написания кода.
+Любая diffusers/vLLM-совместимая модель добавляется одним YAML-файлом без написания кода.
 
 ---
 
 ## 4. API
 
-Все эндпоинты повторяют формат OpenAI API.
+Все эндпоинты совместимы с форматом OpenAI API.
 
 ### Эндпоинты
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| `POST` | `/v1/chat/completions` | Генерация текста |
+| `POST` | `/v1/chat/completions` | Генерация текста (+ streaming) |
 | `POST` | `/v1/images/generations` | Генерация изображений |
 | `POST` | `/v1/audio/speech` | Синтез речи |
 | `GET` | `/v1/models` | Список всех моделей |
@@ -156,12 +179,23 @@ curl http://localhost:8000/v1/audio/speech \
 | `GET` | `/health` | Проверка состояния |
 | `GET` | `/metrics` | Метрики системы |
 
+### Валидация параметров
+
+| Параметр | Диапазон |
+|----------|----------|
+| `temperature` | 0.0 – 2.0 |
+| `top_p` | 0.0 – 1.0 |
+| `max_tokens` | 1 – 131072 |
+| `n` (изображения) | 1 – 10 |
+| `speed` (TTS) | 0.25 – 4.0 |
+
 ### Заголовки ответов
 
 | Заголовок | Значения |
 |-----------|----------|
 | `X-InferGate-Cache` | `HIT`, `MISS`, `DISABLED`, `SKIP` |
 | `X-InferGate-Model` | ID использованной модели |
+| `X-InferGate-Queue-Position` | Позиция в очереди GPU |
 | `X-InferGate-Generation-Ms` | Время генерации в мс |
 
 ### Заголовки запросов
@@ -182,7 +216,7 @@ curl http://localhost:8000/v1/audio/speech \
 | `seed_only` | Только если передан seed | Изображения |
 | `never` | Не кэшировать | LLM |
 
-Кэш хранится на диске с метаданными в SQLite. Поддерживается LRU-вытеснение и TTL.
+Кэш хранится на диске с метаданными в SQLite (WAL-режим). Поддерживается LRU-вытеснение, TTL, атомарные записи (temp file → DB commit → rename).
 
 ### Инвалидация
 
@@ -211,6 +245,7 @@ model:
   hub_id: "org/model-name"
   vram_mb: 8000
   torch_dtype: float16
+  trust_remote_code: false         # явно включать только для доверенных моделей
   default_params:
     num_inference_steps: 20
 
@@ -227,18 +262,18 @@ queue:
 
 Перезапустить сервер — модель доступна. Писать код не нужно.
 
-Доступные `provider_class` для поля `category`:
+### Доступные провайдеры
 
 | category | provider_class | Что поддерживает |
 |----------|---------------|-----------------|
 | `image` | `DiffusersImageProvider` | Любая diffusers-модель (FLUX, SD, PixArt и др.) |
-| `text` | `VllmTextProvider` | Любая LLM через vLLM (Qwen, Llama и др.) |
+| `text` | `VllmTextProvider` | Любая LLM через vLLM (Qwen, Llama, Mistral и др.) |
 | `tts` | `KokoroTtsProvider` | Kokoro TTS |
 | `tts` | `FishSpeechTtsProvider` | OpenAudio / Fish Speech |
 
-> Если нужен провайдер для нового бэкенда (новая библиотека), создайте класс в `app/providers/{категория}/`, наследуя `ImageProvider`, `TextProvider` или `TtsProvider`, и укажите его имя в `provider_class`.
+> Если нужен провайдер для нового бэкенда, создайте класс в `app/providers/{категория}/`, наследуя `ImageProvider`, `TextProvider` или `TtsProvider`, и укажите его имя в `provider_class`.
 
-### Добавление новой pip-зависимости
+### Зависимости
 
 Зависимости разделены на слои для оптимизации Docker-сборки:
 
@@ -247,8 +282,6 @@ queue:
 | `requirements/ml.txt` | ML-библиотеки (vllm, diffusers, transformers) |
 | `requirements/tts.txt` | TTS-библиотеки (kokoro, soundfile) |
 | `requirements/base.txt` | Серверные зависимости (fastapi, pydantic) |
-
-Добавьте зависимость в нужный файл и пересоберите образ. Пересборка затронет только изменённый слой.
 
 ---
 
@@ -282,8 +315,8 @@ cors:
   allow_headers: ["*"]
 
 defaults:                          # Модели по умолчанию (если model не указан)
-  image: flux1-schnell
-  text: qwen3.5-9b
+  image: sd35-medium
+  text: qwen3.5-4b
   tts: kokoro-82m
 
 rate_limit:
@@ -293,79 +326,153 @@ rate_limit:
 
 ---
 
-## 8. Структура проекта
+## 8. Архитектура
+
+```
+Client → FastAPI (pure ASGI middleware: auth, rate-limit, access-log)
+       → Router → GPU Scheduler (asyncio.Lock + semaphores)
+       → Provider Manager (OrderedDict LRU, per-model locks)
+       → Provider (local or remote) → Response (+ cache)
+```
+
+### Структура проекта
 
 ```
 infergate/
 ├── app/
-│   ├── main.py                     # FastAPI приложение, lifespan
+│   ├── main.py                     # FastAPI, lifespan, exception handlers
+│   ├── worker.py                   # Standalone worker для distributed-режима
 │   ├── config.py                   # Загрузка YAML-конфигов
-│   ├── auth.py                     # API Key middleware
-│   ├── dependencies.py             # DI-контейнер
+│   ├── auth.py                     # API Key middleware (pure ASGI)
+│   ├── rate_limit.py               # Rate limiter (pure ASGI)
+│   ├── logging_middleware.py       # Access log (pure ASGI)
+│   ├── dependencies.py             # FastAPI Depends + app.state
 │   ├── routers/                    # API эндпоинты
-│   │   ├── chat.py                 # /v1/chat/completions
+│   │   ├── chat.py                 # /v1/chat/completions (+ streaming)
 │   │   ├── images.py               # /v1/images/generations
 │   │   ├── audio.py                # /v1/audio/speech
 │   │   ├── models.py               # /v1/models
 │   │   ├── cache.py                # /cache/*
 │   │   └── health.py               # /health, /metrics
-│   ├── schemas/                    # Pydantic-модели запросов/ответов
-│   ├── providers/                  # Плагины моделей
+│   ├── schemas/                    # Pydantic-модели с Field-валидацией
+│   ├── providers/
 │   │   ├── base.py                 # ABC: ImageProvider, TextProvider, TtsProvider
-│   │   ├── registry.py             # Авто-обнаружение провайдеров
+│   │   ├── registry.py             # @register_provider + авто-обнаружение
+│   │   ├── remote.py               # RemoteProvider для distributed-режима
 │   │   ├── image/
 │   │   │   └── diffusers_provider.py
 │   │   ├── text/
-│   │   │   └── vllm_provider.py
+│   │   │   └── vllm_provider.py    # + streaming + tokenizer chat templates
 │   │   └── tts/
 │   │       ├── kokoro.py
 │   │       └── fish_speech.py
 │   └── services/
-│       ├── provider_manager.py     # Реестр моделей + LRU swap
-│       ├── gpu_scheduler.py        # Очередь с приоритетами + семафоры
-│       └── cache_manager.py        # Кэш: per-model стратегии + SQLite
+│       ├── provider_manager.py     # LRU (OrderedDict), per-model locks, shutdown timeout
+│       ├── gpu_scheduler.py        # asyncio.Lock-protected counters + semaphores
+│       └── cache_manager.py        # SQLite WAL, atomic writes, miss tracking
 ├── config/
-│   ├── server.yaml                 # Глобальные настройки
-│   ├── models/                     # YAML-конфиги моделей (1 файл = 1 модель)
-│   └── examples/                   # Примеры конфигов
-├── requirements/                   # Зависимости, разделённые по слоям
-│   ├── ml.txt                      # vllm, diffusers, transformers
-│   ├── tts.txt                     # kokoro, soundfile
-│   └── base.txt                    # fastapi, pydantic, uvicorn
-├── scripts/
-│   ├── download_models.py          # Скачивание весов
-│   └── benchmark.py                # Бенчмарк эндпоинтов
-├── tests/
-├── Dockerfile                      # GPU-образ (pytorch base + uv)
-├── Dockerfile.cpu                  # CPU-образ (лёгкий)
-├── docker-compose.yml
-├── docker-compose.cpu.yml
+│   ├── server.yaml
+│   └── models/                     # 1 YAML = 1 модель
+├── tests/                          # 91 тест, 82% покрытия
+├── Dockerfile                      # Монолитный GPU-образ
+├── Dockerfile.gateway              # Лёгкий gateway (~500MB)
+├── Dockerfile.worker               # Worker с параметризуемыми зависимостями
+├── docker-compose.yml              # Монолит
+├── docker-compose.cpu.yml          # CPU-only
+├── docker-compose.distributed.yml  # Distributed (gateway + workers)
 └── pyproject.toml
 ```
 
 ---
 
-## 9. Docker-сборка
+## 9. Distributed-режим
+
+Каждая модель работает в изолированном контейнере с собственным набором зависимостей. Решает проблему конфликтов версий библиотек.
+
+```
+Client → Gateway (500MB, без GPU)
+           ├→ worker-text   (vLLM + transformers, GPU)
+           ├→ worker-image  (diffusers + torch, GPU)
+           └→ worker-tts    (kokoro, CPU, python:3.12-slim)
+```
+
+### Запуск
+
+```bash
+docker compose -f docker-compose.distributed.yml up -d
+```
+
+### Как подключить модель к worker
+
+В YAML-конфиге модели добавьте `worker_url`:
+
+```yaml
+# config/models/qwen3.5-4b.yaml (на стороне gateway)
+id: qwen3.5-4b
+worker_url: "http://worker-text:8001"  # gateway проксирует к этому worker
+# ... остальные поля ...
+```
+
+Без `worker_url` — модель загружается локально (как в монолитном режиме).
+
+### Запуск worker вручную
+
+```bash
+WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml \
+uvicorn app.worker:app --host 0.0.0.0 --port 8001
+```
+
+### Преимущества
+
+| | Монолит | Distributed |
+|---|---|---|
+| Изоляция зависимостей | Нет | Полная |
+| Размер gateway-образа | ~15 GB | ~500 MB |
+| Конфликты библиотек | Возможны | Невозможны |
+| Разные версии torch | Нет | Да |
+| Микс local + remote | — | Да |
+
+---
+
+## 10. Docker-сборка
 
 Сборка оптимизирована для быстрой итерации:
 
-- **Базовый образ** `pytorch/pytorch` — torch + CUDA уже внутри, не качаются при сборке
-- **uv** вместо pip — установка зависимостей в 10-100x быстрее
-- **Слоистое кэширование** — каждая группа зависимостей в отдельном Docker-слое
-- **BuildKit cache mounts** — скачанные пакеты переиспользуются между сборками
+- **Базовый образ** `pytorch/pytorch` — torch + CUDA уже внутри
+- **uv** вместо pip — установка в 10–100x быстрее
+- **Слоистое кэширование** — зависимости в отдельных Docker-слоях
+- **BuildKit cache mounts** — пакеты переиспользуются между сборками
+- **Non-root user** — контейнер работает от `infergate`
 
 ### Скорость пересборки
 
 | Сценарий | Время |
 |----------|-------|
-| Первая сборка | ~15-20 мин |
+| Первая сборка | ~15–20 мин |
 | Изменение кода (app/) | ~10 сек |
-| Новая зависимость в base.txt | ~1-2 мин |
-| Новая ML-зависимость | ~5-10 мин |
+| Новая зависимость в base.txt | ~1–2 мин |
+| Новая ML-зависимость | ~5–10 мин |
 
 ---
 
-## 10. Системные требования
+## 11. Тестирование
+
+```bash
+pip install -e ".[dev]"
+pytest
+
+# С покрытием
+pip install pytest-cov
+pytest --cov=app --cov-branch
+```
+
+**91 тест**, **82% покрытия** (ветвевое). Покрытие исключает GPU-провайдеры, которые требуют физическое GPU для интеграционного тестирования.
+
+Тесты покрывают: роутеры, middleware (auth, rate-limit, access-log), cache manager, GPU scheduler, provider manager, конфигурацию, валидацию, worker, конкурентность, edge cases.
+
+---
+
+## 12. Системные требования
 
 | Конфигурация | GPU | RAM | Диск |
 |-------------|-----|-----|------|
@@ -375,28 +482,19 @@ infergate/
 
 ---
 
-## 11. TODO
+## 13. TODO
 
-- [ ] **Streaming** — поддержка `stream: true` для `/v1/chat/completions` (SSE)
 - [ ] **Web UI** — панель администрирования
 - [ ] **Prometheus метрики** — экспорт метрик + Grafana дашборд
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
 - [ ] **LoRA hot-swap** — указание LoRA-адаптеров в YAML-конфиге модели
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
-- [ ] **Multi-GPU** — распределение моделей по нескольким GPU
+- [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
 - [ ] **Hot-reload конфигов** — добавление моделей без перезапуска сервера
+- [ ] **Kubernetes Helm chart** — для multi-node distributed-режима
 
 ---
 
-## 12. Тестирование
-
-```bash
-pip install -e ".[dev]"
-pytest
-```
-
----
-
-## 13. Лицензия
+## 14. Лицензия
 
 MIT
