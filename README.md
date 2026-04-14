@@ -17,11 +17,12 @@ Self-hosted OpenAI-совместимый AI-шлюз для локальных 
 7. [Конфигурация](#7-конфигурация)
 8. [Архитектура](#8-архитектура)
 9. [Distributed-режим](#9-distributed-режим)
-10. [Docker-сборка](#10-docker-сборка)
-11. [Тестирование](#11-тестирование)
-12. [Системные требования](#12-системные-требования)
-13. [TODO](#13-todo)
-14. [Лицензия](#14-лицензия)
+10. [Мониторинг](#10-мониторинг)
+11. [Docker-сборка](#11-docker-сборка)
+12. [Тестирование](#12-тестирование)
+13. [Системные требования](#13-системные-требования)
+14. [TODO](#14-todo)
+15. [Лицензия](#15-лицензия)
 
 ---
 
@@ -373,7 +374,10 @@ infergate/
 ├── config/
 │   ├── server.yaml
 │   └── models/                     # 1 YAML = 1 модель
-├── tests/                          # 91 тест, 82% покрытия
+├── monitoring/
+│   ├── prometheus.yml              # Конфиг Prometheus для scraping
+│   └── docker-compose.monitoring.yml  # Prometheus + Grafana stack
+├── tests/                          # 98 тестов, 82% покрытия
 ├── Dockerfile                      # Монолитный GPU-образ
 ├── Dockerfile.gateway              # Лёгкий gateway (~500MB)
 ├── Dockerfile.worker               # Worker с параметризуемыми зависимостями
@@ -434,7 +438,50 @@ uvicorn app.worker:app --host 0.0.0.0 --port 8001
 
 ---
 
-## 10. Docker-сборка
+## 10. Мониторинг
+
+### Встроенные метрики
+
+| Эндпоинт | Формат | Описание |
+|----------|--------|----------|
+| `GET /metrics` | JSON | Snapshot: очередь, VRAM, loaded models, cache hit rate, uptime |
+| `GET /metrics/prometheus` | Prometheus text | Time-series для scraping |
+| `GET /health` | JSON | Проверка состояния (503 если БД недоступна) |
+
+Каждый ответ содержит заголовок `X-Request-ID` для сквозного трейсинга.
+
+### Prometheus-метрики
+
+| Метрика | Тип | Labels | Описание |
+|---------|-----|--------|----------|
+| `infergate_requests_total` | Counter | method, endpoint, status_code | Общее количество HTTP-запросов |
+| `infergate_request_duration_seconds` | Histogram | method, endpoint | Длительность запросов |
+| `infergate_inference_duration_seconds` | Histogram | model_id, category | Время инференса моделей |
+| `infergate_cache_hits_total` | Counter | model_id | Попадания в кэш |
+| `infergate_cache_misses_total` | Counter | model_id | Промахи кэша |
+| `infergate_models_loaded` | Gauge | — | Количество загруженных моделей |
+| `infergate_gpu_vram_used_mb` | Gauge | — | Использование GPU VRAM |
+| `infergate_queue_size` | Gauge | — | Размер очереди GPU |
+
+### Запуск с Prometheus + Grafana
+
+```bash
+# Вместе с основным compose
+docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml up -d
+```
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (admin/admin)
+
+`prometheus-client` — optional dependency. Без неё метрики деградируют до JSON `/metrics`, Prometheus endpoint возвращает 501.
+
+```bash
+pip install infergate[monitoring]
+```
+
+---
+
+## 11. Docker-сборка
 
 Сборка оптимизирована для быстрой итерации:
 
@@ -455,7 +502,7 @@ uvicorn app.worker:app --host 0.0.0.0 --port 8001
 
 ---
 
-## 11. Тестирование
+## 12. Тестирование
 
 ```bash
 pip install -e ".[dev]"
@@ -466,13 +513,13 @@ pip install pytest-cov
 pytest --cov=app --cov-branch
 ```
 
-**91 тест**, **82% покрытия** (ветвевое). Покрытие исключает GPU-провайдеры, которые требуют физическое GPU для интеграционного тестирования.
+**98 тестов**, **82% покрытия** (ветвевое). Покрытие исключает GPU-провайдеры, которые требуют физическое GPU для интеграционного тестирования.
 
-Тесты покрывают: роутеры, middleware (auth, rate-limit, access-log), cache manager, GPU scheduler, provider manager, конфигурацию, валидацию, worker, конкурентность, edge cases.
+Тесты покрывают: роутеры, middleware (auth, rate-limit, access-log), мониторинг (Prometheus, request ID), cache manager, GPU scheduler, provider manager, конфигурацию, валидацию, worker, конкурентность, edge cases.
 
 ---
 
-## 12. Системные требования
+## 13. Системные требования
 
 | Конфигурация | GPU | RAM | Диск |
 |-------------|-----|-----|------|
@@ -482,19 +529,19 @@ pytest --cov=app --cov-branch
 
 ---
 
-## 13. TODO
+## 14. TODO
 
 - [ ] **Web UI** — панель администрирования
-- [ ] **Prometheus метрики** — экспорт метрик + Grafana дашборд
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
 - [ ] **LoRA hot-swap** — указание LoRA-адаптеров в YAML-конфиге модели
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
 - [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
 - [ ] **Hot-reload конфигов** — добавление моделей без перезапуска сервера
 - [ ] **Kubernetes Helm chart** — для multi-node distributed-режима
+- [ ] **Grafana дашборд** — готовый JSON-дашборд для импорта
 
 ---
 
-## 14. Лицензия
+## 15. Лицензия
 
 MIT
