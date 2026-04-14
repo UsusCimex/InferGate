@@ -23,7 +23,7 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         else:
             token = auth_header
 
-        if token not in self._api_keys:
+        if not token or token not in self._api_keys:
             return JSONResponse(
                 {"error": {"message": "Invalid API key", "type": "authentication_error"}},
                 status_code=401,
