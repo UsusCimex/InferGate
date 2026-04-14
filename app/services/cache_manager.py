@@ -137,7 +137,7 @@ class CacheManager:
         file_path.write_bytes(data)
 
         ttl_hours = cache_config.get("ttl_hours")
-        ttl_expires = time.time() + ttl_hours * 3600 if ttl_hours else None
+        ttl_expires = time.time() + ttl_hours * 3600 if ttl_hours is not None else None
 
         await self._db.execute(
             """INSERT OR REPLACE INTO cache_entries
