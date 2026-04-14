@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     model_cfgs = load_model_configs()
 
     logging.basicConfig(
-        level=getattr(logging, server_cfg.log_level.upper(), logging.INFO),
+        level=getattr(logging, server_cfg.log_level.value.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
