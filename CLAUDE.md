@@ -39,45 +39,48 @@ docker compose run --rm infergate python scripts/download_models.py --all
 
 ### Request Flow
 
-Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority queue) → Provider Manager (loads model if needed, LRU eviction) → Provider (`app/providers/`) → Response (with optional cache)
+Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority queue + asyncio.Lock) → Provider Manager (loads model if needed, LRU eviction with per-model locks) → Provider (`app/providers/`) → Response (with optional cache)
 
 ### Key Architectural Patterns
 
 **Plugin-based providers**: Abstract bases in `app/providers/base.py` (`ImageProvider`, `TextProvider`, `TtsProvider`). New providers register via `@register_provider` decorator in `app/providers/registry.py`. Adding a model that uses an existing provider = just add a YAML file in `config/models/`.
 
-**Module-level DI singletons**: Services initialized during FastAPI lifespan in `app/main.py`, stored in `app/dependencies.py`, accessed by routers via getter functions (`get_provider_manager()`, etc.).
+**FastAPI Depends DI**: Services initialized during FastAPI lifespan in `app/main.py`, stored on `app.state`, accessed by routers via `Depends()` from `app/dependencies.py`. Supports `dependency_overrides` for testing.
 
-**GPU memory management**: `ProviderManager` maintains an LRU cache of loaded models with a configurable max slot count. Models are auto-evicted when GPU is full. Pinned models (configured in `server.yaml`) are never evicted.
+**GPU memory management**: `ProviderManager` maintains an OrderedDict-based LRU cache of loaded models with O(1) touch/evict. Per-model locks allow concurrent model access while serializing per-model operations. Pinned models (configured in `server.yaml`) are never evicted.
 
-**Request scheduling**: `GpuScheduler` provides per-model concurrency semaphores with priority levels (high/medium/low) and configurable timeouts.
+**Request scheduling**: `GpuScheduler` provides per-model concurrency semaphores with asyncio.Lock-protected counters and configurable timeouts.
 
-**Multi-strategy caching**: `CacheManager` uses disk storage + SQLite metadata. Strategies per model: `always`, `seed_only` (images with fixed seed), `never`. LRU eviction with TTL support.
+**Multi-strategy caching**: `CacheManager` uses disk storage + SQLite (WAL mode) metadata. Atomic writes (temp file → DB commit → rename). Strategies per model: `always`, `seed_only` (images with fixed seed), `never`. LRU eviction with TTL support. Accurate miss tracking via `cache_stats` table.
+
+**Pure ASGI middleware**: All middleware (AccessLog, RateLimit, ApiKey) implemented as pure ASGI for ~20-40% lower overhead vs BaseHTTPMiddleware.
 
 ### Core Services (app/services/)
 
-- `provider_manager.py` — Model registry, loading/unloading, LRU GPU slot management
-- `gpu_scheduler.py` — Request queue with priorities and concurrency limits
-- `cache_manager.py` — Per-model caching with SQLite metadata index
+- `provider_manager.py` — Model registry, loading/unloading, OrderedDict LRU, per-model + state locks, shutdown timeouts
+- `gpu_scheduler.py` — Request queue with asyncio.Lock-protected counters and concurrency limits
+- `cache_manager.py` — Per-model caching with SQLite WAL metadata, atomic writes, miss tracking
 
 ### Configuration
 
 - `config/server.yaml` — Global settings (auth, GPU slots, cache, CORS, rate limits, defaults)
-- `config/models/*.yaml` — One file per model defining: hub_id, VRAM requirements, torch_dtype, default params, cache strategy, queue priority
+- `config/models/*.yaml` — One file per model defining: hub_id, VRAM requirements, torch_dtype, trust_remote_code, default params, cache strategy, queue priority
 
 ### Custom Response Headers
 
 - `X-InferGate-Cache`: HIT|MISS|DISABLED|SKIP
 - `X-InferGate-Model`: actual model ID used
 - `X-InferGate-Generation-Ms`: latency in milliseconds
+- `X-InferGate-Queue-Position`: position in GPU scheduler queue
 
 ## Tech Stack
 
-- Python 3.11+, FastAPI, uvicorn
-- vLLM (text), diffusers (image), kokoro/fish-speech (TTS)
+- Python 3.11+, FastAPI with Depends DI, uvicorn
+- vLLM (text, with streaming SSE support), diffusers (image), kokoro/fish-speech (TTS)
 - PyTorch with CUDA 12.6
-- aiosqlite (cache metadata), pydantic (validation), ruff (linting)
-- Docker with multi-layer build caching, uv package manager
+- aiosqlite (cache metadata with WAL), pydantic (validation with Field constraints), ruff + pyright (linting + type checking)
+- Docker with multi-layer build caching, uv package manager, non-root user
 
 ## Testing
 
-Tests use fake providers (`FakeImageProvider`, `FakeTextProvider`, `FakeTtsProvider`) defined in `tests/conftest.py`. The `services` fixture provides a fully initialized service layer; the `client` fixture provides an async FastAPI test client via httpx. Tests are async (pytest-asyncio).
+Tests use fake providers (`FakeImageProvider`, `FakeTextProvider`, `FakeTtsProvider`) defined in `tests/conftest.py`. The `services` fixture provides a fully initialized service layer via `app.state`; the `client` fixture provides an async FastAPI test client via httpx. Tests are async (pytest-asyncio). Includes concurrency tests for scheduler, cache, and model loading.
