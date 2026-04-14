@@ -1,23 +1,20 @@
 # Multi-container deployment: each model in its own isolated container.
 # Each worker has its own dependencies — no version conflicts.
 #
-# Usage:
-#   docker compose -f docker-compose.distributed.yml up -d
-#
-# Model YAML files must include worker_url pointing to the worker service name.
-# Example: worker_url: "http://worker-text:8001"
+# Usage (from project root):
+#   docker compose -f deploy/docker-compose.distributed.yml up -d
 
 services:
   # Gateway — lightweight, no GPU, handles routing/caching/auth
   gateway:
     build:
-      context: .
-      dockerfile: Dockerfile.gateway
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
     ports:
       - "${PORT:-8000}:8000"
     volumes:
-      - ./config:/app/config:ro
-      - ./cache:/app/cache
+      - ../config:/app/config:ro
+      - ../cache:/app/cache
     restart: unless-stopped
     depends_on:
       worker-text:
@@ -35,13 +32,13 @@ services:
   # Text generation worker (vLLM + transformers)
   worker-text:
     build:
-      context: .
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
       args:
         INSTALL_ML: "true"
     volumes:
-      - ./config/models/qwen3.5-4b.yaml:/app/config/model.yaml:ro
-      - ./models:/app/models
+      - ../config/models/qwen3.5-4b.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
@@ -64,13 +61,13 @@ services:
   # Image generation worker (diffusers)
   worker-image:
     build:
-      context: .
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
       args:
         INSTALL_ML: "true"
     volumes:
-      - ./config/models/sd35-medium.yaml:/app/config/model.yaml:ro
-      - ./models:/app/models
+      - ../config/models/sd35-medium.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
@@ -92,14 +89,14 @@ services:
   # TTS worker (kokoro, CPU-only — no GPU needed)
   worker-tts:
     build:
-      context: .
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
       args:
         BASE_IMAGE: "python:3.12-slim"
         INSTALL_TTS: "true"
     volumes:
-      - ./config/models/kokoro-82m.yaml:/app/config/model.yaml:ro
-      - ./models:/app/models
+      - ../config/models/kokoro-82m.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
