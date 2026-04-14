@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import os
-from dataclasses import field
+import logging
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class AuthConfig(BaseModel):
@@ -117,5 +118,5 @@ def load_model_configs(models_dir: str | Path = "config/models") -> list[ModelCo
             config = ModelConfig(**data)
             configs.append(config)
         except Exception as e:
-            print(f"Warning: failed to load {yaml_file}: {e}")
+            logger.warning("Failed to load %s: %s", yaml_file, e)
     return configs
