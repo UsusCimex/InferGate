@@ -31,6 +31,12 @@ docker compose up -d
 # Docker (CPU-only, TTS only)
 docker compose -f docker-compose.cpu.yml up -d
 
+# Docker (distributed — each model in its own container, isolated deps)
+docker compose -f docker-compose.distributed.yml up -d
+
+# Run a single worker locally for development
+WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml uvicorn app.worker:app --port 8001
+
 # Download model weights
 docker compose run --rm infergate python scripts/download_models.py --all
 ```
@@ -44,6 +50,8 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 ### Key Architectural Patterns
 
 **Plugin-based providers**: Abstract bases in `app/providers/base.py` (`ImageProvider`, `TextProvider`, `TtsProvider`). New providers register via `@register_provider` decorator in `app/providers/registry.py`. Adding a model that uses an existing provider = just add a YAML file in `config/models/`.
+
+**Distributed mode**: When `worker_url` is set in a model's YAML config, `ProviderManager` creates a `RemoteProvider` (from `app/providers/remote.py`) that proxies HTTP requests to a standalone worker container (`app/worker.py`). This enables full dependency isolation — each model runs in its own container with its own library versions. Gateway image is lightweight (~500MB, `Dockerfile.gateway`), workers are specialized (`Dockerfile.worker` with `INSTALL_ML`/`INSTALL_TTS` build args).
 
 **FastAPI Depends DI**: Services initialized during FastAPI lifespan in `app/main.py`, stored on `app.state`, accessed by routers via `Depends()` from `app/dependencies.py`. Supports `dependency_overrides` for testing.
 
