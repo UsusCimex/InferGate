@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import OrderedDict
 from typing import Any
 
 from app.config import ModelConfig
@@ -20,7 +21,7 @@ class ProviderManager:
 
     def __init__(self, model_dir: str, max_loaded: int, pinned: list[str] | None = None):
         self._registry: dict[str, BaseProvider] = {}
-        self._loaded_order: list[str] = []
+        self._loaded_order: OrderedDict[str, None] = OrderedDict()
         self._max_loaded = max_loaded
         self._model_dir = model_dir
         self._pinned = set(pinned or [])
@@ -95,7 +96,7 @@ class ProviderManager:
             await provider.load(self._model_dir)
 
             async with self._state_lock:
-                self._loaded_order.append(model_id)
+                self._loaded_order[model_id] = None
             return provider
 
     async def load_model(self, model_id: str) -> None:
@@ -110,8 +111,7 @@ class ProviderManager:
                 return
             await provider.unload()
             async with self._state_lock:
-                if model_id in self._loaded_order:
-                    self._loaded_order.remove(model_id)
+                self._loaded_order.pop(model_id, None)
 
     async def _make_room(self) -> None:
         """Unload LRU GPU models until there's room."""
@@ -125,7 +125,7 @@ class ProviderManager:
                 break
             logger.info("Evicting model %s (LRU)", victim_id)
             await self._registry[victim_id].unload()
-            self._loaded_order.remove(victim_id)
+            del self._loaded_order[victim_id]
 
     def _find_lru_victim(self) -> str | None:
         """Find the least recently used non-pinned model."""
@@ -135,10 +135,9 @@ class ProviderManager:
         return None
 
     def _touch_lru(self, model_id: str) -> None:
-        """Move model to end of LRU list (most recently used)."""
+        """Move model to end of LRU (most recently used). O(1) with OrderedDict."""
         if model_id in self._loaded_order:
-            self._loaded_order.remove(model_id)
-            self._loaded_order.append(model_id)
+            self._loaded_order.move_to_end(model_id)
 
     def list_models(self) -> list[dict[str, Any]]:
         """List all models with their status."""
