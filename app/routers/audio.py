@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response, JSONResponse
 
-from app.schemas.audio import SpeechRequest
+from app.schemas.audio import AudioSpeechRequest
 from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_defaults
 from app.monitoring import is_prometheus_available, CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION
 
@@ -21,7 +21,7 @@ CONTENT_TYPES = {
 
 @router.post("/v1/audio/speech")
 async def create_speech(
-    body: SpeechRequest,
+    body: AudioSpeechRequest,
     request: Request,
     manager=Depends(get_provider_manager),
     scheduler=Depends(get_gpu_scheduler),

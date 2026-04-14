@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class SpeechRequest(BaseModel):
+class AudioSpeechRequest(BaseModel):
     model: str | None = None
     input: str = Field(..., min_length=1, max_length=100000)
     voice: str = "default"
