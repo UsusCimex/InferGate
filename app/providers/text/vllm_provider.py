@@ -56,12 +56,16 @@ class VllmTextProvider(TextProvider):
         import torch
 
         if self._engine:
+            if hasattr(self._engine, "shutdown"):
+                self._engine.shutdown()
             del self._engine
             self._engine = None
-        gc.collect()
+        self._tokenizer = None
         gc.collect()
         if torch.cuda.is_available():
+            torch.cuda.synchronize()
             torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
         self._loaded = False
         logger.info("Unloaded %s", self.model_id)
 

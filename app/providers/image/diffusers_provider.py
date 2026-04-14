@@ -67,15 +67,16 @@ class DiffusersImageProvider(ImageProvider):
         import torch
 
         if self._pipeline is not None:
-            # Release accelerate hooks (required for cpu_offload)
             if hasattr(self._pipeline, "maybe_free_model_hooks"):
                 self._pipeline.maybe_free_model_hooks()
             del self._pipeline
             self._pipeline = None
 
         gc.collect()
-        gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
         self._loaded = False
         logger.info("Unloaded %s", self.model_id)
 
