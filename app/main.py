@@ -111,6 +111,10 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     await manager.shutdown()
     await cache_mgr.close()
     logger.info("InferGate stopped")
