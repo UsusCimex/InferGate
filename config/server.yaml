@@ -9,7 +9,7 @@ auth:
 
 gpu:
   max_loaded_models: 3
-  pinned_models: ["kokoro-82m", "qwen3.5-4b"]
+  pinned_models: ["sd35-medium"]
   device: "cuda:0"
 
 queue:
@@ -33,6 +33,9 @@ defaults:
   image: sd35-medium
   text: qwen3.5-4b
   tts: kokoro-82m
+
+# Порядок предзагрузки: sd35-medium (pinned, всегда в GPU),
+# остальные загружаются по первому запросу и выгружаются LRU при нехватке VRAM.
 
 rate_limit:
   enabled: false
