@@ -29,13 +29,16 @@ class ProviderManager:
         self._model_locks: dict[str, asyncio.Lock] = {}  # per-model load serialization
 
     def validate_config(self) -> None:
-        """Validate that pinned models don't exceed max_loaded capacity."""
+        """Validate pinned models vs max_loaded capacity. Auto-correct if needed."""
         gpu_pinned = [m for m in self._pinned if self._is_gpu_model(m)]
         if len(gpu_pinned) >= self._max_loaded:
+            old_max = self._max_loaded
+            self._max_loaded = len(gpu_pinned) + 1
             logger.warning(
                 "Pinned GPU models (%d) >= max_loaded_models (%d). "
-                "Non-pinned models cannot be loaded.",
+                "Auto-increased max_loaded_models to %d.",
                 len(gpu_pinned),
+                old_max,
                 self._max_loaded,
             )
 
