@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 
 from fastapi import APIRouter, Depends, Request
@@ -10,6 +11,8 @@ from starlette.responses import StreamingResponse
 from app.schemas.chat import ChatCompletionRequest
 from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_defaults
 from app.monitoring import is_prometheus_available, CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -29,6 +32,7 @@ async def chat_completions(
 
     start = time.monotonic()
     provider = await manager.ensure_loaded(model_id)
+    t_loaded = time.monotonic()
     config = manager.get_config(model_id)
 
     params = {}
@@ -106,13 +110,25 @@ async def chat_completions(
     if should_cache:
         await cache.put(cache_key, json.dumps(result).encode(), model_id, cache_cfg)
 
-    elapsed = int((time.monotonic() - start) * 1000)
+    t_done = time.monotonic()
+    load_ms = int((t_loaded - start) * 1000)
+    inference_ms = int((t_done - inference_start) * 1000)
+    total_ms = int((t_done - start) * 1000)
+    overhead_ms = total_ms - inference_ms - load_ms
+
+    logger.info(
+        "chat %s: total=%dms (load=%dms, inference=%dms, overhead=%dms)",
+        model_id, total_ms, load_ms, inference_ms, overhead_ms,
+    )
+
     return JSONResponse(
         result,
         headers={
             "X-InferGate-Cache": cache_status,
             "X-InferGate-Model": model_id,
             "X-InferGate-Queue-Position": str(scheduler.last_position),
-            "X-InferGate-Generation-Ms": str(elapsed),
+            "X-InferGate-Generation-Ms": str(total_ms),
+            "X-InferGate-Load-Ms": str(load_ms),
+            "X-InferGate-Inference-Ms": str(inference_ms),
         },
     )
