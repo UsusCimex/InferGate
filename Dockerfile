@@ -30,12 +30,6 @@ COPY app/ ./app/
 COPY config/ ./config/
 COPY scripts/ ./scripts/
 
-# Non-root user for security
-RUN useradd -m -s /bin/bash infergate && \
-    mkdir -p /app/models /app/cache && \
-    chown -R infergate:infergate /app/models /app/cache
-USER infergate
-
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
