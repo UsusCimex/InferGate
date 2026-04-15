@@ -8,8 +8,8 @@ auth:
   api_keys: []
 
 gpu:
-  max_loaded_models: 2
-  pinned_models: ["kokoro-82m", "qwen3.5-4b", "sd35-medium"]
+  max_loaded_models: 3
+  pinned_models: ["kokoro-82m", "qwen3.5-4b"]
   device: "cuda:0"
 
 queue:

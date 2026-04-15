@@ -24,7 +24,7 @@ def test_default_server_config():
 def test_load_server_config():
     config = load_server_config("config/server.yaml")
     assert config.host == "0.0.0.0"
-    assert config.gpu.max_loaded_models == 2
+    assert config.gpu.max_loaded_models == 3
     assert config.cache.enabled is True
 
 
