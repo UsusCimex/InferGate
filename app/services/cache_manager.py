@@ -70,6 +70,10 @@ class CacheManager:
             await self._db.close()
             self._db = None
 
+    def is_initialized(self) -> bool:
+        """True when the metadata DB connection is open and ready."""
+        return self._db is not None
+
     async def record_miss(self, model_id: str) -> None:
         """Record a cache miss for accurate hit rate tracking."""
         if not self._db:

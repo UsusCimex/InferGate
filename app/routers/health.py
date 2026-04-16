@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/health")
 async def health(cache=Depends(get_cache_manager)):
-    if cache._db is None:
+    if not cache.is_initialized():
         return JSONResponse({"status": "unhealthy", "reason": "cache DB not initialized"}, status_code=503)
     return {"status": "ok"}
 
