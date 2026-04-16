@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 from collections import OrderedDict
 from typing import Any
 
@@ -11,8 +13,15 @@ from app.providers.registry import get_provider_class
 
 logger = logging.getLogger(__name__)
 
+_WORKER_MONITOR_INTERVAL = 10  # seconds between health checks
+
 
 class ModelNotFoundError(Exception):
+    pass
+
+
+class WorkerNotReadyError(Exception):
+    """Raised when a remote worker is not yet available."""
     pass
 
 
@@ -27,6 +36,7 @@ class ProviderManager:
         self._pinned = set(pinned or [])
         self._state_lock = asyncio.Lock()  # protects _loaded_order and state changes
         self._model_locks: dict[str, asyncio.Lock] = {}  # per-model load serialization
+        self._monitor_task: asyncio.Task | None = None
 
     def validate_config(self) -> None:
         """Validate pinned models vs max_loaded capacity. Auto-correct if needed."""
@@ -48,6 +58,14 @@ class ProviderManager:
             if not config.enabled:
                 logger.info("Skipping disabled model: %s", config.id)
                 continue
+
+            # Resolve worker URL from env var (e.g. WORKER_URL_QWEN3_5_4B)
+            if not config.worker_url:
+                env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", config.id.upper())
+                env_url = os.environ.get(env_key)
+                if env_url:
+                    config.worker_url = env_url
+
             try:
                 if config.worker_url:
                     provider = self._create_remote_provider(config)
@@ -89,10 +107,66 @@ class ProviderManager:
         provider = self._registry.get(model_id)
         return provider is not None and provider.vram_mb > 0
 
+    def _is_remote(self, model_id: str) -> bool:
+        """Check if model is served by a remote worker."""
+        provider = self._registry.get(model_id)
+        return provider is not None and bool(provider.config.worker_url)
+
     def _get_model_lock(self, model_id: str) -> asyncio.Lock:
         if model_id not in self._model_locks:
             self._model_locks[model_id] = asyncio.Lock()
         return self._model_locks[model_id]
+
+    # ── Worker monitor ────────────────────────────────────────────────
+
+    def start_worker_monitor(self) -> None:
+        """Start background task that connects to remote workers."""
+        self._monitor_task = asyncio.create_task(self._monitor_workers())
+
+    def stop_worker_monitor(self) -> None:
+        if self._monitor_task:
+            self._monitor_task.cancel()
+
+    async def _monitor_workers(self) -> None:
+        """Periodically probe remote workers and connect when ready."""
+        remote_models = {
+            mid: p for mid, p in self._registry.items() if p.config.worker_url
+        }
+        if remote_models:
+            waiting = ", ".join(remote_models.keys())
+            logger.info("Worker monitor started — watching %d workers: %s", len(remote_models), waiting)
+
+        while True:
+            for model_id, provider in remote_models.items():
+                if provider.is_loaded():
+                    # Verify still healthy
+                    if hasattr(provider, "check_health"):
+                        healthy = await provider.check_health()
+                        if not healthy:
+                            logger.warning(
+                                "Worker disconnected: %s (%s) — marking unavailable",
+                                model_id, provider.config.worker_url,
+                            )
+                            provider._loaded = False
+                            async with self._state_lock:
+                                self._loaded_order.pop(model_id, None)
+                    continue
+
+                # Try to connect
+                try:
+                    await provider.load(self._model_dir)
+                    async with self._state_lock:
+                        self._loaded_order[model_id] = None
+                    logger.info(
+                        "Worker ready: %s (%s) — model is now available",
+                        model_id, provider.config.worker_url,
+                    )
+                except Exception:
+                    pass  # Will retry next cycle
+
+            await asyncio.sleep(_WORKER_MONITOR_INTERVAL)
+
+    # ── Model loading ─────────────────────────────────────────────────
 
     async def ensure_loaded(self, model_id: str) -> BaseProvider:
         """Load model if not loaded. LRU swap if no slots available."""
@@ -102,6 +176,13 @@ class ProviderManager:
             if provider.is_loaded():
                 self._touch_lru(model_id)
                 return provider
+
+        # Remote models: fail fast — background monitor handles connection
+        if self._is_remote(model_id):
+            raise WorkerNotReadyError(
+                f"Worker for model '{model_id}' is not available yet. "
+                f"It may still be starting up — try again in a few seconds."
+            )
 
         # Slow path: per-model lock so only one load at a time per model,
         # but other models remain accessible
@@ -167,7 +248,7 @@ class ProviderManager:
         result = []
         for model_id, provider in self._registry.items():
             cfg = provider.config
-            result.append({
+            model_info: dict[str, Any] = {
                 "id": cfg.id,
                 "object": "model",
                 "created": 0,
@@ -177,7 +258,12 @@ class ProviderManager:
                 "loaded": provider.is_loaded(),
                 "enabled": cfg.enabled,
                 "metadata": cfg.metadata.model_dump(),
-            })
+            }
+            if cfg.worker_url:
+                model_info["remote"] = True
+                model_info["worker_url"] = cfg.worker_url
+                model_info["worker_status"] = "connected" if provider.is_loaded() else "waiting"
+            result.append(model_info)
         return result
 
     def loaded_models(self) -> list[str]:
@@ -185,8 +271,13 @@ class ProviderManager:
         return list(self._loaded_order)
 
     async def shutdown(self, timeout_per_model: float = 30.0) -> None:
-        """Unload all models on shutdown with per-model timeout."""
+        """Unload all models on shutdown with per-model timeout.
+        Remote workers are skipped — they manage their own lifecycle.
+        """
+        self.stop_worker_monitor()
         for model_id in list(self._loaded_order):
+            if self._is_remote(model_id):
+                continue
             try:
                 async with asyncio.timeout(timeout_per_model):
                     await self._registry[model_id].unload()
