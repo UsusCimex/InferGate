@@ -2,14 +2,15 @@ id: flux1-schnell
 display_name: "FLUX.1 Schnell"
 category: image
 provider_class: DiffusersImageProvider
-enabled: false
+enabled: true
 
 model:
   hub_id: "black-forest-labs/FLUX.1-schnell"
   revision: "main"
-  torch_dtype: float16
-  variant: fp16
-  vram_mb: 8000
+  torch_dtype: bfloat16
+  vram_mb: 11000
+  # Same 12B transformer as dev — offload keeps it comfortable on a 12GB card.
+  cpu_offload: true
   default_params:
     num_inference_steps: 4
     guidance_scale: 0.0

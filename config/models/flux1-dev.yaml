@@ -2,14 +2,17 @@ id: flux1-dev
 display_name: "FLUX.1 Dev"
 category: image
 provider_class: DiffusersImageProvider
-enabled: false
+enabled: true
 
 model:
   hub_id: "black-forest-labs/FLUX.1-dev"
   revision: "main"
-  torch_dtype: float16
-  variant: fp16
-  vram_mb: 12000
+  torch_dtype: bfloat16
+  vram_mb: 11000
+  # 12B-param transformer + 5B T5 encoder cannot co-reside in 12GB at FP16.
+  # Model CPU offload keeps weights in RAM and streams them to GPU per-stage;
+  # ~1.5-2x slower than no-offload but fits a 12GB RTX 5070 comfortably.
+  cpu_offload: true
   default_params:
     num_inference_steps: 28
     guidance_scale: 3.5
