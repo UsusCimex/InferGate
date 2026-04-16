@@ -186,23 +186,28 @@ class VllmTextProvider(TextProvider):
         created = int(time.time())
 
         prev_text_len = 0
-        async for output in self._engine.generate(prompt, sampling, request_id):
-            if output.outputs:
-                new_text = output.outputs[0].text[prev_text_len:]
-                prev_text_len = len(output.outputs[0].text)
-                if new_text:
-                    chunk = {
-                        "id": completion_id,
-                        "object": "chat.completion.chunk",
-                        "created": created,
-                        "model": self.model_id,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"content": new_text},
-                            "finish_reason": None,
-                        }],
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
+        try:
+            async for output in self._engine.generate(prompt, sampling, request_id):
+                if output.outputs:
+                    new_text = output.outputs[0].text[prev_text_len:]
+                    prev_text_len = len(output.outputs[0].text)
+                    if new_text:
+                        chunk = {
+                            "id": completion_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": self.model_id,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": new_text},
+                                "finish_reason": None,
+                            }],
+                        }
+                        yield f"data: {json.dumps(chunk)}\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            # Client disconnected — abort generation to free GPU immediately
+            await self._abort_request(request_id)
+            raise
 
         # Final chunk with finish_reason
         final_chunk = {
@@ -218,6 +223,20 @@ class VllmTextProvider(TextProvider):
         }
         yield f"data: {json.dumps(final_chunk)}\n\n"
         yield "data: [DONE]\n\n"
+
+    async def _abort_request(self, request_id: str) -> None:
+        """Best-effort abort of an in-flight vLLM request."""
+        if self._engine is None:
+            return
+        abort = getattr(self._engine, "abort", None) or getattr(self._engine, "abort_request", None)
+        if abort is None:
+            return
+        try:
+            result = abort(request_id)
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as e:
+            logger.debug("Failed to abort vLLM request %s: %s", request_id, e)
 
     def _build_prompt(self, messages: list[dict], thinking: bool = True):
         """Build a TokensPrompt from chat messages for vLLM v0.17+.
