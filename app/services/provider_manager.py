@@ -13,7 +13,8 @@ from app.providers.registry import get_provider_class
 
 logger = logging.getLogger(__name__)
 
-_WORKER_MONITOR_INTERVAL = 10  # seconds between health checks
+_WORKER_MONITOR_INTERVAL = 10  # base seconds between health checks
+_WORKER_MAX_BACKOFF = 300  # cap probing interval at 5 minutes
 
 
 class ModelNotFoundError(Exception):
@@ -133,7 +134,12 @@ class ProviderManager:
             self._monitor_task.cancel()
 
     async def _monitor_workers(self) -> None:
-        """Periodically probe remote workers and connect when ready."""
+        """Periodically probe remote workers and connect when ready.
+
+        Each worker gets an exponential-backoff retry schedule after
+        consecutive failures, capped at _WORKER_MAX_BACKOFF seconds, so
+        persistently broken workers don't flood the network with probes.
+        """
         remote_models = {
             mid: p for mid, p in self._registry.items() if p.config.worker_url
         }
@@ -141,7 +147,11 @@ class ProviderManager:
             waiting = ", ".join(remote_models.keys())
             logger.info("Worker monitor started — watching %d workers: %s", len(remote_models), waiting)
 
+        next_probe: dict[str, float] = {mid: 0.0 for mid in remote_models}
+        fail_counts: dict[str, int] = {mid: 0 for mid in remote_models}
+
         while True:
+            now = asyncio.get_running_loop().time()
             for model_id, provider in remote_models.items():
                 if provider.is_loaded():
                     # Verify still healthy
@@ -155,6 +165,11 @@ class ProviderManager:
                             provider._loaded = False
                             async with self._state_lock:
                                 self._loaded_order.pop(model_id, None)
+                            fail_counts[model_id] = 0
+                            next_probe[model_id] = now
+                    continue
+
+                if now < next_probe[model_id]:
                     continue
 
                 # Try to connect
@@ -166,10 +181,19 @@ class ProviderManager:
                         "Worker ready: %s (%s) — model is now available",
                         model_id, provider.config.worker_url,
                     )
+                    fail_counts[model_id] = 0
+                    next_probe[model_id] = now
                 except Exception as e:
+                    fail_counts[model_id] += 1
+                    delay = min(
+                        _WORKER_MONITOR_INTERVAL * (2 ** (fail_counts[model_id] - 1)),
+                        _WORKER_MAX_BACKOFF,
+                    )
+                    next_probe[model_id] = now + delay
                     logger.debug(
-                        "Worker %s (%s) not ready yet: %s",
-                        model_id, provider.config.worker_url, e,
+                        "Worker %s (%s) not ready (fail #%d, retry in %ds): %s",
+                        model_id, provider.config.worker_url,
+                        fail_counts[model_id], int(delay), e,
                     )
 
             await asyncio.sleep(_WORKER_MONITOR_INTERVAL)
