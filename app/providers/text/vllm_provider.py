@@ -49,9 +49,9 @@ class VllmTextProvider(TextProvider):
         )
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
 
-        # Get tokenizer for proper chat template formatting
+        # Get tokenizer (synchronous in vLLM v0.17+)
         try:
-            self._tokenizer = await self._engine.get_tokenizer()
+            self._tokenizer = self._engine.get_tokenizer()
         except Exception:
             self._tokenizer = None
             logger.warning("Could not get tokenizer for %s, falling back to ChatML", self.model_id)
@@ -111,7 +111,7 @@ class VllmTextProvider(TextProvider):
             else:
                 messages.insert(0, {"role": "system", "content": "Respond with valid JSON only."})
 
-        prompt = self._format_messages(messages, thinking=thinking)
+        prompt = self._build_prompt(messages, thinking=thinking)
         request_id = str(uuid.uuid4())
 
         output_text = ""
@@ -176,7 +176,7 @@ class VllmTextProvider(TextProvider):
             else:
                 messages.insert(0, {"role": "system", "content": "Respond with valid JSON only."})
 
-        prompt = self._format_messages(messages, thinking=thinking)
+        prompt = self._build_prompt(messages, thinking=thinking)
         request_id = str(uuid.uuid4())
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
@@ -215,20 +215,43 @@ class VllmTextProvider(TextProvider):
         yield f"data: {json.dumps(final_chunk)}\n\n"
         yield "data: [DONE]\n\n"
 
-    def _format_messages(self, messages: list[dict], thinking: bool = True) -> str:
-        """Format chat messages using tokenizer's chat template when available.
-        Falls back to ChatML format for models without a template.
+    def _build_prompt(self, messages: list[dict], thinking: bool = True):
+        """Build a TokensPrompt from chat messages for vLLM v0.17+.
+        Uses the model's native chat template when available, falls back to ChatML.
         """
-        # Use tokenizer's built-in chat template (works for Llama, Mistral, Qwen, etc.)
-        if self._tokenizer and hasattr(self._tokenizer, "apply_chat_template"):
-            try:
-                return self._tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-            except Exception:
-                pass  # Fall through to manual ChatML
+        from vllm import TokensPrompt
 
-        # Fallback: manual ChatML format
+        if self._tokenizer and hasattr(self._tokenizer, "apply_chat_template"):
+            token_ids = self._apply_template(messages, thinking)
+            if token_ids is not None:
+                return TokensPrompt(prompt_token_ids=token_ids)
+
+        # Fallback: manual ChatML → tokenize
+        text = self._format_chatml(messages, thinking)
+        if self._tokenizer:
+            return TokensPrompt(prompt_token_ids=self._tokenizer.encode(text))
+        return text
+
+    def _apply_template(self, messages: list[dict], thinking: bool) -> list[int] | None:
+        """Try applying the model's chat template. Returns token IDs or None."""
+        kwargs: dict[str, Any] = {"tokenize": True, "add_generation_prompt": True}
+        if not thinking:
+            kwargs["enable_thinking"] = False
+        try:
+            return self._tokenizer.apply_chat_template(messages, **kwargs)
+        except TypeError:
+            # enable_thinking not supported by this template — retry without
+            kwargs.pop("enable_thinking", None)
+            try:
+                return self._tokenizer.apply_chat_template(messages, **kwargs)
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _format_chatml(messages: list[dict], thinking: bool) -> str:
+        """Manual ChatML format for models without a chat template."""
         parts = []
         for msg in messages:
             role = msg.get("role", "user")
