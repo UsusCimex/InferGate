@@ -165,8 +165,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 10
+      start_period: 600s
 
   worker-flux1-dev:
     <<: *gpu-worker
@@ -186,8 +186,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 10
+      start_period: 600s
 
   worker-flux1-schnell:
     <<: *gpu-worker
@@ -207,8 +207,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 10
+      start_period: 600s
 
   worker-flux2-klein-4b:
     <<: *gpu-worker
@@ -228,8 +228,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 120s
+      retries: 10
+      start_period: 600s
 
   # ─── TTS workers ────────────────────────────────────────────────────
   worker-kokoro-82m:
