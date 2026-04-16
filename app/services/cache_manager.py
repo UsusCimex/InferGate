@@ -328,6 +328,7 @@ class CacheManager:
             row = await cursor.fetchone()
             current = row[0] if row else 0
 
+        to_delete: list[str] = []
         while current + needed > max_bytes:
             async with self._db.execute(
                 "SELECT key, file_path, size_bytes FROM cache_entries WHERE model_id = ? ORDER BY last_accessed ASC LIMIT 1",
@@ -337,10 +338,14 @@ class CacheManager:
             if row is None:
                 break
             key, file_path, size = row
-            Path(file_path).unlink(missing_ok=True)
+            # Delete from DB first so a crash cannot leave orphan rows pointing
+            # at files we've already removed.
             await self._db.execute("DELETE FROM cache_entries WHERE key = ?", (key,))
+            to_delete.append(file_path)
             current -= size
         await self._db.commit()
+        for file_path in to_delete:
+            Path(file_path).unlink(missing_ok=True)
 
     async def _evict_global(self, needed: int) -> None:
         """Evict LRU entries globally to fit within total limit."""
@@ -350,6 +355,7 @@ class CacheManager:
             row = await cursor.fetchone()
             current = row[0] if row else 0
 
+        to_delete: list[str] = []
         while current + needed > self._max_total_bytes:
             async with self._db.execute(
                 "SELECT key, file_path, size_bytes FROM cache_entries ORDER BY last_accessed ASC LIMIT 1"
@@ -358,10 +364,12 @@ class CacheManager:
             if row is None:
                 break
             key, file_path, size = row
-            Path(file_path).unlink(missing_ok=True)
             await self._db.execute("DELETE FROM cache_entries WHERE key = ?", (key,))
+            to_delete.append(file_path)
             current -= size
         await self._db.commit()
+        for file_path in to_delete:
+            Path(file_path).unlink(missing_ok=True)
 
 
 def _guess_extension(data: bytes) -> str:
