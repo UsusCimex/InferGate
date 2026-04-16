@@ -246,7 +246,7 @@ class CacheManager:
             (now,),
         ) as cursor:
             rows = await cursor.fetchall()
-        for key, file_path in rows:
+        for _key, file_path in rows:
             path = Path(file_path)
             if path.exists():
                 path.unlink(missing_ok=True)

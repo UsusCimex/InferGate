@@ -1,6 +1,7 @@
 """Remote providers that proxy requests to worker containers via HTTP."""
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -36,17 +37,15 @@ class _RemoteMixin:
                 resp = await self._client.get("/health")
                 if resp.status_code != 200:
                     raise RuntimeError(f"Worker {self._worker_url} returned status {resp.status_code}")
-            except httpx.HTTPError:
+            except httpx.HTTPError as e:
                 await self._client.aclose()
                 self._client = None
                 raise RuntimeError(
                     f"Worker at {self._worker_url} is not reachable"
-                )
+                ) from e
 
-            try:
+            with contextlib.suppress(httpx.HTTPError):
                 await self._client.post("/load")
-            except httpx.HTTPError:
-                pass
         finally:
             httpx_logger.setLevel(prev_level)
 
@@ -56,10 +55,8 @@ class _RemoteMixin:
     async def _remote_unload(self) -> None:
         """Disconnect from worker."""
         if self._client:
-            try:
+            with contextlib.suppress(httpx.HTTPError):
                 await self._client.post("/unload")
-            except httpx.HTTPError:
-                pass
             await self._client.aclose()
             self._client = None
         self._loaded = False  # type: ignore[attr-defined]

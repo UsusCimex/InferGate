@@ -22,10 +22,7 @@ class ApiKeyMiddleware:
         headers = dict(scope.get("headers", []))
         auth_header = headers.get(b"authorization", b"").decode()
 
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-        else:
-            token = auth_header
+        token = auth_header[7:] if auth_header.startswith("Bearer ") else auth_header
 
         if not token or token not in self._api_keys:
             body = json.dumps(

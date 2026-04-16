@@ -278,7 +278,7 @@ class ProviderManager:
     def list_models(self) -> list[dict[str, Any]]:
         """List all models with their status."""
         result = []
-        for model_id, provider in self._registry.items():
+        for provider in self._registry.values():
             cfg = provider.config
             model_info: dict[str, Any] = {
                 "id": cfg.id,

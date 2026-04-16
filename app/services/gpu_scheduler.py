@@ -66,7 +66,7 @@ class GpuScheduler:
         model_id: str,
         priority: Any,
         coro: Awaitable[Any],
-        timeout: float,
+        timeout: float,  # noqa: ASYNC109 — SLO-level deadline, not a cancel token
     ) -> Any:
         """Submit task to the scheduler. Higher priority requests jump the line."""
         async with self._lock:
@@ -97,10 +97,10 @@ class GpuScheduler:
                 async with self._lock:
                     self._total_completed += 1
                 return result
-            except TimeoutError:
+            except TimeoutError as e:
                 raise RequestTimeoutError(
                     f"Generation timed out after {timeout}s for model {model_id}"
-                )
+                ) from e
         finally:
             if slot_held:
                 await self._release_slot(queue)
@@ -122,7 +122,7 @@ class GpuScheduler:
         except asyncio.CancelledError:
             # Two cases: we were still waiting, or we were already granted a slot.
             async with queue.lock:
-                for i, (p, s, f) in enumerate(queue.waiters):
+                for i, (_p, _s, f) in enumerate(queue.waiters):
                     if f is fut:
                         queue.waiters.pop(i)
                         heapq.heapify(queue.waiters)

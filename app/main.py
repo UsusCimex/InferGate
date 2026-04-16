@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 import warnings
@@ -66,10 +67,12 @@ async def lifespan(app: FastAPI):
     manager.start_worker_monitor()
 
     # Preload local models so first requests are fast
-    preload_ids = list(dict.fromkeys(
-        [defaults.get("text"), defaults.get("tts"), defaults.get("image")]
-        + list(server_cfg.gpu.pinned_models)
-    ))
+    preload_ids = list(dict.fromkeys([
+        defaults.get("text"),
+        defaults.get("tts"),
+        defaults.get("image"),
+        *server_cfg.gpu.pinned_models,
+    ]))
     for model_id in preload_ids:
         if model_id is None:
             continue
@@ -107,10 +110,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     cleanup_task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await cleanup_task
-    except asyncio.CancelledError:
-        pass
     await manager.shutdown()
     await cache_mgr.close()
     logger.info("InferGate stopped")
