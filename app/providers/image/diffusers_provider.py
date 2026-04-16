@@ -16,6 +16,26 @@ _GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 )
 
 
+def _nf4_kwargs(dtype: Any) -> tuple[str, dict[str, Any]]:
+    return "bitsandbytes_4bit", {
+        "load_in_4bit": True,
+        "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_compute_dtype": dtype,
+    }
+
+
+def _fp8_kwargs(_dtype: Any) -> tuple[str, dict[str, Any]]:
+    return "quanto", {"weights_dtype": "float8"}
+
+
+_QUANT_BACKENDS = {
+    "nf4": _nf4_kwargs,
+    "int4": _nf4_kwargs,
+    "fp8": _fp8_kwargs,
+    "float8": _fp8_kwargs,
+}
+
+
 @register_provider
 class DiffusersImageProvider(ImageProvider):
     """Universal provider for any diffusers-compatible model.
@@ -49,14 +69,26 @@ class DiffusersImageProvider(ImageProvider):
             kwargs["text_encoder_3"] = None
             kwargs["tokenizer_3"] = None
 
+        # Optional weight-only quantization (nf4 via bitsandbytes, fp8 via quanto).
+        # Quantises just the large components (transformer, T5) so the pipeline
+        # fits on consumer GPUs without meaningful quality loss.
+        quantization = self.config.model.get("quantization")
+        if quantization:
+            kwargs["quantization_config"] = self._build_quantization_config(
+                quantization, dtype
+            )
+
         cpu_offload = self.config.model.get("cpu_offload", False)
+        sequential_offload = self.config.model.get("sequential_cpu_offload", False)
 
         logger.info("Loading %s from %s", self.model_id, hub_id)
         loop = asyncio.get_running_loop()
 
         def _load():
             pipe = DiffusionPipeline.from_pretrained(hub_id, **kwargs)
-            if cpu_offload:
+            if sequential_offload:
+                pipe.enable_sequential_cpu_offload()
+            elif cpu_offload:
                 pipe.enable_model_cpu_offload()
             else:
                 pipe.to("cuda")
@@ -65,6 +97,27 @@ class DiffusersImageProvider(ImageProvider):
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
+
+    def _build_quantization_config(self, quantization: str, dtype: Any) -> Any:
+        """Translate YAML `quantization: nf4|fp8` into a diffusers pipeline config."""
+        from diffusers import PipelineQuantizationConfig
+
+        try:
+            backend_builder = _QUANT_BACKENDS[quantization.lower()]
+        except KeyError as e:
+            raise ValueError(
+                f"Unsupported quantization '{quantization}' for {self.model_id}. "
+                f"Supported: {sorted(_QUANT_BACKENDS)}"
+            ) from e
+        components = self.config.model.get(
+            "quantize_components", ["transformer", "text_encoder_2"]
+        )
+        backend, quant_kwargs = backend_builder(dtype)
+        return PipelineQuantizationConfig(
+            quant_backend=backend,
+            quant_kwargs=quant_kwargs,
+            components_to_quantize=components,
+        )
 
     async def unload(self) -> None:
         import gc
