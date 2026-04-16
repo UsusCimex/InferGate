@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-# Workaround: import setuptools before distutils to avoid vLLM assertion error
-import setuptools  # noqa: F401
-
 import asyncio
 import logging
 import time
@@ -19,7 +16,7 @@ from app.config import load_model_configs, load_server_config
 from app.routers import audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
-from app.services.provider_manager import ModelNotFoundError, ProviderManager
+from app.services.provider_manager import ModelNotFoundError, ProviderManager, WorkerNotReadyError
 
 logger = logging.getLogger("infergate")
 
@@ -65,8 +62,10 @@ async def lifespan(app: FastAPI):
     app.state.defaults = defaults
     app.state.start_time = time.time()
 
-    # Preload default models so first requests are fast
-    # Order: text (vLLM) first, then others — avoids distutils/setuptools conflicts
+    # Start background worker monitor for remote models
+    manager.start_worker_monitor()
+
+    # Preload local models so first requests are fast
     preload_ids = list(dict.fromkeys(
         [defaults.get("text"), defaults.get("tts"), defaults.get("image")]
         + list(server_cfg.gpu.pinned_models)
@@ -75,6 +74,8 @@ async def lifespan(app: FastAPI):
         if model_id is None:
             continue
         try:
+            if manager.get_config(model_id).worker_url:
+                continue  # remote models are handled by worker monitor
             await manager.ensure_loaded(model_id)
             logger.info("Preloaded model: %s", model_id)
         except Exception as e:
@@ -154,6 +155,12 @@ def create_app() -> FastAPI:
     async def model_not_found_handler(request, exc):
         return JSONResponse(
             {"error": {"message": str(exc), "type": "not_found"}}, status_code=404
+        )
+
+    @app.exception_handler(WorkerNotReadyError)
+    async def worker_not_ready_handler(request, exc):
+        return JSONResponse(
+            {"error": {"message": str(exc), "type": "worker_not_ready"}}, status_code=503
         )
 
     @app.exception_handler(RequestTimeoutError)

@@ -37,6 +37,23 @@ async def lifespan(app: FastAPI):
     config = load_single_model_config(config_path)
     logger.info("Worker starting for model: %s (%s)", config.id, config.provider_class)
 
+    # GPU compatibility check
+    vram_mb = config.model.get("vram_mb", 0)
+    if vram_mb > 0:
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                logger.error("CUDA not available — cannot load GPU model %s", config.id)
+                raise RuntimeError("CUDA is not available")
+            gpu_name = torch.cuda.get_device_name(0)
+            cc = torch.cuda.get_device_capability(0)
+            logger.info(
+                "GPU: %s (compute capability %d.%d), CUDA %s, PyTorch %s",
+                gpu_name, cc[0], cc[1], torch.version.cuda, torch.__version__,
+            )
+        except ImportError:
+            logger.warning("torch not available — skipping GPU check")
+
     provider_cls = get_provider_class(config.provider_class)
     provider = provider_cls(config)
     await provider.load(models_dir)
@@ -67,7 +84,12 @@ async def health(request: Request):
 
 @app.post("/load")
 async def load(request: Request):
-    """Explicit load signal from gateway. Model is already loaded at startup."""
+    """Explicit load signal from gateway. Reloads model if it was previously unloaded."""
+    provider: BaseProvider = request.app.state.provider
+    if not provider.is_loaded():
+        models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
+        await provider.load(models_dir)
+        logger.info("Reloaded %s via /load", request.app.state.config.id)
     return {"status": "ok", "model": request.app.state.config.id}
 
 
