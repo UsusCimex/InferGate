@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -8,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import aiofiles
 import aiosqlite
 
 from app.config import CacheStrategy
@@ -33,7 +35,7 @@ class CacheManager:
 
     async def initialize(self) -> None:
         """Create cache directory and initialize SQLite metadata DB."""
-        self._base_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(self._base_dir.mkdir, parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self._db_path))
         await self._db.execute("PRAGMA journal_mode=WAL")
         # Trigger automatic checkpoint every ~1000 pages (~4 MB) to keep the
@@ -127,7 +129,7 @@ class CacheManager:
             return None
 
         path = Path(file_path)
-        if not path.exists():
+        if not await asyncio.to_thread(path.exists):
             await self.invalidate_key(key)
             return None
 
@@ -137,7 +139,8 @@ class CacheManager:
             (time.time(), key),
         )
         await self._db.commit()
-        return path.read_bytes()
+        async with aiofiles.open(path, "rb") as f:
+            return await f.read()
 
     async def put(
         self, key: str, data: bytes, model_id: str, cache_config: dict
@@ -147,11 +150,8 @@ class CacheManager:
             return
 
         model_dir = self._base_dir / model_id
-        model_dir.mkdir(parents=True, exist_ok=True)
-
-        # Use first 2 chars of key as subdirectory for sharding
         shard_dir = model_dir / key[:2]
-        shard_dir.mkdir(exist_ok=True)
+        await asyncio.to_thread(shard_dir.mkdir, parents=True, exist_ok=True)
 
         # Determine file extension from data
         ext = _guess_extension(data)
@@ -171,7 +171,8 @@ class CacheManager:
         # Write to temp file first, then commit DB, then atomic rename
         tmp_path = file_path.with_suffix(".tmp")
         try:
-            tmp_path.write_bytes(data)
+            async with aiofiles.open(tmp_path, "wb") as f:
+                await f.write(data)
             await self._db.execute(
                 """INSERT OR REPLACE INTO cache_entries
                    (key, model_id, file_path, size_bytes, created_at, last_accessed, ttl_expires, hit_count)
@@ -179,9 +180,9 @@ class CacheManager:
                 (key, model_id, str(file_path), size_bytes, time.time(), time.time(), ttl_expires),
             )
             await self._db.commit()
-            tmp_path.replace(file_path)
+            await asyncio.to_thread(tmp_path.replace, file_path)
         except Exception:
-            tmp_path.unlink(missing_ok=True)
+            await asyncio.to_thread(tmp_path.unlink, missing_ok=True)
             raise
 
     async def invalidate_key(self, key: str) -> bool:
@@ -194,10 +195,9 @@ class CacheManager:
         if row is None:
             return False
         path = Path(row[0])
-        if path.exists():
-            path.unlink()
         await self._db.execute("DELETE FROM cache_entries WHERE key = ?", (key,))
         await self._db.commit()
+        await asyncio.to_thread(path.unlink, missing_ok=True)
         return True
 
     async def invalidate_model(self, model_id: str) -> int:
@@ -213,8 +213,8 @@ class CacheManager:
         await self._db.commit()
 
         model_dir = self._base_dir / model_id
-        if model_dir.exists():
-            shutil.rmtree(model_dir, ignore_errors=True)
+        if await asyncio.to_thread(model_dir.exists):
+            await asyncio.to_thread(shutil.rmtree, model_dir, ignore_errors=True)
         return count
 
     async def invalidate_all(self) -> int:
@@ -228,6 +228,10 @@ class CacheManager:
         await self._db.commit()
 
         # Remove all model subdirectories but keep SQLite files
+        await asyncio.to_thread(self._cleanup_cache_tree)
+        return count
+
+    def _cleanup_cache_tree(self) -> None:
         for child in self._base_dir.iterdir():
             if child.name.startswith("_meta.db"):
                 continue  # skip _meta.db, _meta.db-wal, _meta.db-shm
@@ -235,7 +239,6 @@ class CacheManager:
                 shutil.rmtree(child, ignore_errors=True)
             elif child.is_file():
                 child.unlink(missing_ok=True)
-        return count
 
     async def invalidate_expired(self) -> int:
         if not self._db:
@@ -246,15 +249,12 @@ class CacheManager:
             (now,),
         ) as cursor:
             rows = await cursor.fetchall()
-        for _key, file_path in rows:
-            path = Path(file_path)
-            if path.exists():
-                path.unlink(missing_ok=True)
         await self._db.execute(
             "DELETE FROM cache_entries WHERE ttl_expires IS NOT NULL AND ttl_expires < ?",
             (now,),
         )
         await self._db.commit()
+        await asyncio.to_thread(_unlink_many, [fp for _, fp in rows])
         return len(rows)
 
     async def stats(self, model_id: str | None = None) -> dict:
@@ -344,8 +344,7 @@ class CacheManager:
             to_delete.append(file_path)
             current -= size
         await self._db.commit()
-        for file_path in to_delete:
-            Path(file_path).unlink(missing_ok=True)
+        await asyncio.to_thread(_unlink_many, to_delete)
 
     async def _evict_global(self, needed: int) -> None:
         """Evict LRU entries globally to fit within total limit."""
@@ -368,8 +367,13 @@ class CacheManager:
             to_delete.append(file_path)
             current -= size
         await self._db.commit()
-        for file_path in to_delete:
-            Path(file_path).unlink(missing_ok=True)
+        await asyncio.to_thread(_unlink_many, to_delete)
+
+
+def _unlink_many(paths: list[str]) -> None:
+    """Best-effort bulk unlink executed in a worker thread."""
+    for p in paths:
+        Path(p).unlink(missing_ok=True)
 
 
 def _guess_extension(data: bytes) -> str:
