@@ -49,6 +49,7 @@ services:
       - WORKER_URL_FLUX1_DEV=http://worker-flux1-dev:8001
       - WORKER_URL_FLUX1_SCHNELL=http://worker-flux1-schnell:8001
       - WORKER_URL_FLUX2_KLEIN_4B=http://worker-flux2-klein-4b:8001
+      - WORKER_URL_QWEN_IMAGE=http://worker-qwen-image:8001
       - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
     volumes:
@@ -220,6 +221,27 @@ services:
         <<: *gpu-build-args
     volumes:
       - ../config/models/flux2-klein-4b.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+
+  worker-qwen-image:
+    <<: *gpu-worker
+    profiles: ["qwen-image"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/qwen-image/Dockerfile
+      args:
+        <<: *gpu-build-args
+    volumes:
+      - ../config/models/qwen-image.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
