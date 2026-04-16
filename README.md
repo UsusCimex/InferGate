@@ -28,40 +28,36 @@ Self-hosted OpenAI-совместимый AI-шлюз для локальных 
 
 ## 1. Быстрый старт
 
-### Docker (GPU) — монолит
+### Docker — изолированные контейнеры
+
+Каждая модель работает в своём контейнере с собственными зависимостями. Docker Compose profiles позволяют выбрать, какие модели запускать.
 
 ```bash
 git clone https://github.com/UsusCimex/infergate.git
 cd infergate
 
-# Собрать образ
-docker compose build
+# Собрать и запустить текстовые + TTS модели
+docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
 
-# Скачать веса моделей
-docker compose run --rm infergate python scripts/download_models.py --all
+# Или запустить конкретные модели
+docker compose -f deploy/docker-compose.yml --profile qwen3.5-4b --profile kokoro-82m up -d
 
-# Запустить
-docker compose up -d
+# Или все категории
+docker compose -f deploy/docker-compose.yml --profile text --profile image --profile tts up -d
 
 # Проверить
 curl http://localhost:8000/health
 ```
 
-### Docker (Distributed) — изолированные контейнеры
+#### Доступные profiles
 
-Каждая модель в своём контейнере с собственными зависимостями. Нет конфликтов библиотек.
-
-```bash
-docker compose -f deploy/docker-compose.distributed.yml up -d
-```
-
-### Docker (только CPU)
-
-```bash
-docker compose -f deploy/docker-compose.cpu.yml up -d
-```
-
-Лёгкий образ без GPU-зависимостей. Доступны только TTS-модели (Kokoro).
+| Profile | Модели |
+|---------|--------|
+| `text` | qwen3.5-4b (enabled) |
+| `image` | sd35-medium (enabled) |
+| `tts` | kokoro-82m (enabled) |
+| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m` | Индивидуальные |
+| `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `openaudio-s1-mini` | Disabled по умолчанию, запуск через индивидуальный profile |
 
 ### Локальная разработка
 
@@ -276,13 +272,9 @@ queue:
 
 ### Зависимости
 
-Зависимости разделены на слои для оптимизации Docker-сборки:
+Каждая модель имеет собственный `requirements.txt` в `deploy/workers/<model-id>/`. Общие серверные зависимости — в `requirements/base.txt`.
 
-| Файл | Содержимое |
-|------|-----------|
-| `requirements/ml.txt` | ML-библиотеки (vllm, diffusers, transformers) |
-| `requirements/tts.txt` | TTS-библиотеки (kokoro, soundfile) |
-| `requirements/base.txt` | Серверные зависимости (fastapi, pydantic) |
+Для Docker-деплоя нужно также создать Dockerfile и добавить сервис в `deploy/docker-compose.yml`.
 
 ---
 
@@ -374,52 +366,47 @@ infergate/
 ├── config/
 │   ├── server.yaml
 │   └── models/                     # 1 YAML = 1 модель
-├── deploy/                         # Варианты развёртывания
-│   ├── Dockerfile.cpu              #   CPU-only образ
+├── deploy/
 │   ├── Dockerfile.gateway          #   Лёгкий gateway (~500MB)
-│   ├── Dockerfile.worker           #   Worker с параметризуемыми зависимостями
-│   ├── docker-compose.cpu.yml      #   CPU-only compose
-│   ├── docker-compose.distributed.yml  # Distributed (gateway + workers)
+│   ├── docker-compose.yml          #   Compose с profiles (gateway + workers)
+│   ├── workers/                    #   Per-model Dockerfiles + requirements
+│   │   ├── qwen3.5-4b/
+│   │   ├── sd35-medium/
+│   │   ├── kokoro-82m/
+│   │   └── ...                     #   (10 моделей)
 │   └── monitoring/                 #   Prometheus + Grafana stack
 │       ├── prometheus.yml
 │       └── docker-compose.monitoring.yml
 ├── tests/                          # 98 тестов, 82% покрытия
-├── Dockerfile                      # Основной GPU-образ
-├── docker-compose.yml              # Основной compose (монолит)
 └── pyproject.toml
 ```
 
 ---
 
-## 9. Distributed-режим
+## 9. Per-model архитектура
 
-Каждая модель работает в изолированном контейнере с собственным набором зависимостей. Решает проблему конфликтов версий библиотек.
+Каждая модель работает в изолированном контейнере с собственным Dockerfile и зависимостями. Gateway — лёгкий образ (~500MB) без ML-библиотек.
 
 ```
 Client → Gateway (500MB, без GPU)
-           ├→ worker-text   (vLLM + transformers, GPU)
-           ├→ worker-image  (diffusers + torch, GPU)
-           └→ worker-tts    (kokoro, CPU, python:3.12-slim)
+           ├→ worker-qwen3-5-4b     (vLLM, GPU)
+           ├→ worker-sd35-medium    (diffusers, GPU)
+           ├→ worker-kokoro-82m     (kokoro, CPU)
+           └→ ...
 ```
 
-### Запуск
+### Как это работает
 
-```bash
-docker compose -f deploy/docker-compose.distributed.yml up -d
+Gateway определяет worker URL из переменных окружения (задаются в `docker-compose.yml`):
+
+```
+WORKER_URL_QWEN3_5_4B=http://worker-qwen3-5-4b:8001
+WORKER_URL_SD35_MEDIUM=http://worker-sd35-medium:8001
 ```
 
-### Как подключить модель к worker
+Формула: `WORKER_URL_` + model ID в верхнем регистре, `-` и `.` заменяются на `_`.
 
-В YAML-конфиге модели добавьте `worker_url`:
-
-```yaml
-# config/models/qwen3.5-4b.yaml (на стороне gateway)
-id: qwen3.5-4b
-worker_url: "http://worker-text:8001"  # gateway проксирует к этому worker
-# ... остальные поля ...
-```
-
-Без `worker_url` — модель загружается локально (как в монолитном режиме).
+При наличии env var `ProviderManager` создаёт `RemoteProvider`, который проксирует HTTP к воркеру. Без env var — модель загружается локально (для разработки без Docker).
 
 ### Запуск worker вручную
 
@@ -428,15 +415,13 @@ WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml \
 uvicorn app.worker:app --host 0.0.0.0 --port 8001
 ```
 
-### Преимущества
+### Структура воркера
 
-| | Монолит | Distributed |
-|---|---|---|
-| Изоляция зависимостей | Нет | Полная |
-| Размер gateway-образа | ~15 GB | ~500 MB |
-| Конфликты библиотек | Возможны | Невозможны |
-| Разные версии torch | Нет | Да |
-| Микс local + remote | — | Да |
+```
+deploy/workers/qwen3.5-4b/
+├── Dockerfile           # Базовый образ, зависимости, app-код
+└── requirements.txt     # Только зависимости этой модели
+```
 
 ---
 
@@ -468,8 +453,7 @@ uvicorn app.worker:app --host 0.0.0.0 --port 8001
 ### Запуск с Prometheus + Grafana
 
 ```bash
-# Вместе с основным compose
-docker compose -f docker-compose.yml -f deploy/monitoring/docker-compose.monitoring.yml up -d
+docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.monitoring.yml --profile text up -d
 ```
 
 - Prometheus: `http://localhost:9090`
@@ -487,9 +471,10 @@ pip install infergate[monitoring]
 
 Сборка оптимизирована для быстрой итерации:
 
-- **Базовый образ** `pytorch/pytorch` — torch + CUDA уже внутри
+- **Per-model Dockerfiles** — изменение deps одной модели не инвалидирует кэш другой
+- **Базовый образ** `pytorch/pytorch` (GPU) или `python:3.12-slim` (CPU) — только нужное
 - **uv** вместо pip — установка в 10–100x быстрее
-- **Слоистое кэширование** — зависимости в отдельных Docker-слоях
+- **Слоистое кэширование** — base deps → model deps → app code
 - **BuildKit cache mounts** — пакеты переиспользуются между сборками
 - **Non-root user** — контейнер работает от `infergate`
 
@@ -497,10 +482,10 @@ pip install infergate[monitoring]
 
 | Сценарий | Время |
 |----------|-------|
-| Первая сборка | ~15–20 мин |
+| Первая сборка (одна модель) | ~10–15 мин |
 | Изменение кода (app/) | ~10 сек |
-| Новая зависимость в base.txt | ~1–2 мин |
-| Новая ML-зависимость | ~5–10 мин |
+| Новая зависимость модели | ~5–10 мин (только эта модель) |
+| Добавление новой модели | Не затрагивает существующие |
 
 ---
 

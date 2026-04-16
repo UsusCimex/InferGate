@@ -24,21 +24,26 @@ pytest tests/test_chat.py
 # Lint
 ruff check app/
 
-# Docker (GPU)
-docker compose build
-docker compose up -d
+# Docker — per-model isolated containers (gateway + workers with profiles)
+docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
 
-# Docker (CPU-only, TTS only)
-docker compose -f deploy/docker-compose.cpu.yml up -d
+# Start specific models only
+docker compose -f deploy/docker-compose.yml --profile qwen3.5-4b --profile kokoro-82m up -d
 
-# Docker (distributed — each model in its own container, isolated deps)
-docker compose -f deploy/docker-compose.distributed.yml up -d
+# Start all model categories
+docker compose -f deploy/docker-compose.yml --profile text --profile image --profile tts up -d
+
+# Gateway only (for external/remote workers)
+docker compose -f deploy/docker-compose.yml up -d
+
+# With monitoring
+docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.monitoring.yml --profile text up -d
 
 # Run a single worker locally for development
 WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml uvicorn app.worker:app --port 8001
 
 # Download model weights
-docker compose run --rm infergate python scripts/download_models.py --all
+docker compose -f deploy/docker-compose.yml run --rm worker-qwen3-5-4b python scripts/download_models.py --all
 ```
 
 ## Architecture
@@ -51,7 +56,7 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 
 **Plugin-based providers**: Abstract bases in `app/providers/base.py` (`ImageProvider`, `TextProvider`, `TtsProvider`). New providers register via `@register_provider` decorator in `app/providers/registry.py`. Adding a model that uses an existing provider = just add a YAML file in `config/models/`.
 
-**Distributed mode**: When `worker_url` is set in a model's YAML config, `ProviderManager` creates a `RemoteProvider` (from `app/providers/remote.py`) that proxies HTTP requests to a standalone worker container (`app/worker.py`). This enables full dependency isolation — each model runs in its own container with its own library versions. Gateway image is lightweight (~500MB, `deploy/Dockerfile.gateway`), workers are specialized (`deploy/Dockerfile.worker` with `INSTALL_ML`/`INSTALL_TTS` build args).
+**Per-model deployment**: Each model runs in its own isolated container with its own Dockerfile and dependencies (`deploy/workers/<model-id>/`). `ProviderManager` resolves worker URLs from environment variables (`WORKER_URL_<MODEL_ID>`) and creates `RemoteProvider` instances (from `app/providers/remote.py`) that proxy HTTP requests to standalone worker containers (`app/worker.py`). Gateway image is lightweight (~500MB, `deploy/Dockerfile.gateway`). Docker Compose profiles control which models to deploy (`--profile text`, `--profile kokoro-82m`, etc.).
 
 **FastAPI Depends DI**: Services initialized during FastAPI lifespan in `app/main.py`, stored on `app.state`, accessed by routers via `Depends()` from `app/dependencies.py`. Supports `dependency_overrides` for testing.
 

@@ -1,0 +1,276 @@
+# Per-model Docker deployment — each model in its own isolated container.
+#
+# Usage (from project root):
+#   docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
+#   docker compose -f deploy/docker-compose.yml --profile qwen3.5-4b --profile kokoro-82m up -d
+#   docker compose -f deploy/docker-compose.yml --profile text --profile image --profile tts up -d
+#
+# Gateway starts automatically (no profile needed).
+# Workers require explicit --profile activation.
+#
+# Base image override (create deploy/.env or pass via environment):
+#   Text (vLLM):  VLLM_IMAGE=vllm/vllm-openai:v0.19.0 (default)
+#   Image (GPU):  GPU_BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime (default)
+#   RTX 30xx/40xx: GPU_BASE_IMAGE=pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+
+# Shared config for GPU workers
+x-gpu-worker: &gpu-worker
+  restart: unless-stopped
+  shm_size: "1g"
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
+# Build args per worker type
+x-vllm-build-args: &vllm-build-args
+  VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.19.0}
+
+x-gpu-build-args: &gpu-build-args
+  GPU_BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+
+services:
+  # ─── Gateway ────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - WORKER_URL_QWEN3_5_4B=http://worker-qwen3-5-4b:8001
+      - WORKER_URL_QWEN3_5_9B=http://worker-qwen3-5-9b:8001
+      - WORKER_URL_QWEN3_8B=http://worker-qwen3-8b:8001
+      - WORKER_URL_LLAMA3_1_8B=http://worker-llama3-1-8b:8001
+      - WORKER_URL_SD35_MEDIUM=http://worker-sd35-medium:8001
+      - WORKER_URL_FLUX1_DEV=http://worker-flux1-dev:8001
+      - WORKER_URL_FLUX1_SCHNELL=http://worker-flux1-schnell:8001
+      - WORKER_URL_FLUX2_KLEIN_4B=http://worker-flux2-klein-4b:8001
+      - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
+      - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
+    volumes:
+      - ../config:/app/config:ro
+      - cache_data:/app/cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Text workers ───────────────────────────────────────────────────
+  worker-qwen3-5-4b:
+    <<: *gpu-worker
+    profiles: ["text", "qwen3.5-4b"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/qwen3.5-4b/Dockerfile
+      args:
+        <<: *vllm-build-args
+    volumes:
+      - ../config/models/qwen3.5-4b.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  worker-qwen3-5-9b:
+    <<: *gpu-worker
+    profiles: ["qwen3.5-9b"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/qwen3.5-9b/Dockerfile
+      args:
+        <<: *vllm-build-args
+    volumes:
+      - ../config/models/qwen3.5-9b.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  worker-qwen3-8b:
+    <<: *gpu-worker
+    profiles: ["qwen3-8b"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/qwen3-8b/Dockerfile
+      args:
+        <<: *vllm-build-args
+    volumes:
+      - ../config/models/qwen3-8b.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  worker-llama3-1-8b:
+    <<: *gpu-worker
+    profiles: ["llama3.1-8b"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/llama3.1-8b/Dockerfile
+      args:
+        <<: *vllm-build-args
+    volumes:
+      - ../config/models/llama3.1-8b.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  # ─── Image workers ──────────────────────────────────────────────────
+  worker-sd35-medium:
+    <<: *gpu-worker
+    profiles: ["image", "sd35-medium"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/sd35-medium/Dockerfile
+      args:
+        <<: *gpu-build-args
+    volumes:
+      - ../config/models/sd35-medium.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  worker-flux1-dev:
+    <<: *gpu-worker
+    profiles: ["flux1-dev"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/flux1-dev/Dockerfile
+      args:
+        <<: *gpu-build-args
+    volumes:
+      - ../config/models/flux1-dev.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  worker-flux1-schnell:
+    <<: *gpu-worker
+    profiles: ["flux1-schnell"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/flux1-schnell/Dockerfile
+      args:
+        <<: *gpu-build-args
+    volumes:
+      - ../config/models/flux1-schnell.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  worker-flux2-klein-4b:
+    <<: *gpu-worker
+    profiles: ["flux2-klein-4b"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/flux2-klein-4b/Dockerfile
+      args:
+        <<: *gpu-build-args
+    volumes:
+      - ../config/models/flux2-klein-4b.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ─── TTS workers ────────────────────────────────────────────────────
+  worker-kokoro-82m:
+    profiles: ["tts", "kokoro-82m"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/kokoro-82m/Dockerfile
+    volumes:
+      - ../config/models/kokoro-82m.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker-openaudio-s1-mini:
+    <<: *gpu-worker
+    profiles: ["openaudio-s1-mini"]
+    build:
+      context: ..
+      dockerfile: deploy/workers/openaudio-s1-mini/Dockerfile
+      args:
+        <<: *gpu-build-args
+    volumes:
+      - ../config/models/openaudio-s1-mini.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    environment:
+      - WORKER_MODEL_CONFIG=/app/config/model.yaml
+      - WORKER_MODELS_DIR=/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  cache_data:
