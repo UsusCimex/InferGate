@@ -77,6 +77,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -98,6 +100,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -119,6 +123,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -140,6 +146,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -162,6 +170,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -183,6 +193,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -204,6 +216,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -225,6 +239,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -246,6 +262,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -265,6 +283,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -287,6 +307,8 @@ services:
     environment:
       - WORKER_MODEL_CONFIG=/app/config/model.yaml
       - WORKER_MODELS_DIR=/app/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
