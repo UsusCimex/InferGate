@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -17,7 +17,12 @@ class RateLimitMiddleware:
         self.app = app
         self._rpm = requests_per_minute
         self._window = 60.0
-        self._requests: dict[str, list[float]] = defaultdict(list)
+        # Per-IP timestamps are capped at _rpm entries (a deque with maxlen).
+        # A burst cannot exceed the per-minute budget, so we never need to
+        # remember more than that per IP regardless of traffic volume.
+        self._requests: dict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=max(1, self._rpm))
+        )
         self._last_cleanup = 0.0
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -44,10 +49,10 @@ class RateLimitMiddleware:
                 for ip in sorted_ips[: len(self._requests) - _MAX_TRACKED_IPS]:
                     del self._requests[ip]
 
-        # Clean old entries for this IP
+        # Drop stamps older than the sliding window for this IP
         timestamps = self._requests[client_ip]
-        self._requests[client_ip] = [t for t in timestamps if t > cutoff]
-        timestamps = self._requests[client_ip]
+        while timestamps and timestamps[0] <= cutoff:
+            timestamps.popleft()
 
         if len(timestamps) >= self._rpm:
             retry_after = str(int(timestamps[0] - cutoff) + 1)
