@@ -14,6 +14,11 @@ from app.config import CacheStrategy
 
 logger = logging.getLogger(__name__)
 
+# Bump this whenever the cache entry format or response schema changes so that
+# entries produced by older code versions are ignored instead of returned to
+# clients that expect the new shape.
+CACHE_KEY_VERSION = "v1"
+
 
 class CacheManager:
     """Manages caching with per-model settings. Uses filesystem + SQLite metadata."""
@@ -93,7 +98,10 @@ class CacheManager:
 
     def make_key(self, model_id: str, request_params: dict) -> str:
         """Create deterministic cache key from model + params."""
-        canonical = json.dumps({"model": model_id, **request_params}, sort_keys=True)
+        canonical = json.dumps(
+            {"v": CACHE_KEY_VERSION, "model": model_id, **request_params},
+            sort_keys=True,
+        )
         return hashlib.sha256(canonical.encode()).hexdigest()
 
     async def get(self, key: str) -> bytes | None:
