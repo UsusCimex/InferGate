@@ -25,6 +25,11 @@ class WorkerNotReadyError(Exception):
     pass
 
 
+class ConfigError(ValueError):
+    """Raised when the model/server configuration is internally inconsistent."""
+    pass
+
+
 class ProviderManager:
     """Registry of providers. Loads configs, manages model lifecycle with LRU swapping."""
 
@@ -39,17 +44,17 @@ class ProviderManager:
         self._monitor_task: asyncio.Task | None = None
 
     def validate_config(self) -> None:
-        """Validate pinned models vs max_loaded capacity. Auto-correct if needed."""
+        """Validate pinned models fit within the configured max_loaded capacity.
+
+        Raises ConfigError if pinned GPU models would leave no room for LRU swaps.
+        """
         gpu_pinned = [m for m in self._pinned if self._is_gpu_model(m)]
         if len(gpu_pinned) >= self._max_loaded:
-            old_max = self._max_loaded
-            self._max_loaded = len(gpu_pinned) + 1
-            logger.warning(
-                "Pinned GPU models (%d) >= max_loaded_models (%d). "
-                "Auto-increased max_loaded_models to %d.",
-                len(gpu_pinned),
-                old_max,
-                self._max_loaded,
+            raise ConfigError(
+                f"{len(gpu_pinned)} pinned GPU models do not fit within "
+                f"max_loaded_models={self._max_loaded}. Increase "
+                f"gpu.max_loaded_models in server.yaml to at least "
+                f"{len(gpu_pinned) + 1} or remove a pinned model."
             )
 
     def discover_models(self, configs: list[ModelConfig]) -> None:
