@@ -1,10 +1,10 @@
 """Validated enum types used across server and model configuration."""
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
@@ -12,17 +12,17 @@ class LogLevel(str, Enum):
     CRITICAL = "critical"
 
 
-class EvictionPolicy(str, Enum):
+class EvictionPolicy(StrEnum):
     LRU = "lru"
 
 
-class CacheStrategy(str, Enum):
+class CacheStrategy(StrEnum):
     ALWAYS = "always"
     SEED_ONLY = "seed_only"
     NEVER = "never"
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
