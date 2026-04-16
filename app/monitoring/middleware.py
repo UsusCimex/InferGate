@@ -7,9 +7,9 @@ import uuid
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.monitoring.metrics import (
-    REQUESTS_TOTAL,
-    REQUEST_DURATION,
     _PROMETHEUS_AVAILABLE,
+    REQUEST_DURATION,
+    REQUESTS_TOTAL,
 )
 
 

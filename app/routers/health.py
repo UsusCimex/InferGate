@@ -5,7 +5,12 @@ import time
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, Response
 
-from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_start_time
+from app.dependencies import (
+    get_cache_manager,
+    get_gpu_scheduler,
+    get_provider_manager,
+    get_start_time,
+)
 
 router = APIRouter()
 
@@ -45,7 +50,7 @@ async def metrics(
         pass
 
     # Update Prometheus gauges if available
-    from app.monitoring import is_prometheus_available, MODELS_LOADED, GPU_VRAM_USED_MB, QUEUE_SIZE
+    from app.monitoring import GPU_VRAM_USED_MB, MODELS_LOADED, QUEUE_SIZE, is_prometheus_available
     if is_prometheus_available():
         MODELS_LOADED.set(len(manager.loaded_models()))
         GPU_VRAM_USED_MB.set(gpu_vram_used)
@@ -65,7 +70,7 @@ async def metrics(
 @router.get("/metrics/prometheus")
 async def prometheus_metrics():
     """Prometheus-compatible metrics endpoint for scraping."""
-    from app.monitoring import is_prometheus_available, generate_latest, CONTENT_TYPE_LATEST
+    from app.monitoring import CONTENT_TYPE_LATEST, generate_latest, is_prometheus_available
 
     if not is_prometheus_available():
         return JSONResponse(

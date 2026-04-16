@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import heapq
 import logging
-from typing import Any, Awaitable
+from collections.abc import Awaitable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ def _priority_value(priority: Any) -> int:
 class _ModelQueue:
     """Per-model concurrency slot with a priority-ordered waiter heap."""
 
-    __slots__ = ("max_concurrent", "active", "waiters", "lock")
+    __slots__ = ("active", "lock", "max_concurrent", "waiters")
 
     def __init__(self, max_concurrent: int) -> None:
         self.max_concurrent = max_concurrent

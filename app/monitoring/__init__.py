@@ -26,11 +26,11 @@ __all__ = [
     "INFERENCE_DURATION",
     "MODELS_LOADED",
     "QUEUE_SIZE",
-    "REQUEST_DURATION",
     "REQUESTS_TOTAL",
+    "REQUEST_DURATION",
     "PrometheusMiddleware",
     "RequestIdMiddleware",
+    "_normalize_path",
     "generate_latest",
     "is_prometheus_available",
-    "_normalize_path",
 ]

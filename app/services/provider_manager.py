@@ -147,8 +147,8 @@ class ProviderManager:
             waiting = ", ".join(remote_models.keys())
             logger.info("Worker monitor started — watching %d workers: %s", len(remote_models), waiting)
 
-        next_probe: dict[str, float] = {mid: 0.0 for mid in remote_models}
-        fail_counts: dict[str, int] = {mid: 0 for mid in remote_models}
+        next_probe: dict[str, float] = dict.fromkeys(remote_models, 0.0)
+        fail_counts: dict[str, int] = dict.fromkeys(remote_models, 0)
 
         while True:
             now = asyncio.get_running_loop().time()

@@ -5,7 +5,8 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from app.providers.base import TextProvider
 from app.providers.registry import register_provider

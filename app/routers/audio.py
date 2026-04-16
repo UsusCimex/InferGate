@@ -3,11 +3,16 @@ from __future__ import annotations
 import time
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import JSONResponse, Response
 
+from app.dependencies import (
+    get_cache_manager,
+    get_defaults,
+    get_gpu_scheduler,
+    get_provider_manager,
+)
+from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prometheus_available
 from app.schemas.audio import AudioSpeechRequest
-from app.dependencies import get_provider_manager, get_gpu_scheduler, get_cache_manager, get_defaults
-from app.monitoring import is_prometheus_available, CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION
 
 router = APIRouter()
 

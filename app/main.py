@@ -10,9 +10,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.config import load_model_configs, load_server_config
 from app.middleware import AccessLogMiddleware, ApiKeyMiddleware, RateLimitMiddleware
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
-from app.config import load_model_configs, load_server_config
 from app.routers import audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
