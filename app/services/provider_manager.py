@@ -161,8 +161,11 @@ class ProviderManager:
                         "Worker ready: %s (%s) — model is now available",
                         model_id, provider.config.worker_url,
                     )
-                except Exception:
-                    pass  # Will retry next cycle
+                except Exception as e:
+                    logger.debug(
+                        "Worker %s (%s) not ready yet: %s",
+                        model_id, provider.config.worker_url, e,
+                    )
 
             await asyncio.sleep(_WORKER_MONITOR_INTERVAL)
 
