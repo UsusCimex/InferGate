@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field
 
 from app.config.enums import CacheStrategy, Priority
 
+# model_id is used as a path component in the cache directory, so it must be
+# a strict identifier with no separators or traversal sequences.
+_MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+
 
 class ModelCacheConfig(BaseModel):
     enabled: bool = False
@@ -28,7 +32,7 @@ class ModelMetadata(BaseModel):
 
 
 class ModelConfig(BaseModel):
-    id: str
+    id: str = Field(pattern=_MODEL_ID_PATTERN, max_length=128)
     display_name: str
     category: str
     provider_class: str
