@@ -72,6 +72,21 @@ select = [
 ]
 ignore = ["E501"]  # line length handled by formatter
 
+[tool.ruff.lint.flake8-bugbear]
+# Depends/Query/Body/Header/Cookie/File/Form are FastAPI idioms that must
+# appear in default arguments — they are not real side-effects at import time.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Path",
+    "fastapi.Security",
+]
+
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
