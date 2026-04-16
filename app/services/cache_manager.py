@@ -31,6 +31,10 @@ class CacheManager:
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self._db_path))
         await self._db.execute("PRAGMA journal_mode=WAL")
+        # Trigger automatic checkpoint every ~1000 pages (~4 MB) to keep the
+        # -wal file bounded; without this it can grow to gigabytes on busy caches.
+        await self._db.execute("PRAGMA wal_autocheckpoint=1000")
+        await self._db.execute("PRAGMA synchronous=NORMAL")
         await self._db.execute("PRAGMA busy_timeout=5000")
         await self._db.execute("""
             CREATE TABLE IF NOT EXISTS cache_entries (
