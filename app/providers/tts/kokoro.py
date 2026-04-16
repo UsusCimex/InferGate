@@ -33,8 +33,24 @@ class KokoroTtsProvider(TtsProvider):
         logger.info("Loaded %s", self.model_id)
 
     async def unload(self) -> None:
+        import gc
+
         del self._pipeline
         self._pipeline = None
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, gc.collect)
+        try:
+            import torch
+            if torch.cuda.is_available():
+                def _cuda_cleanup() -> None:
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+                await loop.run_in_executor(None, _cuda_cleanup)
+        except ImportError:
+            pass
+
         self._loaded = False
         logger.info("Unloaded %s", self.model_id)
 

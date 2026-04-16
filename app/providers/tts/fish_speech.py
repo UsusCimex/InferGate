@@ -52,11 +52,17 @@ class FishSpeechTtsProvider(TtsProvider):
 
         del self._model
         self._model = None
-        gc.collect()
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, gc.collect)
         try:
             import torch
-
-            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                def _cuda_cleanup() -> None:
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+                await loop.run_in_executor(None, _cuda_cleanup)
         except ImportError:
             pass
         self._loaded = False

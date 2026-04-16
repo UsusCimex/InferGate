@@ -70,11 +70,15 @@ class VllmTextProvider(TextProvider):
             del self._engine
             self._engine = None
         self._tokenizer = None
-        gc.collect()
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, gc.collect)
         if torch.cuda.is_available():
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+            def _cuda_cleanup() -> None:
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+            await loop.run_in_executor(None, _cuda_cleanup)
         self._loaded = False
         logger.info("Unloaded %s", self.model_id)
 
