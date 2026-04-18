@@ -3,3 +3,5 @@ transformers>=4.40.0
 accelerate>=0.30.0
 safetensors>=0.4.0
 sentencepiece>=0.2.0
+# NF4 weight quantization — required to fit 12B FLUX on 12GB cards without offload
+bitsandbytes>=0.46.0

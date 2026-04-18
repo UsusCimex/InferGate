@@ -2,21 +2,24 @@ id: qwen-image
 display_name: "Qwen-Image"
 category: image
 provider_class: DiffusersImageProvider
-enabled: true
+enabled: ${oc.decode:${oc.env:QWEN_IMAGE_ENABLED,true}}
 
 model:
   hub_id: "Qwen/Qwen-Image"
   revision: "main"
-  torch_dtype: bfloat16
-  vram_mb: 11000
+  torch_dtype: ${oc.env:QWEN_IMAGE_TORCH_DTYPE,bfloat16}
+  vram_mb: ${oc.decode:${oc.env:QWEN_IMAGE_VRAM_MB,11000}}
   # 20B DiT — does not fit in 12GB at bf16. Pair 4-bit NF4 on the transformer
   # with model-level CPU offload to keep it under ~11GB while preserving quality.
-  quantization: nf4
+  # On bigger cards: QWEN_IMAGE_QUANTIZATION=null QWEN_IMAGE_CPU_OFFLOAD=false
+  quantization: ${oc.decode:${oc.env:QWEN_IMAGE_QUANTIZATION,nf4}}
   quantize_components: ["transformer", "text_encoder"]
-  cpu_offload: true
+  cpu_offload: ${oc.decode:${oc.env:QWEN_IMAGE_CPU_OFFLOAD,false}}
+  sequential_cpu_offload: ${oc.decode:${oc.env:QWEN_IMAGE_SEQUENTIAL_OFFLOAD,true}}
+  warmup: ${oc.decode:${oc.env:QWEN_IMAGE_WARMUP,true}}
   default_params:
-    num_inference_steps: 30
-    true_cfg_scale: 4.0
+    num_inference_steps: ${oc.decode:${oc.env:QWEN_IMAGE_STEPS,30}}
+    true_cfg_scale: ${oc.decode:${oc.env:QWEN_IMAGE_CFG,4.0}}
     width: 1024
     height: 1024
 
@@ -27,9 +30,9 @@ cache:
   max_size_mb: 2048
 
 queue:
-  priority: low
-  timeout_seconds: 300
-  max_concurrent: 1
+  priority: ${oc.env:QWEN_IMAGE_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:QWEN_IMAGE_TIMEOUT,1200}}
+  max_concurrent: ${oc.decode:${oc.env:QWEN_IMAGE_MAX_CONCURRENT,1}}
 
 metadata:
   license: Apache-2.0

@@ -2,17 +2,20 @@ id: flux2-klein-4b
 display_name: "FLUX.2 Klein 4B"
 category: image
 provider_class: DiffusersImageProvider
-enabled: true
+enabled: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_ENABLED,true}}
 
 model:
   hub_id: "black-forest-labs/FLUX.2-klein-4B"
   revision: "main"
-  torch_dtype: bfloat16
-  cpu_offload: true
-  vram_mb: 6000
+  torch_dtype: ${oc.env:FLUX2_KLEIN_4B_TORCH_DTYPE,bfloat16}
+  vram_mb: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_VRAM_MB,6000}}
+  cpu_offload: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_CPU_OFFLOAD,false}}
+  sequential_cpu_offload: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_SEQUENTIAL_OFFLOAD,true}}
+  warmup: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_WARMUP,true}}
+  quantization: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_QUANTIZATION,null}}
   default_params:
-    num_inference_steps: 4
-    guidance_scale: 0.0
+    num_inference_steps: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_STEPS,4}}
+    guidance_scale: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_CFG,0.0}}
     width: 1024
     height: 1024
 
@@ -23,9 +26,9 @@ cache:
   max_size_mb: 2048
 
 queue:
-  priority: low
-  timeout_seconds: 60
-  max_concurrent: 1
+  priority: ${oc.env:FLUX2_KLEIN_4B_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_MAX_CONCURRENT,1}}
 
 metadata:
   license: Apache-2.0

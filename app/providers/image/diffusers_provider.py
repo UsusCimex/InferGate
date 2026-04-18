@@ -16,6 +16,38 @@ _GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 )
 
 
+def _disable_caching_allocator_warmup() -> None:
+    """Neutralise diffusers/transformers caching-allocator warmup.
+
+    Both libraries pre-allocate a giant CUDA tensor inside `from_pretrained`
+    to speed up subsequent weight loads. On Blackwell (sm_120) this races
+    with lazy CUDA context init and raises `CUDA driver error: device not
+    ready` (cudaErrorNotReady, 600). The warmup is a perf hint, not a
+    correctness primitive — no-opping it makes the first load a few seconds
+    slower but removes the race entirely.
+
+    `from X import Y` creates a local binding, so patching X.Y alone is
+    not enough; we patch every module that re-imported the symbol.
+    """
+    noop = lambda *_a, **_kw: None  # noqa: E731
+    import importlib
+
+    targets = [
+        # diffusers
+        ("diffusers.models.model_loading_utils", "_caching_allocator_warmup"),
+        ("diffusers.models.modeling_utils", "_caching_allocator_warmup"),
+        # transformers
+        ("transformers.modeling_utils", "caching_allocator_warmup"),
+    ]
+    for module_path, attr in targets:
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError:
+            continue
+        if hasattr(module, attr):
+            setattr(module, attr, noop)
+
+
 def _nf4_kwargs(dtype: Any) -> tuple[str, dict[str, Any]]:
     return "bitsandbytes_4bit", {
         "load_in_4bit": True,
@@ -50,6 +82,15 @@ class DiffusersImageProvider(ImageProvider):
     async def load(self, model_dir: str) -> None:
         import torch
         from diffusers import DiffusionPipeline
+
+        _disable_caching_allocator_warmup()
+
+        # Force CUDA context init before any weight loading / quantization.
+        # On Blackwell (sm_120), lazy context init races with the first alloc
+        # inside bitsandbytes.quantize_4bit / diffusers warmup → cudaErrorNotReady.
+        if torch.cuda.is_available():
+            torch.zeros(1, device="cuda")
+            torch.cuda.synchronize()
 
         hub_id = self.config.model["hub_id"]
         dtype_name = self.config.model.get("torch_dtype", "float16")
@@ -95,8 +136,33 @@ class DiffusersImageProvider(ImageProvider):
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
+
+        # Warmup: run a minimal dummy generation so cuDNN kernel tuning,
+        # Triton compilation, and offload-swap patterns happen *here* instead
+        # of punishing the first real client request. Controlled by YAML
+        # `warmup: true|false` (default true).
+        if self.config.model.get("warmup", True):
+            logger.info("Warming up %s …", self.model_id)
+            await loop.run_in_executor(_GPU_EXECUTOR, self._warmup)
+            logger.info("Warmup complete for %s", self.model_id)
+
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
+
+    def _warmup(self) -> None:
+        """Minimal dummy inference to trigger kernel autotuning + offload hooks."""
+        defaults = dict(self.config.model.get("default_params", {}))
+        # Override to the cheapest possible run: 1 step, 256×256.
+        defaults.pop("response_format", None)
+        defaults.pop("n", None)
+        defaults.pop("size", None)
+        defaults["num_inference_steps"] = 1
+        defaults["width"] = 256
+        defaults["height"] = 256
+        try:
+            self._pipeline(prompt="warmup", **defaults)
+        except Exception as e:  # noqa: BLE001 — warmup failure shouldn't block load
+            logger.warning("Warmup failed for %s: %s", self.model_id, e)
 
     def _build_quantization_config(self, quantization: str, dtype: Any) -> Any:
         """Translate YAML `quantization: nf4|fp8` into a diffusers pipeline config."""
@@ -158,9 +224,12 @@ class DiffusersImageProvider(ImageProvider):
         defaults.pop("n", None)
 
         loop = asyncio.get_running_loop()
+        # Pass `prompt` as kwarg — some pipelines (e.g. FLUX.2-klein) have
+        # `image` as the first positional arg for img2img, so positional
+        # `prompt` silently lands in the wrong slot.
         image = await loop.run_in_executor(
             None,
-            lambda: self._pipeline(prompt, **defaults).images[0],
+            lambda: self._pipeline(prompt=prompt, **defaults).images[0],
         )
 
         buf = io.BytesIO()

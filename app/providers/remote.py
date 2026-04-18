@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -12,7 +13,12 @@ from app.providers.base import ImageProvider, TextProvider, TtsProvider
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=10.0, pool=10.0)
+# Read timeout — long by default because image generation with
+# sequential_cpu_offload on consumer GPUs can legitimately take 5-15 minutes
+# for the first request (kernel JIT) and 1-3 min thereafter. Tune via
+# GATEWAY_REMOTE_READ_TIMEOUT env var if needed.
+_READ_TIMEOUT = float(os.environ.get("GATEWAY_REMOTE_READ_TIMEOUT", "1800"))
+_TIMEOUT = httpx.Timeout(connect=5.0, read=_READ_TIMEOUT, write=10.0, pool=10.0)
 
 
 class _RemoteMixin:

@@ -2,31 +2,31 @@ id: qwen3.5-4b
 display_name: "Qwen 3.5 4B"
 category: text
 provider_class: VllmTextProvider
-enabled: true
+enabled: ${oc.decode:${oc.env:QWEN3_5_4B_ENABLED,true}}
 
 model:
   hub_id: "cyankiwi/Qwen3.5-4B-AWQ-4bit"
-  vram_mb: 4000
-  torch_dtype: float16
-  quantization: compressed-tensors
-  enforce_eager: true
-  trust_remote_code: true
-  gpu_memory_utilization: 0.90
+  vram_mb: ${oc.decode:${oc.env:QWEN3_5_4B_VRAM_MB,4000}}
+  torch_dtype: ${oc.env:QWEN3_5_4B_TORCH_DTYPE,float16}
+  quantization: ${oc.env:QWEN3_5_4B_QUANTIZATION,compressed-tensors}
+  enforce_eager: ${oc.decode:${oc.env:QWEN3_5_4B_ENFORCE_EAGER,true}}
+  trust_remote_code: ${oc.decode:${oc.env:QWEN3_5_4B_TRUST_REMOTE_CODE,true}}
+  gpu_memory_utilization: ${oc.decode:${oc.env:QWEN3_5_4B_GPU_MEM_UTIL,0.90}}
+  context_length: ${oc.decode:${oc.env:QWEN3_5_4B_CONTEXT_LENGTH,16384}}
   default_params:
-    max_tokens: 4096
-    temperature: 0.7
-    top_p: 0.9
-    thinking: false
-  context_length: 16384
+    max_tokens: ${oc.decode:${oc.env:QWEN3_5_4B_MAX_TOKENS,4096}}
+    temperature: ${oc.decode:${oc.env:QWEN3_5_4B_TEMPERATURE,0.7}}
+    top_p: ${oc.decode:${oc.env:QWEN3_5_4B_TOP_P,0.9}}
+    thinking: ${oc.decode:${oc.env:QWEN3_5_4B_THINKING,false}}
 
 cache:
   enabled: false
   strategy: never
 
 queue:
-  priority: medium
-  timeout_seconds: 300
-  max_concurrent: 1
+  priority: ${oc.env:QWEN3_5_4B_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:QWEN3_5_4B_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:QWEN3_5_4B_MAX_CONCURRENT,1}}
 
 metadata:
   license: Apache-2.0

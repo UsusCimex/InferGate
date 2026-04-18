@@ -2,18 +2,22 @@ id: sd35-medium
 display_name: "Stable Diffusion 3.5 Medium"
 category: image
 provider_class: DiffusersImageProvider
-enabled: true
+enabled: ${oc.decode:${oc.env:SD35_MEDIUM_ENABLED,true}}
 
 model:
   hub_id: "stabilityai/stable-diffusion-3.5-medium"
   revision: "main"
-  torch_dtype: float16
-  cpu_offload: true
-  drop_t5: true
-  vram_mb: 5000
+  torch_dtype: ${oc.env:SD35_MEDIUM_TORCH_DTYPE,float16}
+  vram_mb: ${oc.decode:${oc.env:SD35_MEDIUM_VRAM_MB,5000}}
+  cpu_offload: ${oc.decode:${oc.env:SD35_MEDIUM_CPU_OFFLOAD,false}}
+  sequential_cpu_offload: ${oc.decode:${oc.env:SD35_MEDIUM_SEQUENTIAL_OFFLOAD,true}}
+  warmup: ${oc.decode:${oc.env:SD35_MEDIUM_WARMUP,true}}
+  # Drop the T5 text encoder to save ~9.5GB VRAM on 12GB cards.
+  # On a bigger card: SD35_MEDIUM_DROP_T5=false for better prompt fidelity.
+  drop_t5: ${oc.decode:${oc.env:SD35_MEDIUM_DROP_T5,true}}
   default_params:
-    num_inference_steps: 28
-    guidance_scale: 7.0
+    num_inference_steps: ${oc.decode:${oc.env:SD35_MEDIUM_STEPS,28}}
+    guidance_scale: ${oc.decode:${oc.env:SD35_MEDIUM_CFG,7.0}}
     width: 1024
     height: 1024
 
@@ -24,9 +28,9 @@ cache:
   max_size_mb: 2048
 
 queue:
-  priority: low
-  timeout_seconds: 120
-  max_concurrent: 1
+  priority: ${oc.env:SD35_MEDIUM_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:SD35_MEDIUM_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:SD35_MEDIUM_MAX_CONCURRENT,1}}
 
 metadata:
   license: "Stability AI Community"

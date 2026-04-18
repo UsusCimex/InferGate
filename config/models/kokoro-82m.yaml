@@ -2,16 +2,16 @@ id: kokoro-82m
 display_name: "Kokoro 82M"
 category: tts
 provider_class: KokoroTtsProvider
-enabled: true
+enabled: ${oc.decode:${oc.env:KOKORO_82M_ENABLED,true}}
 
 model:
   hub_id: "hexgrad/Kokoro-82M"
-  vram_mb: 0
-  device: cpu
+  vram_mb: ${oc.decode:${oc.env:KOKORO_82M_VRAM_MB,0}}
+  device: ${oc.env:KOKORO_82M_DEVICE,cpu}
   default_params:
-    voice: "af_heart"
-    speed: 1.0
-    output_format: mp3
+    voice: ${oc.env:KOKORO_82M_VOICE,af_heart}
+    speed: ${oc.decode:${oc.env:KOKORO_82M_SPEED,1.0}}
+    output_format: ${oc.env:KOKORO_82M_OUTPUT_FORMAT,mp3}
 
 cache:
   enabled: true
@@ -20,9 +20,9 @@ cache:
   max_size_mb: 1024
 
 queue:
-  priority: high
-  timeout_seconds: 30
-  max_concurrent: 2
+  priority: ${oc.env:KOKORO_82M_PRIORITY,high}
+  timeout_seconds: ${oc.decode:${oc.env:KOKORO_82M_TIMEOUT,30}}
+  max_concurrent: ${oc.decode:${oc.env:KOKORO_82M_MAX_CONCURRENT,2}}
 
 metadata:
   license: MIT

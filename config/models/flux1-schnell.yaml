@@ -2,18 +2,24 @@ id: flux1-schnell
 display_name: "FLUX.1 Schnell"
 category: image
 provider_class: DiffusersImageProvider
-enabled: true
+enabled: ${oc.decode:${oc.env:FLUX1_SCHNELL_ENABLED,true}}
 
 model:
   hub_id: "black-forest-labs/FLUX.1-schnell"
   revision: "main"
-  torch_dtype: bfloat16
-  vram_mb: 11000
-  # Same 12B transformer as dev — offload keeps it comfortable on a 12GB card.
-  cpu_offload: true
+  torch_dtype: ${oc.env:FLUX1_SCHNELL_TORCH_DTYPE,bfloat16}
+  vram_mb: ${oc.decode:${oc.env:FLUX1_SCHNELL_VRAM_MB,11000}}
+  cpu_offload: ${oc.decode:${oc.env:FLUX1_SCHNELL_CPU_OFFLOAD,false}}
+  # Per-submodule offload — needed on Blackwell/WSL2 where enable_model_cpu_offload
+  # breaks accelerate hooks (tensors stay split between cuda:0 and cpu).
+  sequential_cpu_offload: ${oc.decode:${oc.env:FLUX1_SCHNELL_SEQUENTIAL_OFFLOAD,true}}
+  # Dummy generation on load to pre-warm cuDNN/triton kernels. Off → first
+  # client request pays the JIT cost; useful for debugging scheduler state.
+  warmup: ${oc.decode:${oc.env:FLUX1_SCHNELL_WARMUP,true}}
+  quantization: ${oc.decode:${oc.env:FLUX1_SCHNELL_QUANTIZATION,null}}
   default_params:
-    num_inference_steps: 4
-    guidance_scale: 0.0
+    num_inference_steps: ${oc.decode:${oc.env:FLUX1_SCHNELL_STEPS,4}}
+    guidance_scale: ${oc.decode:${oc.env:FLUX1_SCHNELL_CFG,0.0}}
     width: 1024
     height: 1024
 
@@ -24,9 +30,9 @@ cache:
   max_size_mb: 2048
 
 queue:
-  priority: low
-  timeout_seconds: 120
-  max_concurrent: 1
+  priority: ${oc.env:FLUX1_SCHNELL_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:FLUX1_SCHNELL_TIMEOUT,600}}
+  max_concurrent: ${oc.decode:${oc.env:FLUX1_SCHNELL_MAX_CONCURRENT,1}}
 
 metadata:
   license: Apache-2.0
