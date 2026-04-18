@@ -1,0 +1,38 @@
+id: hunyuan-dit
+display_name: "Hunyuan-DiT v1.2"
+category: image
+provider_class: DiffusersImageProvider
+enabled: ${oc.decode:${oc.env:HUNYUAN_DIT_ENABLED,true}}
+
+model:
+  hub_id: "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers"
+  revision: "main"
+  torch_dtype: ${oc.env:HUNYUAN_DIT_TORCH_DTYPE,float16}
+  vram_mb: ${oc.decode:${oc.env:HUNYUAN_DIT_VRAM_MB,7000}}
+  # 1.5B DiT + bilingual CLIP + mT5. Fits 12GB at fp16 without offload.
+  # If tight on smaller cards, set HUNYUAN_DIT_QUANTIZATION=nf4.
+  cpu_offload: ${oc.decode:${oc.env:HUNYUAN_DIT_CPU_OFFLOAD,false}}
+  sequential_cpu_offload: ${oc.decode:${oc.env:HUNYUAN_DIT_SEQUENTIAL_OFFLOAD,false}}
+  quantization: ${oc.decode:${oc.env:HUNYUAN_DIT_QUANTIZATION,null}}
+  warmup: ${oc.decode:${oc.env:HUNYUAN_DIT_WARMUP,false}}
+  default_params:
+    num_inference_steps: ${oc.decode:${oc.env:HUNYUAN_DIT_STEPS,25}}
+    guidance_scale: ${oc.decode:${oc.env:HUNYUAN_DIT_CFG,6.0}}
+    width: 1024
+    height: 1024
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: ${oc.env:HUNYUAN_DIT_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:HUNYUAN_DIT_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:HUNYUAN_DIT_MAX_CONCURRENT,1}}
+
+metadata:
+  license: "Tencent Hunyuan Community (non-commercial)"
+  description: "Hunyuan-DiT v1.2 — 1.5B DiT, native Chinese + English prompts"
+  tags: ["dit", "multilingual", "chinese", "tencent"]

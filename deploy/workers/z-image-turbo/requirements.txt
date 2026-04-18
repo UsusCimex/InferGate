@@ -1,0 +1,9 @@
+# ZImagePipeline was merged into diffusers main shortly before 0.38; pin to git
+# until the PyPI release catches up.
+diffusers @ git+https://github.com/huggingface/diffusers.git
+transformers>=4.45.0
+accelerate>=0.30.0
+safetensors>=0.4.0
+sentencepiece>=0.2.0
+# NF4 fallback for the text encoder if bf16 blows past 12GB.
+bitsandbytes>=0.46.0

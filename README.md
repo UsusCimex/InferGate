@@ -36,18 +36,22 @@ Self-hosted OpenAI-совместимый AI-шлюз для локальных 
 git clone https://github.com/UsusCimex/infergate.git
 cd infergate
 
-# Собрать и запустить текстовые + TTS модели
+# 1. Подготовить окружение (HF_TOKEN, профили, опциональные тюнинги)
+cp deploy/.env.example deploy/.env
+# отредактировать deploy/.env: HF_TOKEN=..., COMPOSE_PROFILES=qwen-image
+
+# 2. Запустить (профиль читается из deploy/.env — COMPOSE_PROFILES)
+docker compose -f deploy/docker-compose.yml up -d
+
+# Или явно выбрать профиль:
 docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
-
-# Или запустить конкретные модели
-docker compose -f deploy/docker-compose.yml --profile qwen3.5-4b --profile kokoro-82m up -d
-
-# Или все категории
-docker compose -f deploy/docker-compose.yml --profile text --profile image --profile tts up -d
+docker compose -f deploy/docker-compose.yml --profile qwen-image up -d
 
 # Проверить
 curl http://localhost:8000/health
 ```
+
+Defaults в `config/models/*.yaml` заточены под 12GB GPU (nf4-квантизация крупных моделей, CPU offload). Для другого железа — задать env-переменные в `deploy/.env`: см. раздел [Конфигурация](#7-конфигурация).
 
 #### Доступные profiles
 
@@ -229,35 +233,48 @@ curl http://localhost:8000/v1/audio/speech \
 
 ## 6. Добавление новой модели
 
-Создать файл `config/models/my-model.yaml`:
+Четыре шага, ни одной строки Python/Dockerfile.
+
+**1.** Создать `config/models/my-model.yaml` (env-переменные опциональны — default-ы работают сразу):
 
 ```yaml
 id: my-model
 display_name: "My Model"
-category: image                    # image | text | tts
+category: image                                           # image | text | tts
 provider_class: DiffusersImageProvider
-enabled: true
+enabled: ${oc.decode:${oc.env:MY_MODEL_ENABLED,true}}
 
 model:
   hub_id: "org/model-name"
-  vram_mb: 8000
-  torch_dtype: float16
-  trust_remote_code: false         # явно включать только для доверенных моделей
+  vram_mb: ${oc.decode:${oc.env:MY_MODEL_VRAM_MB,8000}}
+  torch_dtype: ${oc.env:MY_MODEL_TORCH_DTYPE,float16}
+  quantization: ${oc.decode:${oc.env:MY_MODEL_QUANTIZATION,null}}
+  cpu_offload: ${oc.decode:${oc.env:MY_MODEL_CPU_OFFLOAD,false}}
   default_params:
-    num_inference_steps: 20
+    num_inference_steps: ${oc.decode:${oc.env:MY_MODEL_STEPS,20}}
 
 cache:
   enabled: true
-  strategy: seed_only              # always | seed_only | never
+  strategy: seed_only                                     # always | seed_only | never
   max_size_mb: 2048
 
 queue:
-  priority: low                    # high | medium | low
-  timeout_seconds: 120
-  max_concurrent: 1
+  priority: ${oc.env:MY_MODEL_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:MY_MODEL_TIMEOUT,120}}
+  max_concurrent: ${oc.decode:${oc.env:MY_MODEL_MAX_CONCURRENT,1}}
 ```
 
-Перезапустить сервер — модель доступна. Писать код не нужно.
+**2.** Создать `deploy/workers/my-model/requirements.txt` с pip-зависимостями.
+
+**3.** Добавить одну строку в матрицу `deploy/docker-bake.hcl`:
+
+```hcl
+{ id = "my-model", base = GPU_BASE_IMAGE, apt = "", post = "" },
+```
+
+**4.** Добавить ~15-строчный сервис в `deploy/docker-compose.yml` (скопировать любой соседний worker-stanza, поменять id, путь к config и requirements).
+
+Перезапустить. Модель доступна через OpenAI API.
 
 ### Доступные провайдеры
 
@@ -270,15 +287,61 @@ queue:
 
 > Если нужен провайдер для нового бэкенда, создайте класс в `app/providers/{категория}/`, наследуя `ImageProvider`, `TextProvider` или `TtsProvider`, и укажите его имя в `provider_class`.
 
-### Зависимости
+### Build-args воркера
 
-Каждая модель имеет собственный `requirements.txt` в `deploy/workers/<model-id>/`. Общие серверные зависимости — в `requirements/base.txt`.
+Все воркеры собираются из единого `deploy/Dockerfile.worker`, который принимает:
 
-Для Docker-деплоя нужно также создать Dockerfile и добавить сервис в `deploy/docker-compose.yml`.
+| ARG | Назначение | Пример |
+|-----|-----------|--------|
+| `BASE_IMAGE` | базовый образ | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime`, `vllm/vllm-openai:v0.19.0`, `python:3.12-slim` |
+| `APT_PACKAGES` | доп. apt-пакеты | `build-essential` (для bitsandbytes/triton), `git`, `gcc` |
+| `WORKER_REQUIREMENTS` | путь к requirements.txt | `deploy/workers/my-model/requirements.txt` |
+| `POST_INSTALL` | shell-команда после pip install | `python -m spacy download en_core_web_sm` |
+
+Не надо копировать Dockerfile на каждую новую модель.
 
 ---
 
 ## 7. Конфигурация
+
+### `deploy/.env` — переносимые тюнинги железа
+
+Все hardware-чувствительные поля в `config/models/*.yaml` параметризованы через OmegaConf: `${oc.env:VAR,default}` (строки) и `${oc.decode:${oc.env:VAR,default}}` (bool/int/null). Это значит, что для переноса на другое железо **ни один YAML в репозитории редактировать не нужно** — меняются только env-переменные в `deploy/.env`.
+
+Базовый сценарий:
+
+```bash
+cp deploy/.env.example deploy/.env
+# отредактировать deploy/.env
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+Примеры переключения режимов:
+
+| Сценарий | Что поменять в `deploy/.env` |
+|---|---|
+| **Laptop 12GB** (default) | ничего — defaults laptop-safe |
+| **Server 24GB**, qwen-image без квантизации | `QWEN_IMAGE_QUANTIZATION=null`, `QWEN_IMAGE_CPU_OFFLOAD=false`, `QWEN_IMAGE_MAX_CONCURRENT=2` |
+| **Server 48GB**, FLUX.1 dev на полной скорости | `FLUX1_DEV_CPU_OFFLOAD=false`, `FLUX1_DEV_STEPS=50` |
+| **Shared GPU** | `QWEN3_5_4B_GPU_MEM_UTIL=0.50` |
+| **Большой контекст** | `QWEN3_5_4B_CONTEXT_LENGTH=32768` |
+| **RTX 30xx/40xx** | `GPU_BASE_IMAGE=pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime` |
+
+Полный каталог переменных с комментариями — в [`deploy/.env.example`](deploy/.env.example).
+
+Соглашение имени: `<MODEL_ID_UPPER>_<FIELD>` (дефисы и точки в ID → `_`). Например `qwen-image` → `QWEN_IMAGE_*`, `qwen3.5-4b` → `QWEN3_5_4B_*`.
+
+### Host-specific overrides — compose override-файлы
+
+Для вещей, которые не выразить через env (GPU count, volumes, deploy-секции), — override-файл поверх базового compose:
+
+```bash
+docker compose -f deploy/docker-compose.yml \
+               -f deploy/docker-compose.server.yml \
+               up -d
+```
+
+Образец — [`deploy/docker-compose.server.example.yml`](deploy/docker-compose.server.example.yml).
 
 ### `config/server.yaml`
 
@@ -368,12 +431,16 @@ infergate/
 │   └── models/                     # 1 YAML = 1 модель
 ├── deploy/
 │   ├── Dockerfile.gateway          #   Лёгкий gateway (~500MB)
-│   ├── docker-compose.yml          #   Compose с profiles (gateway + workers)
-│   ├── workers/                    #   Per-model Dockerfiles + requirements
-│   │   ├── qwen3.5-4b/
-│   │   ├── sd35-medium/
-│   │   ├── kokoro-82m/
-│   │   └── ...                     #   (10 моделей)
+│   ├── Dockerfile.worker           #   Единый параметризованный Dockerfile для всех воркеров
+│   ├── docker-compose.yml          #   Compose с profiles (gateway + workers, YAML-якоря)
+│   ├── docker-bake.hcl             #   Матрица сборки (1 строка = 1 модель)
+│   ├── .env.example                #   Каталог env-тюнингов
+│   ├── docker-compose.server.example.yml  # Образец override для сервера
+│   ├── workers/                    #   Только requirements.txt per-model
+│   │   ├── qwen3.5-4b/requirements.txt
+│   │   ├── sd35-medium/requirements.txt
+│   │   ├── kokoro-82m/requirements.txt
+│   │   └── ...                     #   (11 моделей)
 │   └── monitoring/                 #   Prometheus + Grafana stack
 │       ├── prometheus.yml
 │       └── docker-compose.monitoring.yml
@@ -418,9 +485,12 @@ uvicorn app.worker:app --host 0.0.0.0 --port 8001
 ### Структура воркера
 
 ```
-deploy/workers/qwen3.5-4b/
-├── Dockerfile           # Базовый образ, зависимости, app-код
-└── requirements.txt     # Только зависимости этой модели
+deploy/
+├── Dockerfile.worker            # Один параметризованный Dockerfile на все воркеры
+├── docker-bake.hcl              # Матрица: 1 строка — 1 модель
+└── workers/
+    └── qwen3.5-4b/
+        └── requirements.txt     # Только pip-зависимости этой модели
 ```
 
 ---
@@ -469,14 +539,30 @@ pip install infergate[monitoring]
 
 ## 11. Docker-сборка
 
-Сборка оптимизирована для быстрой итерации:
+Сборка построена на принципе **одно описание — много вариантов**:
 
-- **Per-model Dockerfiles** — изменение deps одной модели не инвалидирует кэш другой
-- **Базовый образ** `pytorch/pytorch` (GPU) или `python:3.12-slim` (CPU) — только нужное
-- **uv** вместо pip — установка в 10–100x быстрее
-- **Слоистое кэширование** — base deps → model deps → app code
-- **BuildKit cache mounts** — пакеты переиспользуются между сборками
-- **Non-root user** — контейнер работает от `infergate`
+- **Единый `deploy/Dockerfile.worker`** — параметризован build-args (`BASE_IMAGE`, `APT_PACKAGES`, `WORKER_REQUIREMENTS`, `POST_INSTALL`). Все 11 воркеров собираются из него — нет копипаста.
+- **`deploy/docker-bake.hcl`** — матрица сборки (HCL), 1 модель = 1 строка. `docker buildx bake` собирает все параллельно, с общим кэшем слоёв и поддержкой registry push.
+- **`deploy/docker-compose.yml`** с YAML-якорями для общих блоков (environment, healthcheck, GPU reservations).
+- **uv** вместо pip — установка в 10–100x быстрее.
+- **BuildKit cache mounts** — пакеты переиспользуются между сборками.
+
+### Команды сборки
+
+```bash
+# Собрать все воркеры параллельно через bake
+docker buildx bake -f deploy/docker-bake.hcl
+
+# Собрать одну модель
+docker buildx bake -f deploy/docker-bake.hcl worker-qwen-image
+
+# Push в registry
+REGISTRY=myreg.io/infergate TAG=v1 \
+  docker buildx bake -f deploy/docker-bake.hcl --push
+
+# Либо по-compose-овски (одна модель)
+docker compose -f deploy/docker-compose.yml build worker-qwen-image
+```
 
 ### Скорость пересборки
 

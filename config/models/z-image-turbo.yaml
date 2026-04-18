@@ -1,0 +1,39 @@
+id: z-image-turbo
+display_name: "Z-Image Turbo"
+category: image
+provider_class: DiffusersImageProvider
+enabled: ${oc.decode:${oc.env:Z_IMAGE_TURBO_ENABLED,true}}
+
+model:
+  hub_id: "Tongyi-MAI/Z-Image-Turbo"
+  revision: "main"
+  torch_dtype: ${oc.env:Z_IMAGE_TURBO_TORCH_DTYPE,bfloat16}
+  vram_mb: ${oc.decode:${oc.env:Z_IMAGE_TURBO_VRAM_MB,12000}}
+  # 6B DiT + large text encoder. Try bf16 first; flip to nf4 if OOM.
+  cpu_offload: ${oc.decode:${oc.env:Z_IMAGE_TURBO_CPU_OFFLOAD,false}}
+  sequential_cpu_offload: ${oc.decode:${oc.env:Z_IMAGE_TURBO_SEQUENTIAL_OFFLOAD,false}}
+  quantization: ${oc.decode:${oc.env:Z_IMAGE_TURBO_QUANTIZATION,null}}
+  # When quantization is enabled, target the text encoder first (largest saving)
+  quantize_components: ["text_encoder", "transformer"]
+  warmup: ${oc.decode:${oc.env:Z_IMAGE_TURBO_WARMUP,false}}
+  default_params:
+    num_inference_steps: ${oc.decode:${oc.env:Z_IMAGE_TURBO_STEPS,8}}
+    guidance_scale: ${oc.decode:${oc.env:Z_IMAGE_TURBO_CFG,0.0}}
+    width: 1024
+    height: 1024
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: ${oc.env:Z_IMAGE_TURBO_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:Z_IMAGE_TURBO_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:Z_IMAGE_TURBO_MAX_CONCURRENT,1}}
+
+metadata:
+  license: Apache-2.0
+  description: "Z-Image Turbo — 6B DiT, 8-step distilled, Apache-2.0, by Tongyi"
+  tags: ["fast", "distilled", "apache2", "modern"]

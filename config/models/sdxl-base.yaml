@@ -1,0 +1,37 @@
+id: sdxl-base
+display_name: "Stable Diffusion XL Base 1.0"
+category: image
+provider_class: DiffusersImageProvider
+enabled: ${oc.decode:${oc.env:SDXL_BASE_ENABLED,true}}
+
+model:
+  hub_id: "stabilityai/stable-diffusion-xl-base-1.0"
+  revision: "main"
+  torch_dtype: ${oc.env:SDXL_BASE_TORCH_DTYPE,float16}
+  vram_mb: ${oc.decode:${oc.env:SDXL_BASE_VRAM_MB,7000}}
+  # Fits 12GB without offload at fp16.
+  cpu_offload: ${oc.decode:${oc.env:SDXL_BASE_CPU_OFFLOAD,false}}
+  sequential_cpu_offload: ${oc.decode:${oc.env:SDXL_BASE_SEQUENTIAL_OFFLOAD,false}}
+  warmup: ${oc.decode:${oc.env:SDXL_BASE_WARMUP,false}}
+  variant: ${oc.env:SDXL_BASE_VARIANT,fp16}
+  default_params:
+    num_inference_steps: ${oc.decode:${oc.env:SDXL_BASE_STEPS,30}}
+    guidance_scale: ${oc.decode:${oc.env:SDXL_BASE_CFG,7.0}}
+    width: 1024
+    height: 1024
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: ${oc.env:SDXL_BASE_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:SDXL_BASE_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:SDXL_BASE_MAX_CONCURRENT,1}}
+
+metadata:
+  license: "OpenRAIL++"
+  description: "Stable Diffusion XL Base 1.0 — UNet-based, 1024×1024, proven"
+  tags: ["stable-diffusion", "xl", "unet", "proven"]
