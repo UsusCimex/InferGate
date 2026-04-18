@@ -1,20 +1,73 @@
-# Per-model Docker deployment — each model in its own isolated container.
+# Per-model Docker deployment — one unified Dockerfile, one matrix, many workers.
 #
-# Usage (from project root):
+# Build (single service, via compose):
+#   docker compose -f deploy/docker-compose.yml build worker-qwen-image
+# Build (batch, via bake — preferred for >1 model):
+#   docker buildx bake -f deploy/docker-bake.hcl
+#
+# Run (from project root so .env is picked up):
 #   docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
-#   docker compose -f deploy/docker-compose.yml --profile qwen3.5-4b --profile kokoro-82m up -d
+#   docker compose -f deploy/docker-compose.yml --profile qwen-image up -d
 #   docker compose -f deploy/docker-compose.yml --profile text --profile image --profile tts up -d
 #
-# Gateway starts automatically (no profile needed).
-# Workers require explicit --profile activation.
+# Adding a new model:
+#   1. config/models/<id>.yaml                         — model config
+#   2. deploy/workers/<id>/requirements.txt            — per-model pip deps
+#   3. One entry in the matrix in deploy/docker-bake.hcl
+#   4. One service stanza here (copy a similar one)
 #
-# Base image override (create deploy/.env or pass via environment):
-#   Text (vLLM):  VLLM_IMAGE=vllm/vllm-openai:v0.19.0 (default)
-#   Image (GPU):  GPU_BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime (default)
-#   RTX 30xx/40xx: GPU_BASE_IMAGE=pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+# Base-image overrides (env vars; put them in deploy/.env):
+#   VLLM_IMAGE=vllm/vllm-openai:v0.19.0
+#   GPU_BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+#   (for RTX 30xx/40xx: pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime)
 
-# Shared config for GPU workers
-x-gpu-worker: &gpu-worker
+# ─── Reusable YAML fragments ────────────────────────────────────────────
+# env_file: .env — tunables for each model (quantisation, offload, steps,
+# concurrency, etc.) come from deploy/.env. The model YAMLs read them via
+# OmegaConf `${oc.env:VAR,default}`. See deploy/.env.example.
+x-env-file: &env-file
+  - path: .env
+    required: false
+
+x-env: &env
+  WORKER_MODEL_CONFIG: /app/config/model.yaml
+  WORKER_MODELS_DIR: /app/models
+  HF_TOKEN: ${HF_TOKEN:-}
+  HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+  # Disable expandable_segments — incompatible with enable_model_cpu_offload
+  # on Blackwell/WSL2 (triggers CUDACachingAllocator handles_.at assert).
+  # Override to "expandable_segments:True" only if you need it.
+  PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-}
+
+x-hc-text: &hc-text
+  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 180s
+
+x-hc-image: &hc-image
+  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 10
+  start_period: 600s
+
+x-hc-tts: &hc-tts
+  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 30s
+
+x-hc-tts-gpu: &hc-tts-gpu
+  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 120s
+
+x-gpu: &gpu
   restart: unless-stopped
   shm_size: "1g"
   deploy:
@@ -25,15 +78,12 @@ x-gpu-worker: &gpu-worker
             count: 1
             capabilities: [gpu]
 
-# Build args per worker type
-x-vllm-build-args: &vllm-build-args
-  VLLM_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.19.0}
-
-x-gpu-build-args: &gpu-build-args
-  GPU_BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+x-build: &build
+  context: ..
+  dockerfile: deploy/Dockerfile.worker
 
 services:
-  # ─── Gateway ────────────────────────────────────────────────────────
+  # ─── Gateway ─────────────────────────────────────────────────────────
   gateway:
     build:
       context: ..
@@ -46,10 +96,13 @@ services:
       - WORKER_URL_QWEN3_8B=http://worker-qwen3-8b:8001
       - WORKER_URL_LLAMA3_1_8B=http://worker-llama3-1-8b:8001
       - WORKER_URL_SD35_MEDIUM=http://worker-sd35-medium:8001
+      - WORKER_URL_SDXL_BASE=http://worker-sdxl-base:8001
       - WORKER_URL_FLUX1_DEV=http://worker-flux1-dev:8001
       - WORKER_URL_FLUX1_SCHNELL=http://worker-flux1-schnell:8001
       - WORKER_URL_FLUX2_KLEIN_4B=http://worker-flux2-klein-4b:8001
       - WORKER_URL_QWEN_IMAGE=http://worker-qwen-image:8001
+      - WORKER_URL_Z_IMAGE_TURBO=http://worker-z-image-turbo:8001
+      - WORKER_URL_HUNYUAN_DIT=http://worker-hunyuan-dit:8001
       - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
     volumes:
@@ -62,259 +115,224 @@ services:
       timeout: 10s
       retries: 3
 
-  # ─── Text workers ───────────────────────────────────────────────────
+  # ─── Text workers (vLLM) ─────────────────────────────────────────────
   worker-qwen3-5-4b:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["text", "qwen3.5-4b"]
     build:
-      context: ..
-      dockerfile: deploy/workers/qwen3.5-4b/Dockerfile
+      <<: *build
       args:
-        <<: *vllm-build-args
+        BASE_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.19.0}
+        WORKER_REQUIREMENTS: deploy/workers/qwen3.5-4b/requirements.txt
     volumes:
       - ../config/models/qwen3.5-4b.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-text
 
   worker-qwen3-5-9b:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["qwen3.5-9b"]
     build:
-      context: ..
-      dockerfile: deploy/workers/qwen3.5-9b/Dockerfile
+      <<: *build
       args:
-        <<: *vllm-build-args
+        BASE_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.19.0}
+        WORKER_REQUIREMENTS: deploy/workers/qwen3.5-9b/requirements.txt
     volumes:
       - ../config/models/qwen3.5-9b.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-text
 
   worker-qwen3-8b:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["qwen3-8b"]
     build:
-      context: ..
-      dockerfile: deploy/workers/qwen3-8b/Dockerfile
+      <<: *build
       args:
-        <<: *vllm-build-args
+        BASE_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.19.0}
+        WORKER_REQUIREMENTS: deploy/workers/qwen3-8b/requirements.txt
     volumes:
       - ../config/models/qwen3-8b.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-text
 
   worker-llama3-1-8b:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["llama3.1-8b"]
     build:
-      context: ..
-      dockerfile: deploy/workers/llama3.1-8b/Dockerfile
+      <<: *build
       args:
-        <<: *vllm-build-args
+        BASE_IMAGE: ${VLLM_IMAGE:-vllm/vllm-openai:v0.19.0}
+        WORKER_REQUIREMENTS: deploy/workers/llama3.1-8b/requirements.txt
     volumes:
       - ../config/models/llama3.1-8b.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-text
 
-  # ─── Image workers ──────────────────────────────────────────────────
+  # ─── Image workers (diffusers) ───────────────────────────────────────
   worker-sd35-medium:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["image", "sd35-medium"]
     build:
-      context: ..
-      dockerfile: deploy/workers/sd35-medium/Dockerfile
+      <<: *build
       args:
-        <<: *gpu-build-args
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        WORKER_REQUIREMENTS: deploy/workers/sd35-medium/requirements.txt
     volumes:
       - ../config/models/sd35-medium.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 600s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  worker-sdxl-base:
+    <<: *gpu
+    profiles: ["sdxl-base"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        WORKER_REQUIREMENTS: deploy/workers/sdxl-base/requirements.txt
+    volumes:
+      - ../config/models/sdxl-base.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
 
   worker-flux1-dev:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["flux1-dev"]
     build:
-      context: ..
-      dockerfile: deploy/workers/flux1-dev/Dockerfile
+      <<: *build
       args:
-        <<: *gpu-build-args
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        WORKER_REQUIREMENTS: deploy/workers/flux1-dev/requirements.txt
     volumes:
       - ../config/models/flux1-dev.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 600s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
 
   worker-flux1-schnell:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["flux1-schnell"]
     build:
-      context: ..
-      dockerfile: deploy/workers/flux1-schnell/Dockerfile
+      <<: *build
       args:
-        <<: *gpu-build-args
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: build-essential
+        WORKER_REQUIREMENTS: deploy/workers/flux1-schnell/requirements.txt
     volumes:
       - ../config/models/flux1-schnell.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 600s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
 
   worker-flux2-klein-4b:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["flux2-klein-4b"]
     build:
-      context: ..
-      dockerfile: deploy/workers/flux2-klein-4b/Dockerfile
+      <<: *build
       args:
-        <<: *gpu-build-args
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        WORKER_REQUIREMENTS: deploy/workers/flux2-klein-4b/requirements.txt
     volumes:
       - ../config/models/flux2-klein-4b.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 600s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
 
   worker-qwen-image:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["qwen-image"]
     build:
-      context: ..
-      dockerfile: deploy/workers/qwen-image/Dockerfile
+      <<: *build
       args:
-        <<: *gpu-build-args
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: build-essential
+        WORKER_REQUIREMENTS: deploy/workers/qwen-image/requirements.txt
     volumes:
       - ../config/models/qwen-image.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 600s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
 
-  # ─── TTS workers ────────────────────────────────────────────────────
+  worker-hunyuan-dit:
+    <<: *gpu
+    profiles: ["hunyuan-dit"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        WORKER_REQUIREMENTS: deploy/workers/hunyuan-dit/requirements.txt
+    volumes:
+      - ../config/models/hunyuan-dit.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  worker-z-image-turbo:
+    <<: *gpu
+    profiles: ["z-image-turbo"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: git build-essential
+        WORKER_REQUIREMENTS: deploy/workers/z-image-turbo/requirements.txt
+    volumes:
+      - ../config/models/z-image-turbo.yaml:/app/config/model.yaml:ro
+      - ../models:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  # ─── TTS workers ─────────────────────────────────────────────────────
   worker-kokoro-82m:
+    restart: unless-stopped
     profiles: ["tts", "kokoro-82m"]
     build:
-      context: ..
-      dockerfile: deploy/workers/kokoro-82m/Dockerfile
+      <<: *build
+      args:
+        BASE_IMAGE: python:3.12-slim
+        APT_PACKAGES: gcc
+        WORKER_REQUIREMENTS: deploy/workers/kokoro-82m/requirements.txt
+        POST_INSTALL: python -m spacy download en_core_web_sm
     volumes:
       - ../config/models/kokoro-82m.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts
 
   worker-openaudio-s1-mini:
-    <<: *gpu-worker
+    <<: *gpu
     profiles: ["openaudio-s1-mini"]
     build:
-      context: ..
-      dockerfile: deploy/workers/openaudio-s1-mini/Dockerfile
+      <<: *build
       args:
-        <<: *gpu-build-args
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: git
+        WORKER_REQUIREMENTS: deploy/workers/openaudio-s1-mini/requirements.txt
     volumes:
       - ../config/models/openaudio-s1-mini.yaml:/app/config/model.yaml:ro
       - ../models:/app/models
-    environment:
-      - WORKER_MODEL_CONFIG=/app/config/model.yaml
-      - WORKER_MODELS_DIR=/app/models
-      - HF_TOKEN=${HF_TOKEN:-}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts-gpu
 
 volumes:
   cache_data:

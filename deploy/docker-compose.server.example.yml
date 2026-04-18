@@ -1,0 +1,34 @@
+# Example override file for a server-class host (24GB+ GPU, no offload).
+#
+# Usage:
+#   cp deploy/docker-compose.server.example.yml deploy/docker-compose.server.yml
+#   edit deploy/docker-compose.server.yml
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/docker-compose.server.yml \
+#                  --profile image --profile text up -d
+#
+# Compose merges files left-to-right; keys here are applied on top of the base.
+# `environment:` and `deploy:` are merged by key — you only write what differs.
+#
+# Prefer tuning via deploy/.env (simple key=value) when the change applies to
+# all hosts. Use this file for host-specific layout: GPU count, volumes,
+# pinned-model overrides, profile defaults.
+
+services:
+  worker-qwen-image:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      QWEN_IMAGE_QUANTIZATION: "null"
+      QWEN_IMAGE_CPU_OFFLOAD: "false"
+      QWEN_IMAGE_MAX_CONCURRENT: "2"
+
+  worker-flux1-dev:
+    environment:
+      FLUX1_DEV_CPU_OFFLOAD: "false"
+      FLUX1_DEV_STEPS: "50"
