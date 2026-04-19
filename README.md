@@ -608,7 +608,7 @@ pytest --cov=app --cov-branch
 
 ### LoRA и тонкая настройка (итерация 2 — средняя сложность)
 
-- [ ] **LoRA hot-load** — `{"loras": [{"id": "user/style-anime", "weight": 0.8}]}` в запросе, per-request загрузка через `pipe.load_lora_weights + pipe.set_adapters`, LRU-кэш скачанных LoRA, graceful unload
+- [x] **LoRA hot-load** — поле `loras: [{id, weight, weight_file?, adapter_name?}]` в запросе, LRU-кэш адаптеров в pipeline (дефолт `max_loaded=8`), автоматическая активация через `set_adapters(names, weights)`, `disable_lora()` когда loras=[], per-request max 5. Включено пока только для sdxl-base
 - [ ] **Textual Inversion** — `pipe.load_textual_inversion` для новых token embeddings
 - [ ] **LyCORIS** — расширенные LoRA через `peft` библиотеку
 

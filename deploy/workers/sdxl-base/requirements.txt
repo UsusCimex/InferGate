@@ -5,3 +5,5 @@ safetensors>=0.4.0
 sentencepiece>=0.2.0
 # A1111-style token weighting — (word:1.5) syntax support
 compel>=2.0
+# LoRA hot-load via pipe.load_lora_weights — peft is the diffusers backend
+peft>=0.10.0

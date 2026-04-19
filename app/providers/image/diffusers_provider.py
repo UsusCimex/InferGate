@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import io
+import itertools
 import logging
 import re
+import threading
+from collections import OrderedDict
 from typing import Any
 
 from app.providers.base import ImageProvider
@@ -134,9 +137,19 @@ class DiffusersImageProvider(ImageProvider):
         self._compel = None          # type: ignore[assignment]
         self._compel_mode = None     # "sdxl" (dual-encoder) | "sd15" (single) | None
 
+        # LoRA adapter cache: maps (repo_id, weight_file) → adapter_name
+        # registered in the pipeline. OrderedDict doubles as an LRU — move
+        # to end on access, evict from front when size exceeds cap.
+        self._lora_cache: OrderedDict[tuple[str, str | None], str] = OrderedDict()
+        self._lora_counter = itertools.count()
+        self._lora_lock = threading.Lock()
+        self._model_dir: str | None = None  # stored at load() for LoRA downloads
+
     async def load(self, model_dir: str) -> None:
         import torch
         from diffusers import DiffusionPipeline
+
+        self._model_dir = model_dir  # reused by LoRA downloads in generate()
 
         _disable_caching_allocator_warmup()
 
@@ -257,6 +270,115 @@ class DiffusersImageProvider(ImageProvider):
             self._compel = None
             self._compel_mode = None
 
+    def _apply_loras(self, loras: list[dict] | None, model_dir: str) -> None:
+        """Ensure requested LoRAs are loaded in the pipeline and activated.
+
+        `loras` is a list of dicts with keys {id, weight, weight_file,
+        adapter_name}. When None or empty we deactivate all adapters
+        without evicting them (next matching request is still fast).
+
+        Cache strategy:
+          - Each (repo_id, weight_file) pair maps to one adapter_name in
+            the pipeline; reused across requests.
+          - OrderedDict LRU; when size exceeds `model.lora.max_loaded`
+            (default 8) the front entry is evicted via delete_adapters.
+          - Weight is per-request state — set via set_adapters, never
+            baked into the adapter itself.
+        """
+        pipe = self._pipeline
+        if pipe is None:
+            return
+
+        # Deactivate path: no loras requested for this call.
+        if not loras:
+            if hasattr(pipe, "disable_lora"):
+                pipe.disable_lora()
+            return
+
+        lora_cfg = self.config.model.get("lora") or {}
+        max_loaded = int(lora_cfg.get("max_loaded", 8))
+        max_per_request = int(lora_cfg.get("max_per_request", 5))
+        if len(loras) > max_per_request:
+            raise ValueError(
+                f"loras: {len(loras)} adapters requested, max {max_per_request}"
+            )
+
+        if not hasattr(pipe, "load_lora_weights"):
+            raise ValueError(
+                f"Pipeline for {self.model_id} does not support LoRA loading"
+            )
+
+        with self._lora_lock:
+            active_names: list[str] = []
+            active_weights: list[float] = []
+
+            for spec in loras:
+                repo_id = spec["id"]
+                weight_file = spec.get("weight_file")
+                cache_key = (repo_id, weight_file)
+
+                if cache_key in self._lora_cache:
+                    adapter_name = self._lora_cache[cache_key]
+                    self._lora_cache.move_to_end(cache_key)
+                    logger.debug("LoRA cache hit: %s → %s", repo_id, adapter_name)
+                else:
+                    # Client may pin an adapter_name; otherwise we allocate
+                    # `lora_N` monotonically. Collisions (same name, diff
+                    # repo) rename to a fresh slot to stay unambiguous.
+                    adapter_name = spec.get("adapter_name") or f"lora_{next(self._lora_counter)}"
+                    while adapter_name in self._lora_cache.values():
+                        adapter_name = f"lora_{next(self._lora_counter)}"
+
+                    load_kwargs: dict[str, Any] = {
+                        "cache_dir": model_dir,
+                        "adapter_name": adapter_name,
+                    }
+                    if weight_file:
+                        load_kwargs["weight_name"] = weight_file
+
+                    try:
+                        logger.info(
+                            "Loading LoRA %s%s into %s as '%s'",
+                            repo_id,
+                            f" (file={weight_file})" if weight_file else "",
+                            self.model_id,
+                            adapter_name,
+                        )
+                        pipe.load_lora_weights(repo_id, **load_kwargs)
+                    except Exception as e:
+                        raise ValueError(
+                            f"Failed to load LoRA '{repo_id}'"
+                            f"{f' (file={weight_file})' if weight_file else ''}: {e}"
+                        ) from e
+
+                    self._lora_cache[cache_key] = adapter_name
+
+                    # LRU eviction after insert, not before — a brand-new
+                    # request can overshoot by exactly one and then be trimmed.
+                    while len(self._lora_cache) > max_loaded:
+                        evict_key, evict_name = self._lora_cache.popitem(last=False)
+                        logger.info(
+                            "Evicting LoRA adapter '%s' (%s) — cache full (%d)",
+                            evict_name, evict_key[0], max_loaded,
+                        )
+                        try:
+                            pipe.delete_adapters([evict_name])
+                        except Exception as e:  # noqa: BLE001 — eviction is best-effort
+                            logger.warning("delete_adapters(%s) failed: %s", evict_name, e)
+
+                active_names.append(adapter_name)
+                active_weights.append(float(spec.get("weight", 1.0)))
+
+            # enable_lora is a no-op if LoRA state is already enabled but
+            # cheap — call unconditionally for defensive-coding reasons.
+            if hasattr(pipe, "enable_lora"):
+                pipe.enable_lora()
+            pipe.set_adapters(active_names, adapter_weights=active_weights)
+            logger.debug(
+                "Active LoRAs for request: %s",
+                list(zip(active_names, active_weights, strict=True)),
+            )
+
     def _apply_compel(self, prompt: str, negative_prompt: str | None, defaults: dict) -> None:
         """Replace `prompt`/`negative_prompt` in `defaults` with compel embeds.
 
@@ -355,6 +477,11 @@ class DiffusersImageProvider(ImageProvider):
         # so the swap + generate pair is atomic under queue.max_concurrent=1).
         scheduler_name = defaults.pop("scheduler", None)
 
+        # Per-request LoRA adapters (applied *before* compel because LoRAs
+        # can modify the text encoder; compel reads its live weights).
+        loras = defaults.pop("loras", None)
+        model_dir = self._model_dir or "/app/models"
+
         # Detect A1111-style prompt weighting — only activate compel path
         # when the syntax is actually used; plain prompts stay on the raw
         # tokenizer route so we don't subtly change baseline outputs.
@@ -365,6 +492,7 @@ class DiffusersImageProvider(ImageProvider):
 
         def _gen():
             _maybe_swap_scheduler(self._pipeline, scheduler_name)
+            self._apply_loras(loras, model_dir)
             if use_compel:
                 self._apply_compel(prompt, negative_prompt or None, defaults)
                 return self._pipeline(**defaults).images[0]

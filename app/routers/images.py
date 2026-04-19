@@ -46,6 +46,10 @@ async def generate_images(
         params["guidance_scale"] = body.guidance_scale
     if body.scheduler is not None:
         params["scheduler"] = body.scheduler
+    if body.loras is not None:
+        # Serialise to plain dicts so they survive the JSON hop to the worker
+        # (LoraSpec pydantic models don't serialise by default through httpx).
+        params["loras"] = [lora.model_dump() for lora in body.loras]
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"

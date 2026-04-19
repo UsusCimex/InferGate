@@ -19,6 +19,10 @@ model:
     guidance_scale: ${oc.decode:${oc.env:SDXL_BASE_CFG,7.0}}
     width: 1024
     height: 1024
+  # LoRA hot-load caps (0-valued max_loaded disables caching entirely).
+  lora:
+    max_loaded: ${oc.decode:${oc.env:SDXL_BASE_LORA_MAX_LOADED,8}}
+    max_per_request: ${oc.decode:${oc.env:SDXL_BASE_LORA_MAX_PER_REQUEST,5}}
 
 cache:
   enabled: true
