@@ -126,7 +126,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/qwen3.5-4b/requirements.txt
     volumes:
       - ../config/models/qwen3.5-4b.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-text
@@ -141,7 +141,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/qwen3.5-9b/requirements.txt
     volumes:
       - ../config/models/qwen3.5-9b.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-text
@@ -156,7 +156,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/qwen3-8b/requirements.txt
     volumes:
       - ../config/models/qwen3-8b.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-text
@@ -171,7 +171,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/llama3.1-8b/requirements.txt
     volumes:
       - ../config/models/llama3.1-8b.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-text
@@ -187,7 +187,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/sd35-medium/requirements.txt
     volumes:
       - ../config/models/sd35-medium.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -202,7 +202,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/sdxl-base/requirements.txt
     volumes:
       - ../config/models/sdxl-base.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -217,7 +217,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/flux1-dev/requirements.txt
     volumes:
       - ../config/models/flux1-dev.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -233,7 +233,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/flux1-schnell/requirements.txt
     volumes:
       - ../config/models/flux1-schnell.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -248,7 +248,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/flux2-klein-4b/requirements.txt
     volumes:
       - ../config/models/flux2-klein-4b.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -264,7 +264,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/qwen-image/requirements.txt
     volumes:
       - ../config/models/qwen-image.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -279,7 +279,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/hunyuan-dit/requirements.txt
     volumes:
       - ../config/models/hunyuan-dit.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -295,7 +295,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/z-image-turbo/requirements.txt
     volumes:
       - ../config/models/z-image-turbo.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-image
@@ -313,7 +313,7 @@ services:
         POST_INSTALL: python -m spacy download en_core_web_sm
     volumes:
       - ../config/models/kokoro-82m.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-tts
@@ -329,7 +329,7 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/openaudio-s1-mini/requirements.txt
     volumes:
       - ../config/models/openaudio-s1-mini.yaml:/app/config/model.yaml:ro
-      - ../models:/app/models
+      - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
     healthcheck: *hc-tts-gpu
