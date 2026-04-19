@@ -606,7 +606,7 @@ pytest --cov=app --cov-branch
 
 ### Расширения API и семплинга (итерация 1 — быстрые победы)
 
-- [ ] **Per-request tunables в API** — прокинуть `negative_prompt`, `num_inference_steps`, `guidance_scale` в `ImageGenerationRequest` schema (сейчас только в YAML defaults)
+- [x] **Per-request tunables в API** — `negative_prompt`, `num_inference_steps`, `guidance_scale` прокинуты через `ImageGenerationRequest`
 - [ ] **Scheduler swap per-request** — таблица имя→класс (Euler, DPM++ 2M, DDIM, LMS, Heun) с подстановкой `pipe.scheduler = Cls.from_config(pipe.scheduler.config)` до генерации
 - [ ] **A1111-style token weighting** — синтаксис `(word:1.2)` через `compel` библиотеку для prompt-embedding с весами
 
