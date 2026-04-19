@@ -1,0 +1,13 @@
+# DeepSeek's janus package is not on PyPI — install from git.
+janus @ git+https://github.com/deepseek-ai/Janus.git
+# transformers 4.50+ made PretrainedConfig a dataclass with kw_only=True,
+# which rejects legacy `foo: dict = {}` mutable defaults used by janus's
+# VisionConfig. Pin to the last pre-dataclass release.
+transformers>=4.44,<4.50
+accelerate>=0.30.0
+safetensors>=0.4.0
+sentencepiece>=0.2.0
+pillow>=10.0.0
+numpy>=1.26.0
+# torchvision is an implicit dep of janus's SigLIP vision head
+torchvision

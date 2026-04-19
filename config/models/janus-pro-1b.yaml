@@ -1,0 +1,32 @@
+id: janus-pro-1b
+display_name: "Janus-Pro 1B"
+category: image
+provider_class: JanusImageProvider
+enabled: ${oc.decode:${oc.env:JANUS_PRO_1B_ENABLED,true}}
+
+model:
+  hub_id: "deepseek-ai/Janus-Pro-1B"
+  revision: "main"
+  torch_dtype: ${oc.env:JANUS_PRO_1B_TORCH_DTYPE,bfloat16}
+  vram_mb: ${oc.decode:${oc.env:JANUS_PRO_1B_VRAM_MB,6000}}
+  # Janus is autoregressive — no offload / no quant / no warmup concepts.
+  # Generates 384×384 natively; `size`/`width`/`height` are ignored.
+  default_params:
+    cfg_weight: ${oc.decode:${oc.env:JANUS_PRO_1B_CFG_WEIGHT,5.0}}
+    temperature: ${oc.decode:${oc.env:JANUS_PRO_1B_TEMPERATURE,1.0}}
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 1024
+
+queue:
+  priority: ${oc.env:JANUS_PRO_1B_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:JANUS_PRO_1B_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:JANUS_PRO_1B_MAX_CONCURRENT,1}}
+
+metadata:
+  license: MIT
+  description: "Janus-Pro 1B — autoregressive T2I, 384×384, unified multimodal (DeepSeek)"
+  tags: ["autoregressive", "deepseek", "mit", "unified", "multimodal"]

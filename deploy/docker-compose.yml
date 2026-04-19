@@ -103,6 +103,7 @@ services:
       - WORKER_URL_QWEN_IMAGE=http://worker-qwen-image:8001
       - WORKER_URL_Z_IMAGE_TURBO=http://worker-z-image-turbo:8001
       - WORKER_URL_HUNYUAN_DIT=http://worker-hunyuan-dit:8001
+      - WORKER_URL_JANUS_PRO_1B=http://worker-janus-pro-1b:8001
       - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
     volumes:
@@ -264,6 +265,22 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/qwen-image/requirements.txt
     volumes:
       - ../config/models/qwen-image.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  worker-janus-pro-1b:
+    <<: *gpu
+    profiles: ["janus-pro-1b"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: git
+        WORKER_REQUIREMENTS: deploy/workers/janus-pro-1b/requirements.txt
+    volumes:
+      - ../config/models/janus-pro-1b.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
