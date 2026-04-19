@@ -21,9 +21,8 @@ Self-hosted OpenAI-совместимый AI-шлюз для локальных 
 11. [Docker-сборка](#11-docker-сборка)
 12. [Тестирование](#12-тестирование)
 13. [Системные требования](#13-системные-требования)
-14. [Недавно добавлено](#14-недавно-добавлено-итерации-расширения-t2i-api)
-15. [TODO](#15-todo)
-16. [Лицензия](#16-лицензия)
+14. [TODO](#14-todo)
+15. [Лицензия](#15-лицензия)
 
 ---
 
@@ -740,38 +739,7 @@ pytest --cov=app --cov-branch
 
 ---
 
-## 14. Недавно добавлено (итерации расширения t2i API)
-
-### Итерация 1 — расширения API и семплинга
-
-- **Per-request tunables** — `negative_prompt`, `num_inference_steps`, `guidance_scale` как опциональные поля `ImageGenerationRequest`
-- **Scheduler swap** — поле `scheduler` в запросе, 12 семплеров (Euler, DPM++ 2M / SDE, DDIM, LMS, Heun, UniPC, …) через `Cls.from_config(pipe.scheduler.config)`
-- **A1111 token weighting** — `(word:1.5)` через `compel` (SDXL dual-encoder + SD1.5 single-encoder), авто-детект по регексу, zero-regress на plain prompts
-- **End-to-end error forwarding** — worker-side ValueError → HTTP 400 + JSON body → зеркалится gateway'ом через глобальный `httpx.HTTPStatusError` handler
-
-### Итерация 2 — LoRA и embeddings
-
-- **LoRA hot-load** — `loras: [{id, weight, weight_file?, adapter_name?}]` в запросе. LRU-кэш адаптеров в pipeline (дефолт `max_loaded=8`), активация через `set_adapters(names, weights)`, `disable_lora()` когда `loras=[]`. До 5 LoRA за запрос. Работает для `sdxl-base`
-- **Textual Inversion** — `textual_inversions: [{id, token?, weight_file?}]`. Dedup-кэш в провайдере (TI никогда не выгружаются — только разрастаются), авто-fallback на pivotal двух-тензорный формат SDXL (clip_l/clip_g отдельно). `token` принимает `str` или `list[str]` для multi-token TIs типа `<s0><s1>`
-- **CUDA memory hygiene** — `torch.cuda.empty_cache()` после каждого generate. Критично для 12GB-карт: SDXL base + compel + LoRA/TI-registries сидит у границы, фрагментация от back-to-back запросов без empty_cache приводила к OOM на второй inference
-
-### Итерация 3 — мульти-стадийный пайплайн
-
-- **HighresFix** — `highres_fix: {scale, denoising_strength, steps?, upscaler}`. Два прохода: генерация в `size` → PIL-resize по `scale` → img2img refine. Img2img-pipeline строится лениво через `AutoPipelineForImage2Image.from_pipe(base)` — **zero VRAM overhead** (шарит UNet/VAE/text_encoder). Scheduler синхронизируется между проходами. Меньше duplicate-артефактов чем single-pass на итоговой резолюции
-
-### Новые модели, добавленные за время итераций
-
-- **sdxl-base** (UNet, 7GB) — каноническая SDXL, основная площадка для всех новых фич
-- **hunyuan-dit v1.2** (DiT, 7GB) — двуязычная китайская+английская генерация
-- **z-image-turbo** (DiT distilled, 11GB) — 8-step Apache-2.0 от Tongyi
-- **janus-pro-1b / janus-pro-7b** (Autoregressive) — DeepSeek's AR T2I, unified multimodal, 384×384 native
-- **meissonic** (Masked non-AR) — vendored pipeline, 1024×1024, иная парадигма (не диффузия, не AR)
-
----
-
-## 15. TODO
-
-> Итерации 1-3 закрыты (см. предыдущую секцию). Большая часть A1111-функционала интегрирована в OpenAI-совместимый API.
+## 14. TODO
 
 ### Расширение t2i-возможностей на другие модели
 
@@ -796,6 +764,6 @@ pytest --cov=app --cov-branch
 
 ---
 
-## 16. Лицензия
+## 15. Лицензия
 
 MIT

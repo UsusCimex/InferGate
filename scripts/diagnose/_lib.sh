@@ -109,6 +109,9 @@ with open('$out', 'wb') as f: f.write(base64.b64decode(d['data'][0]['b64_json'])
 
 # ── fire a single image-gen request and decode ──────────────────────────
 # Sets the global vars HTTP_CODE, ELAPSED, OUTPUT_SIZE.
+# Sends `X-InferGate-No-Cache: true` — feature tests always exercise the
+# real pipeline, otherwise seed-based caching returns stale results from
+# a previous build before our code change.
 # Usage: fire_image_request <model-id> <prompt> <output-path> [json-extra]
 fire_image_request() {
     local model="$1" prompt="$2" out="$3" extra="${4:-}"
@@ -126,6 +129,7 @@ fire_image_request() {
     HTTP_CODE=$(curl -s -o "$resp" -w '%{http_code}' \
         -X POST http://localhost:8000/v1/images/generations \
         -H 'Content-Type: application/json' \
+        -H 'X-InferGate-No-Cache: true' \
         -d "$body" || echo 000)
     ELAPSED=$(( SECONDS - t0 ))
 

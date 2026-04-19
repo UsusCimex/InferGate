@@ -53,6 +53,7 @@ fire() {
     code=$(curl -s -o "$resp" -w '%{http_code}' \
         -X POST http://localhost:8000/v1/images/generations \
         -H 'Content-Type: application/json' \
+        -H 'X-InferGate-No-Cache: true' \
         -d "$body" || echo 000)
     local elapsed=$(( SECONDS - t0 ))
 
