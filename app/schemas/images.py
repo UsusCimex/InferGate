@@ -3,6 +3,23 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 
 
+class HighresFixSpec(BaseModel):
+    """Two-pass generation: compose at the request's `size`, upscale, then
+    img2img-refine at higher resolution. Produces sharper detail than a
+    single-pass generate at the target resolution (SDXL base tends to
+    duplicate features above ~1024px natively).
+
+    Pipeline runs:
+      1. Generate at request.width × request.height (typically 512-1024)
+      2. PIL-resize to (w*scale, h*scale) using `upscaler` resampling
+      3. Img2img pass with `denoising_strength` (0.0=no change, 1.0=redraw)
+    """
+    scale: float = Field(2.0, gt=1.0, le=4.0)
+    denoising_strength: float = Field(0.5, ge=0.0, le=1.0)
+    steps: int | None = Field(None, ge=1, le=150)  # override for pass 2
+    upscaler: str = Field("lanczos", pattern=r"^(nearest|bilinear|bicubic|lanczos)$")
+
+
 class TextualInversionSpec(BaseModel):
     """Single Textual Inversion (aka embedding) to register with the tokenizer.
 
@@ -71,6 +88,10 @@ class ImageGenerationRequest(BaseModel):
     # per-request cap is loose. Once loaded they persist for the lifetime
     # of the provider — subsequent requests skip reload.
     textual_inversions: list[TextualInversionSpec] | None = None
+    # Two-pass high-resolution generation (compose → upscale → refine).
+    # When set, the `size` field becomes the base-pass resolution and the
+    # final image is `size * scale`.
+    highres_fix: HighresFixSpec | None = None
 
     @field_validator("loras")
     @classmethod

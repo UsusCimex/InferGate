@@ -52,6 +52,8 @@ async def generate_images(
         params["loras"] = [lora.model_dump() for lora in body.loras]
     if body.textual_inversions is not None:
         params["textual_inversions"] = [ti.model_dump() for ti in body.textual_inversions]
+    if body.highres_fix is not None:
+        params["highres_fix"] = body.highres_fix.model_dump()
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"

@@ -152,6 +152,11 @@ class DiffusersImageProvider(ImageProvider):
         self._ti_loaded: set[tuple[str, str | None, str | None]] = set()
         self._ti_lock = threading.Lock()
 
+        # Img2img pipeline for HighresFix. Built lazily via `from_pipe` so it
+        # shares UNet / VAE / text encoders with the base pipeline (zero VRAM
+        # overhead). None until first highres_fix request touches it.
+        self._img2img_pipeline = None
+
     async def load(self, model_dir: str) -> None:
         import torch
         from diffusers import DiffusionPipeline
@@ -465,6 +470,98 @@ class DiffusersImageProvider(ImageProvider):
 
                 self._ti_loaded.add(cache_key)
 
+    def _ensure_img2img_pipe(self):
+        """Lazy-build an img2img pipeline that shares weights with the base.
+
+        Uses AutoPipelineForImage2Image.from_pipe so UNet / VAE / text
+        encoders are literally the same tensors (no duplicate VRAM). The
+        scheduler is its own instance per-pipe so we re-sync it on every
+        request — per-request scheduler swap on the base must apply to the
+        img2img pass too for consistent trajectory.
+        """
+        from diffusers import AutoPipelineForImage2Image
+
+        if self._img2img_pipeline is None:
+            self._img2img_pipeline = AutoPipelineForImage2Image.from_pipe(self._pipeline)
+        # Re-point scheduler to the base pipeline's current one — cheap and
+        # tolerates a per-request swap that happened moments ago.
+        self._img2img_pipeline.scheduler = self._pipeline.scheduler
+        return self._img2img_pipeline
+
+    def _apply_highres_fix(self, prompt: str, defaults: dict, hires: dict):
+        """Two-pass generation — compose at base res, upscale, img2img refine.
+
+        Inputs:
+          prompt      — positive prompt (compel embeds live in `defaults` if active)
+          defaults    — pipeline kwargs for pass 1 (mutated in-place: width/height
+                        become the BASE resolution; scheduler/size keys are already popped)
+          hires       — {scale, denoising_strength, steps?, upscaler}
+
+        Returns: PIL image at (width*scale, height*scale).
+        """
+        from PIL import Image
+
+        scale = float(hires.get("scale", 2.0))
+        denoising = float(hires.get("denoising_strength", 0.5))
+        hires_steps = hires.get("steps")
+        upscaler = str(hires.get("upscaler", "lanczos")).lower()
+
+        base_w = int(defaults.get("width", 1024))
+        base_h = int(defaults.get("height", 1024))
+        logger.info(
+            "HighresFix pass 1: base=%dx%d scale=%.2f denoising=%.2f upscaler=%s",
+            base_w, base_h, scale, denoising, upscaler,
+        )
+
+        # Pass 1: generate at base resolution. `prompt` might be None when
+        # compel supplied prompt_embeds — respect that.
+        pass1_kwargs = dict(defaults)
+        if "prompt_embeds" in pass1_kwargs:
+            base_image = self._pipeline(**pass1_kwargs).images[0]
+        else:
+            base_image = self._pipeline(prompt=prompt, **pass1_kwargs).images[0]
+        logger.info("HighresFix pass 1 complete: %dx%d", base_image.width, base_image.height)
+
+        # Upscale (CPU / PIL — cheap, keeps VRAM clean for the img2img pass).
+        new_w = int(base_w * scale)
+        new_h = int(base_h * scale)
+        resampler = {
+            "nearest":  Image.NEAREST,
+            "bilinear": Image.BILINEAR,
+            "bicubic":  Image.BICUBIC,
+            "lanczos":  Image.LANCZOS,
+        }.get(upscaler, Image.LANCZOS)
+        upscaled = base_image.resize((new_w, new_h), resampler)
+        logger.info("HighresFix upscaled: %dx%d", upscaled.width, upscaled.height)
+
+        # Free base-pass intermediate allocations before the (larger) pass 2.
+        import torch as _torch
+        if _torch.cuda.is_available():
+            _torch.cuda.empty_cache()
+
+        # Pass 2: img2img refine on the upscaled image. Pass width/height
+        # EXPLICITLY — SDXL img2img's auto-detect from input image isn't
+        # reliable (observed snapping to 1024 bucket). Better to be explicit.
+        img2img_kwargs = {
+            k: v for k, v in defaults.items()
+            if k not in ("width", "height")
+        }
+        img2img_kwargs["width"] = new_w
+        img2img_kwargs["height"] = new_h
+        if hires_steps is not None:
+            img2img_kwargs["num_inference_steps"] = int(hires_steps)
+
+        img2img_pipe = self._ensure_img2img_pipe()
+        logger.info("HighresFix pass 2 (img2img): target=%dx%d strength=%.2f", new_w, new_h, denoising)
+        if "prompt_embeds" in img2img_kwargs:
+            result = img2img_pipe(image=upscaled, strength=denoising, **img2img_kwargs).images[0]
+        else:
+            result = img2img_pipe(
+                prompt=prompt, image=upscaled, strength=denoising, **img2img_kwargs
+            ).images[0]
+        logger.info("HighresFix pass 2 complete: %dx%d", result.width, result.height)
+        return result
+
     def _load_pivotal_ti(
         self,
         repo_id: str,
@@ -606,6 +703,7 @@ class DiffusersImageProvider(ImageProvider):
         # can modify the text encoder; compel reads its live weights).
         loras = defaults.pop("loras", None)
         textual_inversions = defaults.pop("textual_inversions", None)
+        highres_fix = defaults.pop("highres_fix", None)
         model_dir = self._model_dir or "/app/models"
 
         # Detect A1111-style prompt weighting — only activate compel path
@@ -622,6 +720,9 @@ class DiffusersImageProvider(ImageProvider):
             self._apply_textual_inversions(textual_inversions, model_dir)
             if use_compel:
                 self._apply_compel(prompt, negative_prompt or None, defaults)
+            if highres_fix:
+                return self._apply_highres_fix(prompt, defaults, highres_fix)
+            if use_compel:
                 return self._pipeline(**defaults).images[0]
             # Pass `prompt` as kwarg — some pipelines (e.g. FLUX.2-klein)
             # have `image` as the first positional arg for img2img, so
