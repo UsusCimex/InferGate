@@ -1,0 +1,13 @@
+# DeepSeek's janus package is not on PyPI — install from git.
+janus @ git+https://github.com/deepseek-ai/Janus.git
+# transformers 4.50+ made PretrainedConfig a dataclass with kw_only=True,
+# which rejects janus's legacy `params: dict = {}` mutable defaults.
+transformers>=4.44,<4.50
+accelerate>=0.30.0
+safetensors>=0.4.0
+sentencepiece>=0.2.0
+pillow>=10.0.0
+numpy>=1.26.0
+torchvision
+# NF4 quantization via BitsAndBytesConfig — mandatory for 7B on 12GB cards.
+bitsandbytes>=0.46.0

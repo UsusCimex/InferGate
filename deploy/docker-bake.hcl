@@ -61,6 +61,7 @@ target "worker" {
       { id = "z-image-turbo",     base = GPU_BASE_IMAGE, apt = "git build-essential", post = "" },
       # ─── Autoregressive (non-diffusion) ──────────────────────────────
       { id = "janus-pro-1b",      base = GPU_BASE_IMAGE, apt = "git",             post = "" },
+      { id = "janus-pro-7b",      base = GPU_BASE_IMAGE, apt = "git build-essential", post = "" },
       # ─── TTS ─────────────────────────────────────────────────────────
       { id = "kokoro-82m",        base = CPU_BASE_IMAGE, apt = "gcc",             post = "python -m spacy download en_core_web_sm" },
       { id = "openaudio-s1-mini", base = GPU_BASE_IMAGE, apt = "git",             post = "" },

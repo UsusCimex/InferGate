@@ -1,0 +1,33 @@
+id: janus-pro-7b
+display_name: "Janus-Pro 7B"
+category: image
+provider_class: JanusImageProvider
+enabled: ${oc.decode:${oc.env:JANUS_PRO_7B_ENABLED,true}}
+
+model:
+  hub_id: "deepseek-ai/Janus-Pro-7B"
+  revision: "main"
+  torch_dtype: ${oc.env:JANUS_PRO_7B_TORCH_DTYPE,bfloat16}
+  vram_mb: ${oc.decode:${oc.env:JANUS_PRO_7B_VRAM_MB,8000}}
+  # 7B at bf16 is ~14GB — NF4 brings it to ~5GB weights + VQ decoder + KV
+  # cache → ~8GB peak. Override to null on ≥24GB cards for bf16 quality.
+  quantization: ${oc.env:JANUS_PRO_7B_QUANTIZATION,nf4}
+  default_params:
+    cfg_weight: ${oc.decode:${oc.env:JANUS_PRO_7B_CFG_WEIGHT,5.0}}
+    temperature: ${oc.decode:${oc.env:JANUS_PRO_7B_TEMPERATURE,1.0}}
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 1024
+
+queue:
+  priority: ${oc.env:JANUS_PRO_7B_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:JANUS_PRO_7B_TIMEOUT,600}}
+  max_concurrent: ${oc.decode:${oc.env:JANUS_PRO_7B_MAX_CONCURRENT,1}}
+
+metadata:
+  license: MIT
+  description: "Janus-Pro 7B — autoregressive T2I, 384×384, nf4-quant for 12GB cards"
+  tags: ["autoregressive", "deepseek", "mit", "quantized", "quality"]

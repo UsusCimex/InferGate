@@ -55,24 +55,39 @@ class JanusImageProvider(ImageProvider):
         hub_id = self.config.model["hub_id"]
         dtype_name = self.config.model.get("torch_dtype", "bfloat16")
         dtype = getattr(torch, dtype_name)
+        quantization = (self.config.model.get("quantization") or "").lower()
 
         # Blackwell race guard: force CUDA context init before first alloc.
         if torch.cuda.is_available():
             torch.zeros(1, device="cuda")
             torch.cuda.synchronize()
 
-        logger.info("Loading %s from %s", self.model_id, hub_id)
+        logger.info("Loading %s from %s (quant=%s)", self.model_id, hub_id, quantization or "none")
         loop = asyncio.get_running_loop()
 
         def _load():
             processor = VLChatProcessor.from_pretrained(hub_id, cache_dir=model_dir)
-            model = AutoModelForCausalLM.from_pretrained(
-                hub_id,
-                cache_dir=model_dir,
-                trust_remote_code=True,
-                torch_dtype=dtype,
-            )
-            return processor, model.to(dtype).cuda().eval()
+            kwargs: dict[str, Any] = {
+                "cache_dir": model_dir,
+                "trust_remote_code": True,
+                "torch_dtype": dtype,
+            }
+            if quantization in ("nf4", "int4"):
+                from transformers import BitsAndBytesConfig
+
+                kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=dtype,
+                )
+                # transformers + bnb auto-places quantized weights on GPU;
+                # we must NOT call .to(dtype).cuda() afterwards or it errors.
+                kwargs["device_map"] = "cuda:0"
+                model = AutoModelForCausalLM.from_pretrained(hub_id, **kwargs).eval()
+            else:
+                model = AutoModelForCausalLM.from_pretrained(hub_id, **kwargs)
+                model = model.to(dtype).cuda().eval()
+            return processor, model
 
         self._processor, self._model = await loop.run_in_executor(_GPU_EXECUTOR, _load)
         self._tokenizer = self._processor.tokenizer

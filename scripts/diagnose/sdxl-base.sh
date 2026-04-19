@@ -1,139 +1,38 @@
 #!/usr/bin/env bash
-# Launch + smoke-test sdxl-base — 6.6GB, no offload, no quantization.
-# Fits 12GB comfortably. UNet architecture — good comparison against sd35.
-#
-# Run from project root:
-#   bash scripts/diagnose_sdxl_base.sh
-
+# Launch + smoke-test sdxl-base — 6.6GB UNet, no offload/quant.
+# Run from project root: bash scripts/diagnose/sdxl-base.sh
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
 ENV_FILE="deploy/.env"
 COMPOSE=(docker compose -f deploy/docker-compose.yml)
 SERVICE="worker-sdxl-base"
+MODEL_ID="sdxl-base"
+HF_CACHE="models/models--stabilityai--stable-diffusion-xl-base-1.0"
 OUTPUT="sdxl_diag.png"
 READY_TIMEOUT=600
 
-log() { printf '\033[1;36m[diag]\033[0m %s\n' "$*"; }
-ok()  { printf '\033[1;32m[ ok ]\033[0m %s\n' "$*"; }
-err() { printf '\033[1;31m[err ]\033[0m %s\n' "$*"; }
+# shellcheck source=_lib.sh
+source scripts/diagnose/_lib.sh
 
-if [[ ! -f "$ENV_FILE" ]]; then
-    err "$ENV_FILE not found — create from deploy/.env.example first."
-    exit 1
-fi
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
 
-update_env() {
-    local key="$1" val="$2"
-    if grep -q "^${key}=" "$ENV_FILE"; then
-        log "Updating ${key}=${val}"
-        local tmp
-        tmp=$(mktemp)
-        sed "s|^${key}=.*|${key}=${val}|" "$ENV_FILE" > "$tmp"
-        mv "$tmp" "$ENV_FILE"
-    else
-        log "Appending ${key}=${val}"
-        printf '\n%s=%s\n' "$key" "$val" >> "$ENV_FILE"
-    fi
-}
-
-update_env COMPOSE_PROFILES sdxl-base
+update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 ok "Env flags set"
 
-log "Starting $SERVICE (builds if Dockerfile args changed) …"
+log "Starting $SERVICE …"
 "${COMPOSE[@]}" up -d --build "$SERVICE" gateway
 ok "Service up issued"
 
-log "Waiting up to ${READY_TIMEOUT}s for gateway to mark sdxl-base available …"
-start=$SECONDS
-while true; do
-    worker_logs=$("${COMPOSE[@]}" logs --no-color "$SERVICE" 2>&1 || true)
-    if grep -qE 'Application startup failed|CUDA driver error|CRITICAL' <<<"$worker_logs"; then
-        err "Worker startup failure detected. Last 50 log lines:"
-        "${COMPOSE[@]}" logs --no-color --tail 50 "$SERVICE"
-        exit 1
-    fi
-
-    gateway_logs=$("${COMPOSE[@]}" logs --no-color gateway 2>&1 || true)
-    if grep -q 'Worker ready: sdxl-base.*model is now available' <<<"$gateway_logs"; then
-        ok "Gateway marks sdxl-base as available"
-        break
-    fi
-
-    if (( SECONDS - start > READY_TIMEOUT )); then
-        err "Timed out. Last worker logs:"
-        "${COMPOSE[@]}" logs --no-color --tail 40 "$SERVICE"
-        echo
-        err "Last gateway logs:"
-        "${COMPOSE[@]}" logs --no-color --tail 20 gateway
-        exit 1
-    fi
-    sleep 5
-done
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
 log "POST /v1/images/generations (prompt=cyberpunk cat, 1024×1024) …"
-RESP_JSON=$(mktemp --suffix=.json)
-t0=$SECONDS
-http_code=$(curl -s -o "$RESP_JSON" -w '%{http_code}' \
-    -X POST http://localhost:8000/v1/images/generations \
-    -H 'Content-Type: application/json' \
-    -d '{"model":"sdxl-base","prompt":"a cyberpunk cat"}' || echo 000)
-elapsed=$(( SECONDS - t0 ))
+fire_image_request "$MODEL_ID" "a cyberpunk cat" "$OUTPUT"
+report_result "$SERVICE" "$OUTPUT"
 
-decode_b64_png() {
-    local resp="$1" out="$2"
-    for py in python3 python py; do
-        if command -v "$py" >/dev/null 2>&1; then
-            "$py" -c "
-import json, base64
-with open('$resp') as f:
-    d = json.load(f)
-with open('$out', 'wb') as f:
-    f.write(base64.b64decode(d['data'][0]['b64_json']))
-" && return 0
-        fi
-    done
-    if command -v base64 >/dev/null 2>&1; then
-        sed -n 's/.*"b64_json":"\([^"]*\)".*/\1/p' "$resp" | base64 -d > "$out" && return 0
-    fi
-    return 1
-}
-
-if [[ "$http_code" == "200" ]]; then
-    if decode_b64_png "$RESP_JSON" "$OUTPUT"; then :; else
-        err "Failed to decode base64 payload; saving raw JSON to $OUTPUT"
-        cp "$RESP_JSON" "$OUTPUT"
-    fi
-else
-    cp "$RESP_JSON" "$OUTPUT"
+if [[ "$HTTP_CODE" == "200" ]]; then
+    echo "  → Subsequent requests should be ~15-20s (30 steps, UNet)."
 fi
-rm -f "$RESP_JSON"
-
-echo
-echo "─── Result ────────────────────────────────────────────────"
-echo "  HTTP status : $http_code"
-echo "  Elapsed     : ${elapsed}s"
-echo "  Output      : $OUTPUT ($(wc -c < "$OUTPUT" 2>/dev/null || echo 0) bytes)"
-echo
-
-case "$http_code" in
-    200)
-        ok "SUCCESS — image generated in ${elapsed}s."
-        echo "  → Open $OUTPUT and compare with sd35_diag.png."
-        echo "  → Subsequent requests should be ~15-20s (30 steps, UNet)."
-        ;;
-    500|504)
-        err "FAILED — $http_code."
-        echo "  Response body:"
-        cat "$OUTPUT"; echo
-        echo "  Last 40 worker log lines:"
-        "${COMPOSE[@]}" logs --no-color --tail 40 "$SERVICE"
-        ;;
-    *)
-        err "Unexpected HTTP $http_code."
-        echo "  Response body:"
-        cat "$OUTPUT"; echo
-        ;;
-esac
