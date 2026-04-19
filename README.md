@@ -624,7 +624,7 @@ pytest --cov=app --cov-branch
 
 ### Инфраструктура
 
-- [ ] **End-to-end error forwarding** — ValueError в воркер-провайдере сейчас возвращается как generic HTTP 500 "Internal Server Error". Надо: воркер сериализует ValueError в 400/422 + JSON body, gateway пробрасывает status + body клиенту через `httpx.HTTPStatusError` → `JSONResponse(e.response.json(), status_code=e.response.status_code)`
+- [x] **End-to-end error forwarding** — worker сериализует ValueError → HTTP 400 + JSON, gateway через глобальный `@app.exception_handler(httpx.HTTPStatusError)` зеркалит upstream status + body клиенту
 - [ ] **Web UI** — панель администрирования
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
