@@ -21,8 +21,9 @@ Self-hosted OpenAI-совместимый AI-шлюз для локальных 
 11. [Docker-сборка](#11-docker-сборка)
 12. [Тестирование](#12-тестирование)
 13. [Системные требования](#13-системные-требования)
-14. [TODO](#14-todo)
-15. [Лицензия](#15-лицензия)
+14. [Недавно добавлено](#14-недавно-добавлено-итерации-расширения-t2i-api)
+15. [TODO](#15-todo)
+16. [Лицензия](#16-лицензия)
 
 ---
 
@@ -138,24 +139,133 @@ curl http://localhost:8000/v1/audio/speech \
   -d '{"model": "kokoro-82m", "input": "Привет, мир!"}' -o speech.mp3
 ```
 
+### Продвинутые примеры генерации изображений
+
+**1. Свой семплер, negative prompt, свои шаги/CFG:**
+```bash
+curl http://localhost:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sdxl-base",
+    "prompt": "portrait of an astronaut on Mars",
+    "negative_prompt": "blurry, low quality, cropped",
+    "num_inference_steps": 30,
+    "guidance_scale": 7.5,
+    "scheduler": "dpm++_2m_karras",
+    "seed": 42
+  }'
+```
+
+**2. Token weighting (A1111-синтаксис, через compel):**
+```bash
+curl http://localhost:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sdxl-base",
+    "prompt": "(cyberpunk:1.5) cat, (neon lights:0.8) background, (detailed:1.2) fur"
+  }'
+```
+Plain промпт без `(word:weight)` идёт по обычному пути tokenizer'а — никакого regress по качеству.
+
+**3. LoRA hot-load:**
+```bash
+curl http://localhost:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sdxl-base",
+    "prompt": "a portrait",
+    "loras": [
+      {"id": "ostris/crayon_style_lora_sdxl", "weight": 0.6},
+      {"id": "nerijs/pixel-art-xl", "weight": 0.4}
+    ]
+  }'
+```
+До 5 LoRA за запрос. LRU-кэш адаптеров (дефолт 8) — повторные запросы с теми же LoRA не перекачивают веса.
+
+**4. Textual Inversion:**
+```bash
+curl http://localhost:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sdxl-base",
+    "prompt": "<s0><s1> a portrait photo",
+    "textual_inversions": [
+      {"id": "linoyts/web_y2k",
+       "token": ["<s0>", "<s1>"],
+       "weight_file": "web_y2k_emb.safetensors"}
+    ]
+  }'
+```
+Для multi-token pivotal-embeddings (SDXL) провайдер автоматически определяет dual-tensor формат и регистрирует в clip_l и clip_g отдельно.
+
+**5. HighresFix (двухпроходная генерация):**
+```bash
+curl http://localhost:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sdxl-base",
+    "prompt": "detailed fantasy landscape",
+    "size": "768x768",
+    "highres_fix": {
+      "scale": 1.5,
+      "denoising_strength": 0.5,
+      "upscaler": "lanczos"
+    }
+  }'
+```
+Выход: 1152×1152 (768 × 1.5). Первый проход генерит 768 → PIL-upscale → img2img refine. Меньше duplicate-артефактов чем single-pass на той же конечной резолюции.
+
+**6. Комбо — всё сразу:**
+```bash
+curl http://localhost:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sdxl-base",
+    "prompt": "(cyberpunk:1.3) cat",
+    "negative_prompt": "low quality",
+    "scheduler": "dpm++_2m_karras",
+    "num_inference_steps": 30,
+    "seed": 42,
+    "loras": [{"id": "ostris/crayon_style_lora_sdxl", "weight": 0.7}],
+    "highres_fix": {"scale": 1.5, "denoising_strength": 0.4}
+  }'
+```
+Порядок применения внутри провайдера: scheduler swap → LoRA load/activate → TI register → compel encoding → pipeline call (с HighresFix двумя проходами если указан).
+
 ---
 
 ## 3. Поддерживаемые модели
 
+### Генерация изображений
+
+| Модель | Архитектура | Провайдер | VRAM | Разрешение | Лицензия |
+|--------|-------------|-----------|------|-----------|----------|
+| **Stable Diffusion 3.5 Medium** | MMDiT | diffusers | 5 GB (drop_t5) | 1024 | Community |
+| **Stable Diffusion XL Base 1.0** | UNet | diffusers | 7 GB | 1024 | OpenRAIL++ |
+| **FLUX.1 Schnell** | MMDiT (flow) | diffusers | 9 GB (nf4) | 1024 | Apache 2.0 |
+| **FLUX.1 Dev** | MMDiT (flow) | diffusers | 12 GB | 1024 | Non-Commercial |
+| **FLUX.2 Klein 4B** | DiT | diffusers | ~14 GB | 1024 | Apache 2.0 |
+| **Qwen-Image** | DiT | diffusers | 11 GB (nf4+offload) | 1024 | Apache 2.0 |
+| **Hunyuan-DiT v1.2** | DiT | diffusers | 7 GB | 1024 | Tencent Community |
+| **Z-Image Turbo** | DiT (distilled) | diffusers | 11 GB | 1024 | Apache 2.0 |
+| **Janus-Pro 1B** | **Autoregressive** | custom | 3 GB | 384 | MIT |
+| **Janus-Pro 7B** | **Autoregressive** (nf4) | custom | 7 GB | 384 | MIT |
+| **Meissonic** | **Masked non-AR** | custom (vendored) | 10 GB | 1024 | Apache 2.0 |
+
+### Текст и озвучка
+
 | Модель | Категория | Провайдер | VRAM | Лицензия |
 |--------|-----------|-----------|------|----------|
-| Stable Diffusion 3.5 Medium | Изображения | diffusers | 5 GB | Community |
-| FLUX.1 Schnell | Изображения | diffusers | 8 GB | Apache 2.0 |
-| FLUX.1 Dev | Изображения | diffusers | 12 GB | Non-Commercial |
-| FLUX.2 Klein 4B | Изображения | diffusers | 6 GB | Apache 2.0 |
-| Qwen 3.5 4B (AWQ) | Текст | vLLM | 4 GB | Apache 2.0 |
-| Qwen 3.5 9B | Текст | vLLM | 8 GB | Apache 2.0 |
-| Qwen 3 8B | Текст | vLLM | 7 GB | Apache 2.0 |
-| Llama 3.1 8B | Текст | vLLM | 8 GB | Llama Community |
-| Kokoro 82M | Озвучка | kokoro | CPU | MIT |
-| OpenAudio S1 Mini | Озвучка | fish-speech | 4 GB | Apache 2.0 |
+| **Qwen 3.5 4B (AWQ)** | Текст | vLLM | 4 GB | Apache 2.0 |
+| **Qwen 3.5 9B** | Текст | vLLM | 8 GB | Apache 2.0 |
+| **Qwen 3 8B** | Текст | vLLM | 7 GB | Apache 2.0 |
+| **Llama 3.1 8B** | Текст | vLLM | 8 GB | Llama Community |
+| **Kokoro 82M** | Озвучка | kokoro | CPU | MIT |
+| **OpenAudio S1 Mini** | Озвучка | fish-speech | 4 GB | Apache 2.0 |
 
-Любая diffusers/vLLM-совместимая модель добавляется одним YAML-файлом без написания кода.
+**Три архитектурных семейства** в одном стеке: диффузия (SD/FLUX/Qwen/Hunyuan/Z-Image), autoregressive (Janus-Pro) и masked non-AR (Meissonic) — все под единым `ImageProvider` интерфейсом с OpenAI-совместимым API.
+
+Любая diffusers-совместимая модель добавляется одним YAML-файлом без написания кода. Для нестандартных архитектур (AR / Masked / другое) — добавляется новый класс-провайдер, автоматически регистрируемый через `@register_provider`.
 
 ---
 
@@ -180,15 +290,40 @@ curl http://localhost:8000/v1/audio/speech \
 | `GET` | `/health` | Проверка состояния |
 | `GET` | `/metrics` | Метрики системы |
 
-### Валидация параметров
+### Поля запроса для генерации изображений
+
+Все поля опциональны кроме `prompt`. Неуказанные значения берутся из YAML-defaults модели.
+
+| Поле | Тип | Диапазон | Описание |
+|------|-----|----------|----------|
+| `model` | str | — | ID модели (если не указан, берётся default категории) |
+| `prompt` | str | 1-10000 | Основной промпт. Поддерживает `(word:1.5)`-синтаксис через compel |
+| `negative_prompt` | str | 0-10000 | Отрицательный промпт |
+| `size` | str | — | `WxH`, например `1024x1024` |
+| `seed` | int | — | Детерминированная генерация |
+| `n` | int | 1-10 | Количество картинок |
+| `num_inference_steps` | int | 1-150 | Количество шагов denoising |
+| `guidance_scale` | float | 0.0-30.0 | Сила следования промпту (CFG) |
+| `scheduler` | str | см. ниже | Семплер: `euler`, `euler_a`, `dpm++_2m`, `dpm++_2m_karras`, `dpm++_sde`, `ddim`, `ddpm`, `lms`, `heun`, `pndm`, `unipc` |
+| `loras` | list | ≤5 | `[{"id": "user/repo", "weight": 0.8, "weight_file"?: "...", "adapter_name"?: "..."}]` |
+| `textual_inversions` | list | ≤10 | `[{"id": "user/repo", "token"?: "str\|list", "weight_file"?: "..."}]` |
+| `highres_fix` | object | — | `{"scale": 1.5, "denoising_strength": 0.5, "steps"?: int, "upscaler": "lanczos"}` |
+
+### Поля для текста (chat completions)
 
 | Параметр | Диапазон |
 |----------|----------|
 | `temperature` | 0.0 – 2.0 |
 | `top_p` | 0.0 – 1.0 |
 | `max_tokens` | 1 – 131072 |
-| `n` (изображения) | 1 – 10 |
-| `speed` (TTS) | 0.25 – 4.0 |
+| `stream` | bool (SSE) |
+
+### Поля для озвучки
+
+| Параметр | Диапазон |
+|----------|----------|
+| `speed` | 0.25 – 4.0 |
+| `voice` | str (зависит от модели) |
 
 ### Заголовки ответов
 
@@ -416,7 +551,10 @@ infergate/
 │   │   ├── registry.py             # @register_provider + авто-обнаружение
 │   │   ├── remote.py               # RemoteProvider для distributed-режима
 │   │   ├── image/
-│   │   │   └── diffusers_provider.py
+│   │   │   ├── diffusers_provider.py  # Diffusion (SD, SDXL, FLUX, Hunyuan, Z-Image, Qwen)
+│   │   │   │                         # + LoRA / TI / compel / scheduler swap / HighresFix
+│   │   │   ├── janus_provider.py     # Autoregressive (DeepSeek Janus-Pro 1B / 7B)
+│   │   │   └── meissonic_provider.py # Masked non-AR (vendored Meissonic pipeline)
 │   │   ├── text/
 │   │   │   └── vllm_provider.py    # + streaming + tokenizer chat templates
 │   │   └── tts/
@@ -602,25 +740,53 @@ pytest --cov=app --cov-branch
 
 ---
 
-## 14. TODO
+## 14. Недавно добавлено (итерации расширения t2i API)
 
-> Выполненные задачи отражены в git-истории и в секции **13.1. Недавно добавлено** ниже.
+### Итерация 1 — расширения API и семплинга
 
-### LoRA и тонкая настройка (итерация 2 — средняя сложность)
+- **Per-request tunables** — `negative_prompt`, `num_inference_steps`, `guidance_scale` как опциональные поля `ImageGenerationRequest`
+- **Scheduler swap** — поле `scheduler` в запросе, 12 семплеров (Euler, DPM++ 2M / SDE, DDIM, LMS, Heun, UniPC, …) через `Cls.from_config(pipe.scheduler.config)`
+- **A1111 token weighting** — `(word:1.5)` через `compel` (SDXL dual-encoder + SD1.5 single-encoder), авто-детект по регексу, zero-regress на plain prompts
+- **End-to-end error forwarding** — worker-side ValueError → HTTP 400 + JSON body → зеркалится gateway'ом через глобальный `httpx.HTTPStatusError` handler
 
-- [x] **LoRA hot-load** — поле `loras: [{id, weight, weight_file?, adapter_name?}]` в запросе, LRU-кэш адаптеров в pipeline (дефолт `max_loaded=8`), автоматическая активация через `set_adapters(names, weights)`, `disable_lora()` когда loras=[], per-request max 5. Включено пока только для sdxl-base
-- [x] **Textual Inversion** — поле `textual_inversions: [{id, token?, weight_file?}]`, dedup-кэш в провайдере, авто-fallback на pivotal двух-тензорный формат SDXL (clip_l/clip_g отдельно). Token принимает str или list[str] для multi-token TIs типа `<s0><s1>`. Включено пока только для sdxl-base
-- [ ] **LyCORIS (LoHa / LoKr / IA3 / DyLoRA)** — не поддерживается `diffusers.load_lora_weights` из коробки ([issue #3087](https://github.com/huggingface/diffusers/issues/3087)). Текущий путь работает только для **plain LoRA и LoCon**. Полноценная поддержка требует интеграции пакета `lycoris-lora` + кастомного парсера/инжектора в UNet — отложено до накопления реального спроса (SDXL-комьюнити тренирует в основном plain LoRA)
+### Итерация 2 — LoRA и embeddings
 
-### Мульти-стадийный пайплайн (итерация 3 — большая работа)
+- **LoRA hot-load** — `loras: [{id, weight, weight_file?, adapter_name?}]` в запросе. LRU-кэш адаптеров в pipeline (дефолт `max_loaded=8`), активация через `set_adapters(names, weights)`, `disable_lora()` когда `loras=[]`. До 5 LoRA за запрос. Работает для `sdxl-base`
+- **Textual Inversion** — `textual_inversions: [{id, token?, weight_file?}]`. Dedup-кэш в провайдере (TI никогда не выгружаются — только разрастаются), авто-fallback на pivotal двух-тензорный формат SDXL (clip_l/clip_g отдельно). `token` принимает `str` или `list[str]` для multi-token TIs типа `<s0><s1>`
+- **CUDA memory hygiene** — `torch.cuda.empty_cache()` после каждого generate. Критично для 12GB-карт: SDXL base + compel + LoRA/TI-registries сидит у границы, фрагментация от back-to-back запросов без empty_cache приводила к OOM на второй inference
 
-- [ ] **SDXL Refiner** — base model → refiner model ensemble, передача latents между ними (`SDXLRefinerImageProvider`)
-- [ ] **HighresFix** — двухэтапная генерация: low-res → upscale → img2img refine
-- [ ] **Upscaler provider** — Real-ESRGAN / SwinIR как отдельная категория, post-processing шаг
+### Итерация 3 — мульти-стадийный пайплайн
+
+- **HighresFix** — `highres_fix: {scale, denoising_strength, steps?, upscaler}`. Два прохода: генерация в `size` → PIL-resize по `scale` → img2img refine. Img2img-pipeline строится лениво через `AutoPipelineForImage2Image.from_pipe(base)` — **zero VRAM overhead** (шарит UNet/VAE/text_encoder). Scheduler синхронизируется между проходами. Меньше duplicate-артефактов чем single-pass на итоговой резолюции
+
+### Новые модели, добавленные за время итераций
+
+- **sdxl-base** (UNet, 7GB) — каноническая SDXL, основная площадка для всех новых фич
+- **hunyuan-dit v1.2** (DiT, 7GB) — двуязычная китайская+английская генерация
+- **z-image-turbo** (DiT distilled, 11GB) — 8-step Apache-2.0 от Tongyi
+- **janus-pro-1b / janus-pro-7b** (Autoregressive) — DeepSeek's AR T2I, unified multimodal, 384×384 native
+- **meissonic** (Masked non-AR) — vendored pipeline, 1024×1024, иная парадигма (не диффузия, не AR)
+
+---
+
+## 15. TODO
+
+> Итерации 1-3 закрыты (см. предыдущую секцию). Большая часть A1111-функционала интегрирована в OpenAI-совместимый API.
+
+### Расширение t2i-возможностей на другие модели
+
+- [ ] **LoRA/TI/compel для SD 3.5 Medium** — сейчас работают только на sdxl-base. Добавить `peft + compel` в `deploy/workers/sd35-medium/requirements.txt`, пересобрать — код уже готов (провайдер универсальный)
+- [ ] **LyCORIS (LoHa / LoKr / IA3 / DyLoRA)** — не поддерживается `diffusers.load_lora_weights` из коробки ([issue #3087](https://github.com/huggingface/diffusers/issues/3087)). Текущий путь работает только для **plain LoRA и LoCon**. Полноценная поддержка требует интеграции пакета `lycoris-lora` + кастомного парсера/инжектора в UNet — отложено до накопления реального спроса
+
+### Мульти-стадийные и специализированные пайплайны
+
+- [ ] **SDXL Refiner** — base model → refiner model ensemble, передача latents между ними (`SDXLRefinerImageProvider`). Нужно держать два SDXL-образа одновременно в VRAM (~14 GB суммарно)
+- [ ] **Upscaler как отдельная категория** — Real-ESRGAN / SwinIR / 4x-UltraSharp через отдельный `ImageUpscaleProvider`, новый эндпоинт `/v1/images/upscale` с `image`-input
+- [ ] **img2img / inpainting** — принимать базовое изображение в запросе для модификации / inpaint через маску, отдельное поле `image` + `mask` в `ImageGenerationRequest`
 
 ### Инфраструктура
 
-- [ ] **Web UI** — панель администрирования
+- [ ] **Web UI** — панель администрирования (gallery, prompt history, live metrics)
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
 - [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
@@ -630,15 +796,6 @@ pytest --cov=app --cov-branch
 
 ---
 
-## 13.1. Недавно добавлено (итерация 1 — расширения API и семплинга)
-
-- **Per-request tunables** — `negative_prompt`, `num_inference_steps`, `guidance_scale` как опциональные поля `ImageGenerationRequest`
-- **Scheduler swap** — поле `scheduler` в запросе, 12 семплеров (Euler, DPM++ 2M / SDE, DDIM, LMS, Heun, UniPC, …) через `Cls.from_config(pipe.scheduler.config)`
-- **A1111 token weighting** — `(word:1.5)` через `compel` (SDXL dual-encoder + SD1.5 single-encoder), авто-детект по регексу, zero-regress на plain prompts
-- **End-to-end error forwarding** — worker-side ValueError → HTTP 400 + JSON body → зеркалится gateway'ом через глобальный `httpx.HTTPStatusError` handler
-
----
-
-## 15. Лицензия
+## 16. Лицензия
 
 MIT
