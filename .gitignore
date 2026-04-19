@@ -19,3 +19,8 @@ cache/*
 *.bin
 *.onnx
 .coverage
+
+# Smoke-test artifacts from scripts/diagnose/*
+*_diag.png
+*_diag_*.png
+flux_diag.png

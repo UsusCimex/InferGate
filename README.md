@@ -604,9 +604,28 @@ pytest --cov=app --cov-branch
 
 ## 14. TODO
 
+### Расширения API и семплинга (итерация 1 — быстрые победы)
+
+- [ ] **Per-request tunables в API** — прокинуть `negative_prompt`, `num_inference_steps`, `guidance_scale` в `ImageGenerationRequest` schema (сейчас только в YAML defaults)
+- [ ] **Scheduler swap per-request** — таблица имя→класс (Euler, DPM++ 2M, DDIM, LMS, Heun) с подстановкой `pipe.scheduler = Cls.from_config(pipe.scheduler.config)` до генерации
+- [ ] **A1111-style token weighting** — синтаксис `(word:1.2)` через `compel` библиотеку для prompt-embedding с весами
+
+### LoRA и тонкая настройка (итерация 2 — средняя сложность)
+
+- [ ] **LoRA hot-load** — `{"loras": [{"id": "user/style-anime", "weight": 0.8}]}` в запросе, per-request загрузка через `pipe.load_lora_weights + pipe.set_adapters`, LRU-кэш скачанных LoRA, graceful unload
+- [ ] **Textual Inversion** — `pipe.load_textual_inversion` для новых token embeddings
+- [ ] **LyCORIS** — расширенные LoRA через `peft` библиотеку
+
+### Мульти-стадийный пайплайн (итерация 3 — большая работа)
+
+- [ ] **SDXL Refiner** — base model → refiner model ensemble, передача latents между ними (`SDXLRefinerImageProvider`)
+- [ ] **HighresFix** — двухэтапная генерация: low-res → upscale → img2img refine
+- [ ] **Upscaler provider** — Real-ESRGAN / SwinIR как отдельная категория, post-processing шаг
+
+### Инфраструктура
+
 - [ ] **Web UI** — панель администрирования
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
-- [ ] **LoRA hot-swap** — указание LoRA-адаптеров в YAML-конфиге модели
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
 - [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
 - [ ] **Hot-reload конфигов** — добавление моделей без перезапуска сервера
