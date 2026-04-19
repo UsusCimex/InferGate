@@ -7,6 +7,7 @@ import time
 import warnings
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -175,6 +176,24 @@ def create_app() -> FastAPI:
         return JSONResponse(
             {"error": {"message": str(exc), "type": "queue_full"}}, status_code=503
         )
+
+    @app.exception_handler(httpx.HTTPStatusError)
+    async def upstream_error_handler(request, exc: httpx.HTTPStatusError):
+        """Forward a worker's structured error response verbatim.
+
+        When a remote worker returns 4xx/5xx with a JSON body (e.g. a
+        ValueError surfaced by the worker as 400 `{"error": {...}}`),
+        httpx raises HTTPStatusError inside the remote provider. Instead
+        of letting that propagate to FastAPI's default 500 handler (which
+        hides the root cause), we unwrap the body and mirror the worker's
+        status so clients see the real reason.
+        """
+        resp = exc.response
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {"error": {"message": resp.text or "Upstream error", "type": "upstream_error"}}
+        return JSONResponse(body, status_code=resp.status_code)
 
     # Routers
     app.include_router(chat.router)

@@ -102,29 +102,41 @@ async def unload(request: Request):
 
 @app.post("/generate")
 async def generate(request: Request):
-    """Generate text or image depending on model category."""
+    """Generate text or image depending on model category.
+
+    A ValueError raised anywhere in the provider stack is surfaced as
+    HTTP 400 with a structured JSON body the gateway can forward to
+    the client verbatim — instead of FastAPI's default 500 "Internal
+    Server Error" which hides the root cause.
+    """
     provider: BaseProvider = request.app.state.provider
     config = request.app.state.config
     body = await request.json()
 
-    if config.category == "text":
-        messages = body.pop("messages")
-        stream = body.pop("stream", False)
+    try:
+        if config.category == "text":
+            messages = body.pop("messages")
+            stream = body.pop("stream", False)
 
-        if stream and hasattr(provider, "generate_stream"):
-            return StreamingResponse(
-                provider.generate_stream(messages, **body),
-                media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache"},
-            )
+            if stream and hasattr(provider, "generate_stream"):
+                return StreamingResponse(
+                    provider.generate_stream(messages, **body),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache"},
+                )
 
-        result = await provider.generate(messages, **body)
-        return JSONResponse(result)
+            result = await provider.generate(messages, **body)
+            return JSONResponse(result)
 
-    elif config.category == "image":
-        prompt = body.pop("prompt")
-        png_bytes = await provider.generate(prompt, **body)
-        return Response(content=png_bytes, media_type="image/png")
+        elif config.category == "image":
+            prompt = body.pop("prompt")
+            png_bytes = await provider.generate(prompt, **body)
+            return Response(content=png_bytes, media_type="image/png")
+    except ValueError as e:
+        return JSONResponse(
+            {"error": {"message": str(e), "type": "invalid_request"}},
+            status_code=400,
+        )
 
     return JSONResponse(
         {"error": {"message": f"Unknown category: {config.category}"}},
@@ -138,6 +150,12 @@ async def synthesize(request: Request):
     provider: BaseProvider = request.app.state.provider
     body = await request.json()
 
-    text = body.pop("text")
-    audio_bytes = await provider.synthesize(text, **body)
-    return Response(content=audio_bytes, media_type="application/octet-stream")
+    try:
+        text = body.pop("text")
+        audio_bytes = await provider.synthesize(text, **body)
+        return Response(content=audio_bytes, media_type="application/octet-stream")
+    except ValueError as e:
+        return JSONResponse(
+            {"error": {"message": str(e), "type": "invalid_request"}},
+            status_code=400,
+        )
