@@ -105,6 +105,7 @@ services:
       - WORKER_URL_HUNYUAN_DIT=http://worker-hunyuan-dit:8001
       - WORKER_URL_JANUS_PRO_1B=http://worker-janus-pro-1b:8001
       - WORKER_URL_JANUS_PRO_7B=http://worker-janus-pro-7b:8001
+      - WORKER_URL_MEISSONIC=http://worker-meissonic:8001
       - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
     volumes:
@@ -298,6 +299,23 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/janus-pro-7b/requirements.txt
     volumes:
       - ../config/models/janus-pro-7b.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  worker-meissonic:
+    <<: *gpu
+    profiles: ["meissonic"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: git
+        WORKER_REQUIREMENTS: deploy/workers/meissonic/requirements.txt
+        POST_INSTALL: "git clone --depth=1 https://github.com/viiika/Meissonic.git /app/_meissonic"
+    volumes:
+      - ../config/models/meissonic.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
