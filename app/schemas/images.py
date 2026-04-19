@@ -3,6 +3,25 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 
 
+class TextualInversionSpec(BaseModel):
+    """Single Textual Inversion (aka embedding) to register with the tokenizer.
+
+    - `id`: HuggingFace repo identifier (`user/repo-name`).
+    - `token`: explicit trigger string to register the embedding under.
+      Accepts either a single string or a list of strings — multi-token
+      TIs (e.g. SDXL pivotal embeddings like `<s0><s1>`) need a list.
+      If omitted, diffusers derives it from the filename.
+    - `weight_file`: optional `.pt` / `.safetensors` file inside the repo
+      when it ships multiple embeddings.
+
+    TIs have no `weight` parameter — emphasis is applied via the prompt
+    itself (`<token>`, or compel syntax `(<token>:1.5)`).
+    """
+    id: str = Field(..., pattern=r"^[\w.-]+/[\w.-]+$", max_length=200)
+    token: str | list[str] | None = None
+    weight_file: str | None = Field(None, max_length=200)
+
+
 class LoraSpec(BaseModel):
     """Single LoRA adapter to apply during generation.
 
@@ -48,12 +67,23 @@ class ImageGenerationRequest(BaseModel):
     # deactivated for this request). Provider enforces a per-model cap and
     # reuses cached adapters across requests to avoid re-downloading.
     loras: list[LoraSpec] | None = None
+    # Per-request Textual Inversion embeddings. Cheap (~KB each) so the
+    # per-request cap is loose. Once loaded they persist for the lifetime
+    # of the provider — subsequent requests skip reload.
+    textual_inversions: list[TextualInversionSpec] | None = None
 
     @field_validator("loras")
     @classmethod
     def _cap_loras(cls, v: list[LoraSpec] | None) -> list[LoraSpec] | None:
         if v is not None and len(v) > 5:
             raise ValueError("loras: at most 5 adapters per request")
+        return v
+
+    @field_validator("textual_inversions")
+    @classmethod
+    def _cap_tis(cls, v: list[TextualInversionSpec] | None) -> list[TextualInversionSpec] | None:
+        if v is not None and len(v) > 10:
+            raise ValueError("textual_inversions: at most 10 embeddings per request")
         return v
 
 

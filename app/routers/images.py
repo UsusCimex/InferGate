@@ -50,6 +50,8 @@ async def generate_images(
         # Serialise to plain dicts so they survive the JSON hop to the worker
         # (LoraSpec pydantic models don't serialise by default through httpx).
         params["loras"] = [lora.model_dump() for lora in body.loras]
+    if body.textual_inversions is not None:
+        params["textual_inversions"] = [ti.model_dump() for ti in body.textual_inversions]
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"

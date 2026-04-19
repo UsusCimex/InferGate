@@ -609,7 +609,7 @@ pytest --cov=app --cov-branch
 ### LoRA и тонкая настройка (итерация 2 — средняя сложность)
 
 - [x] **LoRA hot-load** — поле `loras: [{id, weight, weight_file?, adapter_name?}]` в запросе, LRU-кэш адаптеров в pipeline (дефолт `max_loaded=8`), автоматическая активация через `set_adapters(names, weights)`, `disable_lora()` когда loras=[], per-request max 5. Включено пока только для sdxl-base
-- [ ] **Textual Inversion** — `pipe.load_textual_inversion` для новых token embeddings
+- [x] **Textual Inversion** — поле `textual_inversions: [{id, token?, weight_file?}]`, dedup-кэш в провайдере, авто-fallback на pivotal двух-тензорный формат SDXL (clip_l/clip_g отдельно). Token принимает str или list[str] для multi-token TIs типа `<s0><s1>`. Включено пока только для sdxl-base
 - [ ] **LyCORIS** — расширенные LoRA через `peft` библиотеку
 
 ### Мульти-стадийный пайплайн (итерация 3 — большая работа)

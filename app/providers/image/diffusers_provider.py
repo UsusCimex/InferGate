@@ -145,6 +145,13 @@ class DiffusersImageProvider(ImageProvider):
         self._lora_lock = threading.Lock()
         self._model_dir: str | None = None  # stored at load() for LoRA downloads
 
+        # Textual Inversion dedup set: (repo_id, weight_file, token). Unlike
+        # LoRA, TIs can't be "deactivated" — once registered in the tokenizer
+        # they persist for the lifetime of the pipeline (but are only visible
+        # via their token in the prompt).
+        self._ti_loaded: set[tuple[str, str | None, str | None]] = set()
+        self._ti_lock = threading.Lock()
+
     async def load(self, model_dir: str) -> None:
         import torch
         from diffusers import DiffusionPipeline
@@ -379,6 +386,124 @@ class DiffusersImageProvider(ImageProvider):
                 list(zip(active_names, active_weights, strict=True)),
             )
 
+    def _apply_textual_inversions(self, tis: list[dict] | None, model_dir: str) -> None:
+        """Register any not-yet-seen Textual Inversion embeddings with the
+        pipeline. No-op on cache hit; no deactivation concept.
+
+        A TI is identified by (repo_id, weight_file, token). Once registered
+        the `<token>` string becomes usable in any prompt for the lifetime
+        of the provider — no per-request state to apply.
+        """
+        if not tis:
+            return
+        pipe = self._pipeline
+        if pipe is None:
+            return
+        if not hasattr(pipe, "load_textual_inversion"):
+            raise ValueError(
+                f"Pipeline for {self.model_id} does not support textual inversions"
+            )
+
+        with self._ti_lock:
+            for spec in tis:
+                repo_id = spec["id"]
+                weight_file = spec.get("weight_file")
+                token = spec.get("token")
+                # Lists aren't hashable — normalise to a tuple for the set key.
+                # The value we pass to load_textual_inversion keeps its original
+                # type (diffusers accepts both str and list).
+                token_key: Any = tuple(token) if isinstance(token, list) else token
+                cache_key = (repo_id, weight_file, token_key)
+
+                if cache_key in self._ti_loaded:
+                    logger.debug("TI cache hit: %s (token=%s)", repo_id, token)
+                    continue
+
+                load_kwargs: dict[str, Any] = {"cache_dir": model_dir}
+                if weight_file:
+                    load_kwargs["weight_name"] = weight_file
+                if token:
+                    load_kwargs["token"] = token
+
+                try:
+                    logger.info(
+                        "Registering textual inversion %s%s%s into %s",
+                        repo_id,
+                        f" (file={weight_file})" if weight_file else "",
+                        f" (token={token})" if token else "",
+                        self.model_id,
+                    )
+                    try:
+                        pipe.load_textual_inversion(repo_id, **load_kwargs)
+                    except Exception as single_call_err:
+                        # SDXL "pivotal" TIs store separate clip_l / clip_g
+                        # tensors in one file. diffusers' single-call path
+                        # rejects that layout ("Loaded state dictionary is
+                        # incorrect"); fall back to explicit per-encoder
+                        # loading via safetensors + two load_textual_inversion
+                        # calls.
+                        if (
+                            "clip_l" in str(single_call_err)
+                            and "clip_g" in str(single_call_err)
+                            and weight_file
+                            and hasattr(pipe, "text_encoder_2")
+                            and hasattr(pipe, "tokenizer_2")
+                        ):
+                            logger.info(
+                                "Single-call load rejected dual-tensor TI; "
+                                "retrying with per-encoder pivotal loading"
+                            )
+                            self._load_pivotal_ti(repo_id, weight_file, token, model_dir)
+                        else:
+                            raise
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to load textual inversion '{repo_id}'"
+                        f"{f' (file={weight_file})' if weight_file else ''}"
+                        f"{f' (token={token})' if token else ''}: {e}"
+                    ) from e
+
+                self._ti_loaded.add(cache_key)
+
+    def _load_pivotal_ti(
+        self,
+        repo_id: str,
+        weight_file: str,
+        token: Any,
+        model_dir: str,
+    ) -> None:
+        """Load an SDXL pivotal TI (single file, separate clip_l / clip_g tensors).
+
+        The .safetensors file is fetched via hf_hub_download, parsed into a
+        dict of tensors, then each key is registered against the matching
+        (tokenizer, text_encoder) pair of the dual-encoder pipeline.
+        """
+        from huggingface_hub import hf_hub_download
+        from safetensors.torch import load_file
+
+        pipe = self._pipeline
+        local_path = hf_hub_download(
+            repo_id=repo_id, filename=weight_file, cache_dir=model_dir
+        )
+        sd = load_file(local_path)
+        if "clip_l" not in sd or "clip_g" not in sd:
+            raise ValueError(
+                f"Pivotal TI fallback expected tensors 'clip_l' and 'clip_g' "
+                f"in {weight_file}, got {list(sd.keys())}"
+            )
+        pipe.load_textual_inversion(
+            sd["clip_l"],
+            token=token,
+            text_encoder=pipe.text_encoder,
+            tokenizer=pipe.tokenizer,
+        )
+        pipe.load_textual_inversion(
+            sd["clip_g"],
+            token=token,
+            text_encoder=pipe.text_encoder_2,
+            tokenizer=pipe.tokenizer_2,
+        )
+
     def _apply_compel(self, prompt: str, negative_prompt: str | None, defaults: dict) -> None:
         """Replace `prompt`/`negative_prompt` in `defaults` with compel embeds.
 
@@ -480,6 +605,7 @@ class DiffusersImageProvider(ImageProvider):
         # Per-request LoRA adapters (applied *before* compel because LoRAs
         # can modify the text encoder; compel reads its live weights).
         loras = defaults.pop("loras", None)
+        textual_inversions = defaults.pop("textual_inversions", None)
         model_dir = self._model_dir or "/app/models"
 
         # Detect A1111-style prompt weighting — only activate compel path
@@ -493,6 +619,7 @@ class DiffusersImageProvider(ImageProvider):
         def _gen():
             _maybe_swap_scheduler(self._pipeline, scheduler_name)
             self._apply_loras(loras, model_dir)
+            self._apply_textual_inversions(textual_inversions, model_dir)
             if use_compel:
                 self._apply_compel(prompt, negative_prompt or None, defaults)
                 return self._pipeline(**defaults).images[0]
@@ -503,6 +630,15 @@ class DiffusersImageProvider(ImageProvider):
 
         loop = asyncio.get_running_loop()
         image = await loop.run_in_executor(None, _gen)
+
+        # Memory hygiene: drop cached allocator blocks so back-to-back
+        # requests don't accumulate fragmentation on tight VRAM budgets
+        # (12GB cards running SDXL + compel + LoRA/TI registries are close
+        # to the limit already). empty_cache is cheap and only releases
+        # unused blocks — in-use tensors stay put.
+        import torch as _torch
+        if _torch.cuda.is_available():
+            _torch.cuda.empty_cache()
 
         buf = io.BytesIO()
         image.save(buf, format="PNG")
