@@ -38,6 +38,12 @@ async def generate_images(
     params: dict = {"size": body.size}
     if body.seed is not None:
         params["seed"] = body.seed
+    if body.negative_prompt is not None:
+        params["negative_prompt"] = body.negative_prompt
+    if body.num_inference_steps is not None:
+        params["num_inference_steps"] = body.num_inference_steps
+    if body.guidance_scale is not None:
+        params["guidance_scale"] = body.guidance_scale
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"

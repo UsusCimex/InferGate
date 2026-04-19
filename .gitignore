@@ -20,7 +20,7 @@ cache/*
 *.onnx
 .coverage
 
-# Smoke-test artifacts from scripts/diagnose/*
+# Smoke-test artifacts from scripts/diagnose/* and scripts/feature/*
 *_diag.png
 *_diag_*.png
-flux_diag.png
+feature_*.png

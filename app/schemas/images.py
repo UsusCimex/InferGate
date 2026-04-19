@@ -10,6 +10,13 @@ class ImageGenerationRequest(BaseModel):
     size: str = "1024x1024"
     response_format: str = "b64_json"
     seed: int | None = None
+    # Per-request sampling overrides. When None the YAML default (or the
+    # pipeline default if the YAML is silent) is used. Ranges are liberal
+    # because different models have very different sweet spots — the YAML
+    # is the authoritative source of "sensible defaults per model".
+    negative_prompt: str | None = Field(None, max_length=10000)
+    num_inference_steps: int | None = Field(None, ge=1, le=150)
+    guidance_scale: float | None = Field(None, ge=0.0, le=30.0)
 
 
 class ImageData(BaseModel):
