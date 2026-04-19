@@ -683,13 +683,16 @@ class DiffusersImageProvider(ImageProvider):
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
-        # Parse size string if present
+        # Parse size string if present. Use assignment (not setdefault) so a
+        # per-request `size` always wins over YAML `default_params.width/height`
+        # — otherwise the request value is silently ignored when the YAML
+        # already carries dimensions.
         if "size" in defaults:
             size = defaults.pop("size")
             if isinstance(size, str) and "x" in size:
                 w, h = size.split("x")
-                defaults.setdefault("width", int(w))
-                defaults.setdefault("height", int(h))
+                defaults["width"] = int(w)
+                defaults["height"] = int(h)
 
         # Remove params not accepted by pipeline
         defaults.pop("response_format", None)
