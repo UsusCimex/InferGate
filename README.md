@@ -604,11 +604,7 @@ pytest --cov=app --cov-branch
 
 ## 14. TODO
 
-### Расширения API и семплинга (итерация 1 — быстрые победы)
-
-- [x] **Per-request tunables в API** — `negative_prompt`, `num_inference_steps`, `guidance_scale` прокинуты через `ImageGenerationRequest`
-- [x] **Scheduler swap per-request** — таблица имя→класс (Euler, DPM++, DDIM, LMS, Heun, UniPC и др.), поле `scheduler` в запросе, своп через `Cls.from_config(pipe.scheduler.config)` внутри GPU-executor потока
-- [x] **A1111-style token weighting** — синтаксис `(word:1.2)` через `compel`. Авто-детект по регексу в prompt — plain prompts идут raw-tokenizer-путём (zero regress), с весами переключаются на prompt_embeds. SDXL dual-encoder + SD1.5 single-encoder. Включено пока только для sdxl-base
+> Выполненные задачи отражены в git-истории и в секции **13.1. Недавно добавлено** ниже.
 
 ### LoRA и тонкая настройка (итерация 2 — средняя сложность)
 
@@ -624,7 +620,6 @@ pytest --cov=app --cov-branch
 
 ### Инфраструктура
 
-- [x] **End-to-end error forwarding** — worker сериализует ValueError → HTTP 400 + JSON, gateway через глобальный `@app.exception_handler(httpx.HTTPStatusError)` зеркалит upstream status + body клиенту
 - [ ] **Web UI** — панель администрирования
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
@@ -632,6 +627,15 @@ pytest --cov=app --cov-branch
 - [ ] **Hot-reload конфигов** — добавление моделей без перезапуска сервера
 - [ ] **Kubernetes Helm chart** — для multi-node distributed-режима
 - [ ] **Grafana дашборд** — готовый JSON-дашборд для импорта
+
+---
+
+## 13.1. Недавно добавлено (итерация 1 — расширения API и семплинга)
+
+- **Per-request tunables** — `negative_prompt`, `num_inference_steps`, `guidance_scale` как опциональные поля `ImageGenerationRequest`
+- **Scheduler swap** — поле `scheduler` в запросе, 12 семплеров (Euler, DPM++ 2M / SDE, DDIM, LMS, Heun, UniPC, …) через `Cls.from_config(pipe.scheduler.config)`
+- **A1111 token weighting** — `(word:1.5)` через `compel` (SDXL dual-encoder + SD1.5 single-encoder), авто-детект по регексу, zero-regress на plain prompts
+- **End-to-end error forwarding** — worker-side ValueError → HTTP 400 + JSON body → зеркалится gateway'ом через глобальный `httpx.HTTPStatusError` handler
 
 ---
 
