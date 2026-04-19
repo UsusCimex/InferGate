@@ -17,6 +17,12 @@ class ImageGenerationRequest(BaseModel):
     negative_prompt: str | None = Field(None, max_length=10000)
     num_inference_steps: int | None = Field(None, ge=1, le=150)
     guidance_scale: float | None = Field(None, ge=0.0, le=30.0)
+    # Short-name scheduler override — euler / euler_a / dpm++_2m /
+    # dpm++_2m_karras / ddim / lms / heun / pndm / unipc / … See the
+    # _SCHEDULERS map in DiffusersImageProvider for the full list.
+    # FlowMatch pipelines (FLUX, SD3.x) have their own scheduler family
+    # and will reject these names — match scheduler to model architecture.
+    scheduler: str | None = Field(None, max_length=50)
 
 
 class ImageData(BaseModel):

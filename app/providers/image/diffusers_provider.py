@@ -68,6 +68,52 @@ _QUANT_BACKENDS = {
 }
 
 
+# Per-request scheduler override. Values are either a diffusers class name
+# or a (class_name, extra_kwargs) tuple passed to `Cls.from_config(...)`.
+# All UNet/DiT/MMDiT pipelines accept these — Flow-Matching pipelines
+# (FLUX, SD3.x) have their own FlowMatchEulerDiscreteScheduler and will
+# fail a swap; the caller is expected to match scheduler class to model.
+_SCHEDULERS: dict[str, str | tuple[str, dict[str, Any]]] = {
+    "euler":            "EulerDiscreteScheduler",
+    "euler_a":          "EulerAncestralDiscreteScheduler",
+    "euler_ancestral":  "EulerAncestralDiscreteScheduler",
+    "dpm++_2m":         "DPMSolverMultistepScheduler",
+    "dpm++_2m_karras":  ("DPMSolverMultistepScheduler", {"use_karras_sigmas": True}),
+    "dpm++_sde":        "DPMSolverSDEScheduler",
+    "ddim":             "DDIMScheduler",
+    "ddpm":             "DDPMScheduler",
+    "lms":              "LMSDiscreteScheduler",
+    "heun":             "HeunDiscreteScheduler",
+    "pndm":             "PNDMScheduler",
+    "unipc":            "UniPCMultistepScheduler",
+}
+
+
+def _maybe_swap_scheduler(pipeline: Any, name: str | None) -> None:
+    """Replace `pipeline.scheduler` with a named alternative, in-place.
+
+    Safe because every worker runs queue.max_concurrent=1 — no other thread
+    is mid-generate on the same pipeline. No-op when `name` is None/empty.
+    """
+    if not name:
+        return
+    entry = _SCHEDULERS.get(name.lower())
+    if entry is None:
+        raise ValueError(
+            f"Unknown scheduler '{name}'. Known: {sorted(_SCHEDULERS)}"
+        )
+    cls_name, extra = (entry if isinstance(entry, tuple) else (entry, {}))
+    import diffusers
+
+    try:
+        cls = getattr(diffusers, cls_name)
+    except AttributeError as e:
+        raise ValueError(
+            f"Scheduler class '{cls_name}' not in current diffusers version"
+        ) from e
+    pipeline.scheduler = cls.from_config(pipeline.scheduler.config, **extra)
+
+
 @register_provider
 class DiffusersImageProvider(ImageProvider):
     """Universal provider for any diffusers-compatible model.
@@ -223,14 +269,19 @@ class DiffusersImageProvider(ImageProvider):
         defaults.pop("response_format", None)
         defaults.pop("n", None)
 
+        # Per-request scheduler override (applied inside the worker thread
+        # so the swap + generate pair is atomic under queue.max_concurrent=1).
+        scheduler_name = defaults.pop("scheduler", None)
+
+        def _gen():
+            _maybe_swap_scheduler(self._pipeline, scheduler_name)
+            # Pass `prompt` as kwarg — some pipelines (e.g. FLUX.2-klein)
+            # have `image` as the first positional arg for img2img, so
+            # positional `prompt` silently lands in the wrong slot.
+            return self._pipeline(prompt=prompt, **defaults).images[0]
+
         loop = asyncio.get_running_loop()
-        # Pass `prompt` as kwarg — some pipelines (e.g. FLUX.2-klein) have
-        # `image` as the first positional arg for img2img, so positional
-        # `prompt` silently lands in the wrong slot.
-        image = await loop.run_in_executor(
-            None,
-            lambda: self._pipeline(prompt=prompt, **defaults).images[0],
-        )
+        image = await loop.run_in_executor(None, _gen)
 
         buf = io.BytesIO()
         image.save(buf, format="PNG")

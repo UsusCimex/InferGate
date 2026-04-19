@@ -607,7 +607,7 @@ pytest --cov=app --cov-branch
 ### Расширения API и семплинга (итерация 1 — быстрые победы)
 
 - [x] **Per-request tunables в API** — `negative_prompt`, `num_inference_steps`, `guidance_scale` прокинуты через `ImageGenerationRequest`
-- [ ] **Scheduler swap per-request** — таблица имя→класс (Euler, DPM++ 2M, DDIM, LMS, Heun) с подстановкой `pipe.scheduler = Cls.from_config(pipe.scheduler.config)` до генерации
+- [x] **Scheduler swap per-request** — таблица имя→класс (Euler, DPM++, DDIM, LMS, Heun, UniPC и др.), поле `scheduler` в запросе, своп через `Cls.from_config(pipe.scheduler.config)` внутри GPU-executor потока
 - [ ] **A1111-style token weighting** — синтаксис `(word:1.2)` через `compel` библиотеку для prompt-embedding с весами
 
 ### LoRA и тонкая настройка (итерация 2 — средняя сложность)
@@ -624,6 +624,7 @@ pytest --cov=app --cov-branch
 
 ### Инфраструктура
 
+- [ ] **End-to-end error forwarding** — ValueError в воркер-провайдере сейчас возвращается как generic HTTP 500 "Internal Server Error". Надо: воркер сериализует ValueError в 400/422 + JSON body, gateway пробрасывает status + body клиенту через `httpx.HTTPStatusError` → `JSONResponse(e.response.json(), status_code=e.response.status_code)`
 - [ ] **Web UI** — панель администрирования
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`

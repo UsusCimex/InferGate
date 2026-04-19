@@ -44,6 +44,8 @@ async def generate_images(
         params["num_inference_steps"] = body.num_inference_steps
     if body.guidance_scale is not None:
         params["guidance_scale"] = body.guidance_scale
+    if body.scheduler is not None:
+        params["scheduler"] = body.scheduler
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
