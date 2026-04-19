@@ -610,7 +610,7 @@ pytest --cov=app --cov-branch
 
 - [x] **LoRA hot-load** — поле `loras: [{id, weight, weight_file?, adapter_name?}]` в запросе, LRU-кэш адаптеров в pipeline (дефолт `max_loaded=8`), автоматическая активация через `set_adapters(names, weights)`, `disable_lora()` когда loras=[], per-request max 5. Включено пока только для sdxl-base
 - [x] **Textual Inversion** — поле `textual_inversions: [{id, token?, weight_file?}]`, dedup-кэш в провайдере, авто-fallback на pivotal двух-тензорный формат SDXL (clip_l/clip_g отдельно). Token принимает str или list[str] для multi-token TIs типа `<s0><s1>`. Включено пока только для sdxl-base
-- [ ] **LyCORIS** — расширенные LoRA через `peft` библиотеку
+- [ ] **LyCORIS (LoHa / LoKr / IA3 / DyLoRA)** — не поддерживается `diffusers.load_lora_weights` из коробки ([issue #3087](https://github.com/huggingface/diffusers/issues/3087)). Текущий путь работает только для **plain LoRA и LoCon**. Полноценная поддержка требует интеграции пакета `lycoris-lora` + кастомного парсера/инжектора в UNet — отложено до накопления реального спроса (SDXL-комьюнити тренирует в основном plain LoRA)
 
 ### Мульти-стадийный пайплайн (итерация 3 — большая работа)
 
