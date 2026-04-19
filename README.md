@@ -608,7 +608,7 @@ pytest --cov=app --cov-branch
 
 - [x] **Per-request tunables в API** — `negative_prompt`, `num_inference_steps`, `guidance_scale` прокинуты через `ImageGenerationRequest`
 - [x] **Scheduler swap per-request** — таблица имя→класс (Euler, DPM++, DDIM, LMS, Heun, UniPC и др.), поле `scheduler` в запросе, своп через `Cls.from_config(pipe.scheduler.config)` внутри GPU-executor потока
-- [ ] **A1111-style token weighting** — синтаксис `(word:1.2)` через `compel` библиотеку для prompt-embedding с весами
+- [x] **A1111-style token weighting** — синтаксис `(word:1.2)` через `compel`. Авто-детект по регексу в prompt — plain prompts идут raw-tokenizer-путём (zero regress), с весами переключаются на prompt_embeds. SDXL dual-encoder + SD1.5 single-encoder. Включено пока только для sdxl-base
 
 ### LoRA и тонкая настройка (итерация 2 — средняя сложность)
 

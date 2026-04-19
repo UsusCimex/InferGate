@@ -4,12 +4,19 @@ import asyncio
 import concurrent.futures
 import io
 import logging
+import re
 from typing import Any
 
 from app.providers.base import ImageProvider
 from app.providers.registry import register_provider
 
 logger = logging.getLogger(__name__)
+
+# A1111-style weight syntax: (word:1.5) / (word, phrase:0.8) / (word:-1.2)
+# Simple regex — catches the common form without trying to parse the full
+# compel grammar. If this matches, we route the prompt through compel;
+# otherwise we pass the raw string to the pipeline (cheaper, no semantic shift).
+_WEIGHT_RE = re.compile(r"\([^()]+:\s*[-+]?\d+\.?\d*\s*\)")
 
 _GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=2, thread_name_prefix="gpu-inference"
@@ -124,6 +131,8 @@ class DiffusersImageProvider(ImageProvider):
     def __init__(self, config):
         super().__init__(config)
         self._pipeline = None
+        self._compel = None          # type: ignore[assignment]
+        self._compel_mode = None     # "sdxl" (dual-encoder) | "sd15" (single) | None
 
     async def load(self, model_dir: str) -> None:
         import torch
@@ -182,6 +191,7 @@ class DiffusersImageProvider(ImageProvider):
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
+        self._init_compel()
 
         # Warmup: run a minimal dummy generation so cuDNN kernel tuning,
         # Triton compilation, and offload-swap patterns happen *here* instead
@@ -194,6 +204,78 @@ class DiffusersImageProvider(ImageProvider):
 
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
+
+    def _init_compel(self) -> None:
+        """Attempt to initialise a Compel encoder for A1111-style weighting.
+
+        Only works on CLIP-based pipelines. Dual-encoder pipelines (SDXL
+        family) need requires_pooled for the second tokenizer. Everything
+        T5/Qwen-VL/mT5-based (FLUX, SD3 with T5, Qwen-Image, Hunyuan-DiT)
+        is not CLIP — compel init fails gracefully and we fall back to
+        raw-prompt mode.
+
+        Controlled by YAML `compel: true|false` (default true).
+        """
+        if not self.config.model.get("compel", True):
+            return
+        try:
+            from compel import Compel, ReturnedEmbeddingsType
+        except ImportError:
+            logger.info("compel not installed; prompt weighting unavailable for %s", self.model_id)
+            return
+
+        pipe = self._pipeline
+        try:
+            if (
+                hasattr(pipe, "tokenizer_2")
+                and hasattr(pipe, "text_encoder_2")
+                and pipe.tokenizer_2 is not None
+                and pipe.text_encoder_2 is not None
+            ):
+                # SDXL-style dual-encoder, penultimate hidden states + pooled output on enc-2.
+                self._compel = Compel(
+                    tokenizer=[pipe.tokenizer, pipe.tokenizer_2],
+                    text_encoder=[pipe.text_encoder, pipe.text_encoder_2],
+                    returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
+                    requires_pooled=[False, True],
+                )
+                self._compel_mode = "sdxl"
+                logger.info("Compel initialised for %s (sdxl dual-encoder)", self.model_id)
+            elif (
+                hasattr(pipe, "tokenizer")
+                and hasattr(pipe, "text_encoder")
+                and pipe.tokenizer is not None
+                and pipe.text_encoder is not None
+            ):
+                self._compel = Compel(tokenizer=pipe.tokenizer, text_encoder=pipe.text_encoder)
+                self._compel_mode = "sd15"
+                logger.info("Compel initialised for %s (single-encoder)", self.model_id)
+            else:
+                logger.info("Compel skipped for %s (no compatible tokenizer/text_encoder)", self.model_id)
+        except Exception as e:  # noqa: BLE001 — init can fail on odd pipeline layouts
+            logger.warning("Compel init failed for %s: %s — weighting disabled", self.model_id, e)
+            self._compel = None
+            self._compel_mode = None
+
+    def _apply_compel(self, prompt: str, negative_prompt: str | None, defaults: dict) -> None:
+        """Replace `prompt`/`negative_prompt` in `defaults` with compel embeds.
+
+        Removes any conflicting string-prompt keys so the pipeline's
+        mutual-exclusion checks don't reject the call.
+        """
+        defaults.pop("negative_prompt", None)
+        if self._compel_mode == "sdxl":
+            p_embeds, p_pooled = self._compel(prompt)
+            defaults["prompt_embeds"] = p_embeds
+            defaults["pooled_prompt_embeds"] = p_pooled
+            if negative_prompt:
+                n_embeds, n_pooled = self._compel(negative_prompt)
+                defaults["negative_prompt_embeds"] = n_embeds
+                defaults["negative_pooled_prompt_embeds"] = n_pooled
+        else:  # sd15
+            defaults["prompt_embeds"] = self._compel(prompt)
+            if negative_prompt:
+                defaults["negative_prompt_embeds"] = self._compel(negative_prompt)
 
     def _warmup(self) -> None:
         """Minimal dummy inference to trigger kernel autotuning + offload hooks."""
@@ -273,8 +355,19 @@ class DiffusersImageProvider(ImageProvider):
         # so the swap + generate pair is atomic under queue.max_concurrent=1).
         scheduler_name = defaults.pop("scheduler", None)
 
+        # Detect A1111-style prompt weighting — only activate compel path
+        # when the syntax is actually used; plain prompts stay on the raw
+        # tokenizer route so we don't subtly change baseline outputs.
+        negative_prompt = defaults.get("negative_prompt") or ""
+        use_compel = self._compel is not None and (
+            _WEIGHT_RE.search(prompt) or _WEIGHT_RE.search(negative_prompt)
+        )
+
         def _gen():
             _maybe_swap_scheduler(self._pipeline, scheduler_name)
+            if use_compel:
+                self._apply_compel(prompt, negative_prompt or None, defaults)
+                return self._pipeline(**defaults).images[0]
             # Pass `prompt` as kwarg — some pipelines (e.g. FLUX.2-klein)
             # have `image` as the first positional arg for img2img, so
             # positional `prompt` silently lands in the wrong slot.
