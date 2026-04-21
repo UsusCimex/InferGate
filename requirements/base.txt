@@ -8,3 +8,9 @@ pydantic-settings>=2.0
 aiosqlite>=0.20.0
 aiofiles>=24.0
 httpx>=0.27.0
+# Prometheus /metrics/prometheus endpoint. Historically optional — the
+# metrics module has a try/except import fallback that returns HTTP 501
+# when absent. Baked into the base image so the shipped Grafana dashboard
+# and docker-compose monitoring stack work out-of-box; the ~80kB dep is
+# cheap and the degraded mode was a footgun when paired with provisioning.
+prometheus-client>=0.20.0

@@ -668,11 +668,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.
 
 Grafana поднимается с auto-provisioning: Prometheus datasource (`infergate-prometheus`) и готовый дашборд **InferGate — Gateway & Inference** (папка «InferGate») подключаются автоматически — клик-через через UI не нужен. Сам дашборд лежит в `deploy/monitoring/grafana/dashboards/infergate.json` и содержит панели для request rate/latency/error-rate, inference p95 per-model, cache hit-ratio per-model и стат-плашки для VRAM / queue / loaded-models.
 
-`prometheus-client` — optional dependency. Без неё метрики деградируют до JSON `/metrics`, Prometheus endpoint возвращает 501.
-
-```bash
-pip install infergate[monitoring]
-```
+`prometheus-client` входит в `requirements/base.txt` (gateway), поэтому `/metrics/prometheus` работает out-of-box. Модуль `app/monitoring/metrics.py` сохраняет graceful-degradation (501 Not Implemented), если кто-то соберёт минимальный образ без него. В `pyproject.toml` extra `monitoring` также остаётся — для pip-установок без Docker: `pip install infergate[monitoring]`.
 
 ---
 

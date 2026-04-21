@@ -725,6 +725,13 @@ class DiffusersImageProvider(ImageProvider):
         loras = defaults.pop("loras", None)
         textual_inversions = defaults.pop("textual_inversions", None)
         highres_fix = defaults.pop("highres_fix", None)
+        # `seed` is router-facing wire format; diffusers pipelines expect a
+        # `generator` (torch.Generator) instead. Build it inside _gen() so
+        # the device matches the pipeline's CUDA context at call time, and
+        # so that a per-request seed doesn't leak across calls. Strict
+        # pipelines (SD3, some FLUX variants) raise TypeError on stray
+        # `seed` kwargs, which is why we pop it unconditionally.
+        seed = defaults.pop("seed", None)
         model_dir = self._model_dir or "/app/models"
 
         # Detect A1111-style prompt weighting — only activate compel path
@@ -739,6 +746,10 @@ class DiffusersImageProvider(ImageProvider):
             _maybe_swap_scheduler(self._pipeline, scheduler_name)
             self._apply_loras(loras, model_dir)
             self._apply_textual_inversions(textual_inversions, model_dir)
+            if seed is not None:
+                import torch
+                gen_device = "cuda" if torch.cuda.is_available() else "cpu"
+                defaults["generator"] = torch.Generator(device=gen_device).manual_seed(int(seed))
             if use_compel:
                 self._apply_compel(prompt, negative_prompt or None, defaults)
             if highres_fix:
