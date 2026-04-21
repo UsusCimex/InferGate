@@ -758,7 +758,8 @@ pytest --cov=app --cov-branch
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
 - [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
 - [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
-- [x] **Hot-reload конфигов** — `ConfigWatcher` polls `config/models/*.yaml` каждые 2с, при изменении вызывает `ProviderManager.reload_model()` (unload+re-register, с автоматическим `load()` если модель была в GPU) и `GpuScheduler.update_concurrency()`. Новые YAML регистрируют модель, `enabled: false` снимает её с registry, ошибки парсинга логируются без падения gateway. E2e тест: `scripts/feature/hot-reload-config.sh` (гоняется без worker'ов — проверяет именно gateway-side).
+- [x] **Hot-reload конфигов (gateway-side)** — `ConfigWatcher` polls `config/models/*.yaml` каждые 2с, при изменении вызывает `ProviderManager.reload_model()` (unload+re-register, с автоматическим `load()` если модель была в GPU) и `GpuScheduler.update_concurrency()`. Новые YAML регистрируют модель, `enabled: false` снимает её с registry, ошибки парсинга логируются без падения gateway. E2e тест: `scripts/feature/hot-reload-config.sh` (гоняется без worker'ов — проверяет именно gateway-side).
+- [ ] **Hot-reload конфигов (worker-side)** — follow-up к gateway-side: сейчас worker читает `WORKER_MODEL_CONFIG` один раз в lifespan, изменения `model.hub_id` / `model.default_params` / `model.quantization` не подхватываются без docker-restart'a. Варианты: SIGHUP-handler в `app/worker.py` (re-read YAML + re-load) либо `POST /reload` endpoint, который gateway дергает при изменении model-section. Запускается только при реальном изменении, не на metadata.
 - [ ] **Kubernetes Helm chart** — для multi-node distributed-режима
 - [x] **Grafana дашборд** — `deploy/monitoring/grafana/dashboards/infergate.json` + provisioning (datasource + dashboards provider). Подключается автоматически при `docker compose up`.
 
