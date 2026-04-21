@@ -139,28 +139,51 @@ if [[ -z "$MASK_B64" ]]; then
 fi
 ok "payloads built (image=${#IMAGE_B64}B base64, mask=${#MASK_B64}B base64)"
 
-# Helper to materialise a JSON request body with the (large) base64
-# strings embedded, via Python — avoids shell-quoting nightmares.
+# Persist base64 payloads to tempfiles so mkbody can reference them by
+# path rather than embedding them in a python -c argv. A 400KB IMAGE_B64
+# inlined as `-c '… """$IMAGE_B64""" …'` blows past ARG_MAX (~128KB on
+# Linux; similar on Windows/Git-bash). File I/O sidesteps that entirely.
+IMAGE_PATH=$(mktemp --suffix=.b64)
+MASK_PATH=$(mktemp --suffix=.b64)
+printf '%s' "$IMAGE_B64" > "$IMAGE_PATH"
+printf '%s' "$MASK_B64"  > "$MASK_PATH"
+# Note: we intentionally keep IMAGE_B64/MASK_B64 in-scope after writing
+# to disk — the error-path check (E) still references MASK_B64 inline,
+# and a 400KB shell var has no measurable overhead for a script that
+# already spawned docker exec. Earlier versions unset these and broke
+# step E with `set -u` on unbound variable.
+
+cleanup_payloads() { rm -f "$IMAGE_PATH" "$MASK_PATH"; }
+trap cleanup_payloads EXIT
+
+# Helper to materialise a JSON request body. Paths to the base64
+# payloads are passed as short argv (a few dozen bytes), and Python
+# reads the actual content from disk — this keeps argv well under ARG_MAX.
 mkbody() {
     local out="$1" prompt="$2" mode="$3"
-    "$PY" -c "
-import json
+    MODEL_ID="$MODEL_ID" PROMPT="$prompt" MODE="$mode" \
+    IMAGE_PATH="$IMAGE_PATH" MASK_PATH="$MASK_PATH" OUT="$out" \
+    "$PY" <<'PYEOF'
+import json, os
+with open(os.environ['IMAGE_PATH']) as f:
+    image_b64 = f.read()
 body = {
-    'model': '$MODEL_ID',
-    'prompt': '''$prompt''',
+    'model': os.environ['MODEL_ID'],
+    'prompt': os.environ['PROMPT'],
     'seed': 17,
     'num_inference_steps': 20,
     'scheduler': 'dpm++_2m',
     'size': '512x512',
     'denoising_strength': 0.5,
-    'image': '''$IMAGE_B64''',
+    'image': image_b64,
 }
-if '$mode' == 'inpaint':
-    body['mask'] = '''$MASK_B64'''
+if os.environ['MODE'] == 'inpaint':
+    with open(os.environ['MASK_PATH']) as f:
+        body['mask'] = f.read()
     body['denoising_strength'] = 0.9
-with open('$out', 'w') as f:
+with open(os.environ['OUT'], 'w') as f:
     json.dump(body, f)
-"
+PYEOF
 }
 
 # ── (B) img2img ──────────────────────────────────────────────────────
