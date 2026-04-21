@@ -20,6 +20,12 @@ model:
     guidance_scale: ${oc.decode:${oc.env:SD35_MEDIUM_CFG,7.0}}
     width: 1024
     height: 1024
+  # LoRA hot-load caps (0-valued max_loaded disables caching entirely).
+  # SD3 LoRAs are transformer-targeted (MMDiT) rather than UNet-targeted —
+  # diffusers + peft handle the routing internally.
+  lora:
+    max_loaded: ${oc.decode:${oc.env:SD35_MEDIUM_LORA_MAX_LOADED,8}}
+    max_per_request: ${oc.decode:${oc.env:SD35_MEDIUM_LORA_MAX_PER_REQUEST,5}}
 
 cache:
   enabled: true

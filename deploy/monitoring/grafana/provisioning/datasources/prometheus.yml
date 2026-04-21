@@ -1,0 +1,14 @@
+# Auto-provisioned Prometheus datasource.
+# Grafana picks this up on container start (no UI click-through needed).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: infergate-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: "15s"

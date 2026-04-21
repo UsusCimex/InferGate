@@ -666,6 +666,8 @@ docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000` (admin/admin)
 
+Grafana поднимается с auto-provisioning: Prometheus datasource (`infergate-prometheus`) и готовый дашборд **InferGate — Gateway & Inference** (папка «InferGate») подключаются автоматически — клик-через через UI не нужен. Сам дашборд лежит в `deploy/monitoring/grafana/dashboards/infergate.json` и содержит панели для request rate/latency/error-rate, inference p95 per-model, cache hit-ratio per-model и стат-плашки для VRAM / queue / loaded-models.
+
 `prometheus-client` — optional dependency. Без неё метрики деградируют до JSON `/metrics`, Prometheus endpoint возвращает 501.
 
 ```bash
@@ -743,7 +745,8 @@ pytest --cov=app --cov-branch
 
 ### Расширение t2i-возможностей на другие модели
 
-- [ ] **LoRA/TI/compel для SD 3.5 Medium** — сейчас работают только на sdxl-base. Добавить `peft + compel` в `deploy/workers/sd35-medium/requirements.txt`, пересобрать — код уже готов (провайдер универсальный)
+- [x] **LoRA/TI для SD 3.5 Medium** — `peft` + `compel` в requirements, LoRA-кэш настраивается через `SD35_MEDIUM_LORA_MAX_LOADED/MAX_PER_REQUEST`. TI работает через CLIP-L/CLIP-G энкодеры (при `drop_t5=true` SDXL-pivotal формат применим один-к-одному).
+- [ ] **Compel (A1111-style weighting) для SD 3.5 / FLUX** — не поддерживается архитектурно: SD3Pipeline ожидает `[B,154,4096]` (CLIP-L+CLIP-G+T5 padded до 4096 и конкатенированных по seq-dim), FLUX использует T5 вместо CLIP-G. Compel эмитит SDXL-shape `[B,77,2048]` — runtime shape-mismatch. Провайдер корректно пропускает init на этих классах. Поддержка требует fork'а compel с SD3/FLUX-aware энкодерами.
 - [ ] **LyCORIS (LoHa / LoKr / IA3 / DyLoRA)** — не поддерживается `diffusers.load_lora_weights` из коробки ([issue #3087](https://github.com/huggingface/diffusers/issues/3087)). Текущий путь работает только для **plain LoRA и LoCon**. Полноценная поддержка требует интеграции пакета `lycoris-lora` + кастомного парсера/инжектора в UNet — отложено до накопления реального спроса
 
 ### Мульти-стадийные и специализированные пайплайны
@@ -760,7 +763,7 @@ pytest --cov=app --cov-branch
 - [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
 - [ ] **Hot-reload конфигов** — добавление моделей без перезапуска сервера
 - [ ] **Kubernetes Helm chart** — для multi-node distributed-режима
-- [ ] **Grafana дашборд** — готовый JSON-дашборд для импорта
+- [x] **Grafana дашборд** — `deploy/monitoring/grafana/dashboards/infergate.json` + provisioning (datasource + dashboards provider). Подключается автоматически при `docker compose up`.
 
 ---
 

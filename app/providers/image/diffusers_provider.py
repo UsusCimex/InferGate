@@ -233,11 +233,17 @@ class DiffusersImageProvider(ImageProvider):
     def _init_compel(self) -> None:
         """Attempt to initialise a Compel encoder for A1111-style weighting.
 
-        Only works on CLIP-based pipelines. Dual-encoder pipelines (SDXL
-        family) need requires_pooled for the second tokenizer. Everything
-        T5/Qwen-VL/mT5-based (FLUX, SD3 with T5, Qwen-Image, Hunyuan-DiT)
-        is not CLIP — compel init fails gracefully and we fall back to
-        raw-prompt mode.
+        Only works on CLIP-based pipelines that consume `prompt_embeds` in
+        the SDXL/SD1.5 shape. Pipelines with T5-mixed embeds (FLUX, SD3) or
+        non-CLIP encoders (Qwen-Image, Hunyuan-DiT) are explicitly skipped:
+          * FLUX's `text_encoder_2` is T5 — Compel can't encode it.
+          * SD3Pipeline concatenates CLIP(L+G)+T5 into [B,154,4096]; Compel's
+            SDXL path emits [B,77,2048] which is a runtime shape mismatch
+            even when T5 is dropped (pipeline still pads CLIP to 4096).
+
+        Detection is by class name rather than duck-typing: SD3 exposes the
+        same `tokenizer_2 + text_encoder_2` pair as SDXL (both are CLIP-G),
+        so the capability test alone can't distinguish them.
 
         Controlled by YAML `compel: true|false` (default true).
         """
@@ -250,6 +256,18 @@ class DiffusersImageProvider(ImageProvider):
             return
 
         pipe = self._pipeline
+        pipe_class = type(pipe).__name__
+        # Hard-coded block list for architectures known to reject SDXL-shape
+        # embeds. Matches diffusers class names (StableDiffusion3Pipeline,
+        # StableDiffusion3Img2ImgPipeline, FluxPipeline, FluxImg2ImgPipeline).
+        if "StableDiffusion3" in pipe_class or pipe_class.startswith("Flux"):
+            logger.info(
+                "Compel skipped for %s (%s): architecture uses T5-mixed embeds "
+                "that are incompatible with compel's SDXL output shape",
+                self.model_id, pipe_class,
+            )
+            return
+
         try:
             if (
                 hasattr(pipe, "tokenizer_2")

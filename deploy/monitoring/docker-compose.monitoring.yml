@@ -21,8 +21,16 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      # Auto-provisioned datasource + dashboard-provider configs.
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Dashboard JSON directory referenced by dashboards.yml (`options.path`).
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Suppress the first-run password change nag — provisioning is idempotent.
+      - GF_SECURITY_ADMIN_USER=admin
+    depends_on:
+      - prometheus
     restart: unless-stopped
 
 volumes:

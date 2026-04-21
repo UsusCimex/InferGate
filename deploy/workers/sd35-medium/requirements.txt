@@ -3,3 +3,11 @@ transformers>=4.40.0
 accelerate>=0.30.0
 safetensors>=0.4.0
 sentencepiece>=0.2.0
+# LoRA hot-load via pipe.load_lora_weights — peft is the diffusers backend.
+# diffusers supports SD3 LoRA through peft since 0.30; works on MMDiT transformer.
+peft>=0.10.0
+# compel is installed so prompt-weighting is available if the provider ever
+# lands an SD3-aware encoder; currently the provider skips compel init on SD3
+# because SD3Pipeline expects [B,154,4096] prompt_embeds (CLIP-L+CLIP-G+T5
+# padded), while compel's SDXL path emits [B,77,2048]. Harmless to ship.
+compel>=2.0
