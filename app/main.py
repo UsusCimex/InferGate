@@ -17,6 +17,7 @@ from app.middleware import AccessLogMiddleware, ApiKeyMiddleware, RateLimitMiddl
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
 from app.routers import audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
+from app.services.config_watcher import ConfigWatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
 from app.services.provider_manager import ModelNotFoundError, ProviderManager, WorkerNotReadyError
 
@@ -100,6 +101,18 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_cleanup_loop())
 
+    # Hot-reload watcher for per-model YAML configs. When a file under
+    # `config/models/` changes the provider is re-registered and (if it
+    # was loaded) re-loaded into GPU — no gateway restart needed. See
+    # ProviderManager.reload_model for the exact semantics matrix.
+    async def _on_config_reload(new_cfg):
+        await manager.reload_model(new_cfg)
+        # Keep scheduler's per-model concurrency in sync with the YAML.
+        scheduler.update_concurrency(new_cfg.id, new_cfg.queue.max_concurrent)
+
+    config_watcher = ConfigWatcher("config/models", _on_config_reload)
+    config_watcher.start()
+
     logger.info(
         "InferGate started — %d models registered, listening on %s:%d",
         len(model_cfgs),
@@ -110,6 +123,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    await config_watcher.stop()
     cleanup_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await cleanup_task
