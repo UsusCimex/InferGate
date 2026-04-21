@@ -9,13 +9,17 @@ from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelConfig, ModelCacheConfig, ModelQueueConfig, ModelMetadata
 from app.providers.base import ImageProvider, TextProvider, TtsProvider
+from app.providers.registry import register_provider
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler
 from app.services.provider_manager import ProviderManager
 
 
 # --- Fake providers for testing ---
+# Decorated so that reload_model() / get_provider_class("FakeImageProvider")
+# can resolve them through the same registry that production providers use.
 
+@register_provider
 class FakeImageProvider(ImageProvider):
     async def load(self, model_dir: str) -> None:
         self._loaded = True
@@ -33,6 +37,7 @@ class FakeImageProvider(ImageProvider):
         )
 
 
+@register_provider
 class FakeTextProvider(TextProvider):
     async def load(self, model_dir: str) -> None:
         self._loaded = True
@@ -57,6 +62,7 @@ class FakeTextProvider(TextProvider):
         }
 
 
+@register_provider
 class FakeTtsProvider(TtsProvider):
     async def load(self, model_dir: str) -> None:
         self._loaded = True

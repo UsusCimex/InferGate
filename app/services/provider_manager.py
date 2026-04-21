@@ -249,6 +249,104 @@ class ProviderManager:
             async with self._state_lock:
                 self._loaded_order.pop(model_id, None)
 
+    async def reload_model(self, config: ModelConfig) -> bool:
+        """Re-register a model with a new config — hot-reload entry point.
+
+        Returns True if a change was applied, False for a no-op (identical
+        config or still-disabled model). The per-model lock serialises
+        unload+re-register against concurrent `ensure_loaded()` / `get()`
+        calls, so any in-flight `generate()` completes on the old provider
+        before the swap becomes visible.
+
+        Behaviour matrix:
+          * identical config      → no-op
+          * enabled → disabled    → unload + remove from registry
+          * disabled → enabled    → register (+ reload if it was the
+                                    default model and prior one was loaded)
+          * any other change      → unload (if loaded), rebuild provider,
+                                    reload if previously loaded
+          * new model_id          → register
+
+        Caveats:
+          * Remote providers: the worker process keeps running with its
+            original YAML. Only gateway-side metadata (display_name,
+            queue.priority, cache strategy, …) reflects immediately.
+            `provider_class` or `hub_id` changes for a remote model need
+            a worker restart — out of scope for hot-reload.
+        """
+        model_id = config.id
+        existing = self._registry.get(model_id)
+
+        if not config.enabled:
+            if existing is None:
+                return False
+            async with self._get_model_lock(model_id):
+                if existing.is_loaded():
+                    await existing.unload()
+                async with self._state_lock:
+                    self._loaded_order.pop(model_id, None)
+                self._registry.pop(model_id, None)
+            logger.info("Model %s disabled via config — unloaded & unregistered", model_id)
+            return True
+
+        if existing is not None and existing.config.model_dump() == config.model_dump():
+            return False  # Identical save (editor touch, no content diff)
+
+        # Resolve worker URL (same rule as discover_models) — in case the
+        # YAML was edited and WORKER_URL_* env override still applies.
+        if not config.worker_url:
+            env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", model_id.upper())
+            env_url = os.environ.get(env_key)
+            if env_url:
+                config.worker_url = env_url
+
+        async with self._get_model_lock(model_id):
+            was_loaded = existing is not None and existing.is_loaded()
+            if was_loaded:
+                assert existing is not None
+                try:
+                    await existing.unload()
+                except Exception as e:
+                    logger.warning(
+                        "Error unloading stale %s during reload — continuing: %s",
+                        model_id, e,
+                    )
+                async with self._state_lock:
+                    self._loaded_order.pop(model_id, None)
+
+            try:
+                if config.worker_url:
+                    new_provider = self._create_remote_provider(config)
+                else:
+                    provider_cls = get_provider_class(config.provider_class)
+                    new_provider = provider_cls(config)
+            except ValueError as e:
+                # Bad YAML (unknown provider_class) — keep the old one so
+                # the gateway doesn't lose the model entirely on a typo.
+                logger.error("reload_model(%s) rejected new config: %s", model_id, e)
+                if existing is not None:
+                    self._registry[model_id] = existing
+                return False
+
+            self._registry[model_id] = new_provider
+
+            # Re-load into GPU if the model was loaded before — caller
+            # expectation: "I don't want restart just to ship a config change".
+            # Remote providers handle their own connect via worker_monitor;
+            # local providers get an explicit load() call here.
+            if was_loaded and not config.worker_url:
+                await new_provider.load(self._model_dir)
+                async with self._state_lock:
+                    self._loaded_order[model_id] = None
+
+        logger.info(
+            "Reloaded model %s%s%s",
+            model_id,
+            " (new registration)" if existing is None else "",
+            " — reloaded into GPU" if was_loaded and not config.worker_url else "",
+        )
+        return True
+
     async def _make_room(self) -> None:
         """Unload LRU GPU models until there's room."""
         while True:
