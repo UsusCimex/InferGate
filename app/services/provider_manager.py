@@ -300,6 +300,38 @@ class ProviderManager:
             if env_url:
                 config.worker_url = env_url
 
+        # Remote-provider hot-path: if we already have a connected remote
+        # provider for this id and the worker_url hasn't changed, keep
+        # the existing RemoteProvider instance (and its httpx connection
+        # pool) but push the new config to the worker via POST /reload.
+        # This avoids flapping the health state visible to clients during
+        # a pure metadata edit.
+        if (
+            existing is not None
+            and existing.config.worker_url
+            and config.worker_url == existing.config.worker_url
+            and existing.is_loaded()
+            and hasattr(existing, "reload")
+        ):
+            async with self._get_model_lock(model_id):
+                try:
+                    action = await existing.reload(config)  # type: ignore[attr-defined]
+                except Exception as e:
+                    # Worker reload failed — log and fall through to the
+                    # recreate path, which at minimum updates gateway-side
+                    # metadata so /v1/models reflects the new YAML.
+                    logger.warning(
+                        "Worker /reload for %s failed (%s) — falling back to local re-register",
+                        model_id, e,
+                    )
+                else:
+                    existing.config = config
+                    logger.info(
+                        "Reloaded model %s via worker /reload (action=%s)",
+                        model_id, action,
+                    )
+                    return True
+
         async with self._get_model_lock(model_id):
             was_loaded = existing is not None and existing.is_loaded()
             if was_loaded:

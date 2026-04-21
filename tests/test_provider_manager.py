@@ -200,3 +200,84 @@ async def test_scheduler_update_concurrency_registers_unknown(services):
     scheduler = services["scheduler"]
     scheduler.update_concurrency("brand-new", 3)
     assert scheduler._queues["brand-new"].max_concurrent == 3
+
+
+# ── Remote-provider reload path ──────────────────────────────────────
+
+class _FakeRemoteProvider:
+    """Stand-in for a RemoteProvider that records calls without hitting
+    HTTP — lets us verify reload_model picks the worker /reload fast
+    path instead of tearing down the provider instance."""
+    def __init__(self, config):
+        self.config = config
+        self._loaded = True
+        self.reload_calls: list = []
+
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    @property
+    def vram_mb(self) -> int:
+        return 0
+
+    @property
+    def model_id(self) -> str:
+        return self.config.id
+
+    async def reload(self, new_config) -> str:
+        self.reload_calls.append(new_config)
+        self.config = new_config
+        return "metadata"
+
+
+@pytest.mark.asyncio
+async def test_reload_remote_calls_worker_endpoint(services):
+    """When the existing provider is a connected remote one and the
+    worker_url is unchanged, reload_model routes through its .reload()
+    rather than recreating the instance — preserves HTTP connection
+    pool and avoids flashing the model as disconnected to clients."""
+    manager = services["manager"]
+
+    remote_cfg = _make_test_config()
+    remote_cfg.worker_url = "http://worker-test:8001"
+    fake = _FakeRemoteProvider(remote_cfg)
+    manager._registry["test-image"] = fake
+
+    new_cfg = _make_test_config(display_name="renamed")
+    new_cfg.worker_url = "http://worker-test:8001"
+    changed = await manager.reload_model(new_cfg)
+    assert changed is True
+
+    # Same provider instance — not replaced with a fresh RemoteProvider
+    assert manager.get("test-image") is fake
+    # Worker /reload was called exactly once with the new config
+    assert len(fake.reload_calls) == 1
+    assert fake.reload_calls[0].display_name == "renamed"
+    assert fake.config.display_name == "renamed"
+
+
+@pytest.mark.asyncio
+async def test_reload_remote_falls_back_on_worker_error(services):
+    """If worker /reload raises (worker mid-restart, network glitch),
+    reload_model must not lose the model — it falls back to recreating
+    the gateway-side provider so at least metadata tracks YAML."""
+    manager = services["manager"]
+
+    class _FailingRemote(_FakeRemoteProvider):
+        async def reload(self, new_config):
+            raise RuntimeError("worker unreachable")
+
+    remote_cfg = _make_test_config()
+    remote_cfg.worker_url = "http://worker-test:8001"
+    failing = _FailingRemote(remote_cfg)
+    manager._registry["test-image"] = failing
+
+    new_cfg = _make_test_config(display_name="renamed")
+    new_cfg.worker_url = "http://worker-test:8001"
+    changed = await manager.reload_model(new_cfg)
+
+    # The remote path failed, but the fallback rebuilt the remote
+    # provider so the model is still registered. `changed` is True:
+    # something WAS updated (the provider instance is fresh).
+    assert changed is True
+    assert "test-image" in manager._registry

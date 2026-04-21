@@ -85,6 +85,30 @@ class _RemoteMixin:
         finally:
             httpx_logger.setLevel(prev_level)
 
+    async def _remote_reload(self, new_config: Any) -> str:
+        """Forward a hot-reload request to the worker.
+
+        Returns the worker's `action` field: "noop" | "metadata" |
+        "full_reload". The worker classifies the change internally —
+        we don't pre-judge here, so that gateway- and worker-side
+        reload semantics stay in one place (the worker's /reload
+        handler).
+
+        When the worker is unreachable (disconnected, mid-restart),
+        raises RuntimeError — caller should either retry via the
+        monitor loop or accept that gateway-side metadata diverged
+        from worker-side until reconnection.
+        """
+        if self._client is None:
+            raise RuntimeError(
+                f"Worker {self._worker_url} not connected — /reload cannot be delivered"
+            )
+        payload = new_config.model_dump(mode="json")
+        resp = await self._client.post("/reload", json=payload)
+        resp.raise_for_status()
+        body = resp.json()
+        return body.get("action", "unknown")
+
 
 class RemoteTextProvider(TextProvider):
     """Proxies text generation requests to a remote worker."""
@@ -101,6 +125,9 @@ class RemoteTextProvider(TextProvider):
 
     async def check_health(self) -> bool:
         return await _RemoteMixin._check_health(self)
+
+    async def reload(self, new_config: Any) -> str:
+        return await _RemoteMixin._remote_reload(self, new_config)
 
     async def generate(self, messages: list[dict], **params: Any) -> dict:
         resp = await self._client.post("/generate", json={"messages": messages, **params})
@@ -133,6 +160,9 @@ class RemoteImageProvider(ImageProvider):
     async def check_health(self) -> bool:
         return await _RemoteMixin._check_health(self)
 
+    async def reload(self, new_config: Any) -> str:
+        return await _RemoteMixin._remote_reload(self, new_config)
+
     async def generate(self, prompt: str, **params: Any) -> bytes:
         resp = await self._client.post("/generate", json={"prompt": prompt, **params})
         resp.raise_for_status()
@@ -154,6 +184,9 @@ class RemoteTtsProvider(TtsProvider):
 
     async def check_health(self) -> bool:
         return await _RemoteMixin._check_health(self)
+
+    async def reload(self, new_config: Any) -> str:
+        return await _RemoteMixin._remote_reload(self, new_config)
 
     async def synthesize(self, text: str, **params: Any) -> bytes:
         resp = await self._client.post("/synthesize", json={"text": text, **params})
