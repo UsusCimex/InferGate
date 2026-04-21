@@ -152,10 +152,12 @@ class DiffusersImageProvider(ImageProvider):
         self._ti_loaded: set[tuple[str, str | None, str | None]] = set()
         self._ti_lock = threading.Lock()
 
-        # Img2img pipeline for HighresFix. Built lazily via `from_pipe` so it
-        # shares UNet / VAE / text encoders with the base pipeline (zero VRAM
-        # overhead). None until first highres_fix request touches it.
+        # Img2img / inpaint pipelines, built lazily via `from_pipe` so they
+        # share UNet / VAE / text encoders with the base pipeline (zero VRAM
+        # overhead). None until the first img2img / inpaint / highres_fix
+        # request touches the respective slot.
         self._img2img_pipeline = None
+        self._inpaint_pipeline = None
 
     async def load(self, model_dir: str) -> None:
         import torch
@@ -506,6 +508,49 @@ class DiffusersImageProvider(ImageProvider):
         self._img2img_pipeline.scheduler = self._pipeline.scheduler
         return self._img2img_pipeline
 
+    def _ensure_inpaint_pipe(self):
+        """Lazy-build an inpaint pipeline sharing weights with the base.
+
+        Mirrors `_ensure_img2img_pipe` — the only difference is the auto-
+        class. Inpaint needs a specialised UNet input layout for some
+        architectures (SD1.5-inpaint has 9 input channels vs 4), but for
+        SDXL / SD3 / FLUX the same UNet handles both via channel broadcast
+        and the Auto-factory picks the right code path internally.
+        """
+        from diffusers import AutoPipelineForInpainting
+
+        if self._inpaint_pipeline is None:
+            self._inpaint_pipeline = AutoPipelineForInpainting.from_pipe(self._pipeline)
+        self._inpaint_pipeline.scheduler = self._pipeline.scheduler
+        return self._inpaint_pipeline
+
+    @staticmethod
+    def _decode_image(b64_str: str, mode: str | None = None):
+        """Decode a base64 PNG/JPEG (with or without `data:*;base64,` prefix)
+        into a PIL Image. `mode` optionally converts ('RGB' for images, 'L'
+        for masks). Raises ValueError with a short message on bad input —
+        the worker's ValueError handler surfaces this as HTTP 400 upstream.
+        """
+        import base64 as _b64
+        import io as _io
+
+        from PIL import Image, UnidentifiedImageError
+
+        # Tolerate `data:image/png;base64,AAAA…` wrapper from browser canvases.
+        payload = b64_str.split(",", 1)[1] if b64_str.startswith("data:") else b64_str
+        try:
+            raw = _b64.b64decode(payload, validate=False)
+        except Exception as e:
+            raise ValueError(f"image/mask is not valid base64: {e}") from e
+        try:
+            img = Image.open(_io.BytesIO(raw))
+            img.load()
+        except UnidentifiedImageError as e:
+            raise ValueError("image/mask is not a recognised PNG/JPEG") from e
+        if mode is not None and img.mode != mode:
+            img = img.convert(mode)
+        return img
+
     def _apply_highres_fix(self, prompt: str, defaults: dict, hires: dict):
         """Two-pass generation — compose at base res, upscale, img2img refine.
 
@@ -732,6 +777,18 @@ class DiffusersImageProvider(ImageProvider):
         # pipelines (SD3, some FLUX variants) raise TypeError on stray
         # `seed` kwargs, which is why we pop it unconditionally.
         seed = defaults.pop("seed", None)
+        # img2img / inpaint inputs — decode base64 here (cheap CPU work)
+        # rather than inside the worker thread so a decode failure returns
+        # HTTP 400 immediately, without taking a GPU slot for nothing.
+        image_b64 = defaults.pop("image", None)
+        mask_b64 = defaults.pop("mask", None)
+        denoising_strength = defaults.pop("denoising_strength", None)
+        input_image = self._decode_image(image_b64, mode="RGB") if image_b64 else None
+        input_mask = self._decode_image(mask_b64, mode="L") if mask_b64 else None
+        # Schema validator already blocks mask-without-image on the router
+        # side, but providers are called directly in tests too — defend here.
+        if input_mask is not None and input_image is None:
+            raise ValueError("mask requires image: inpainting needs a base image")
         model_dir = self._model_dir or "/app/models"
 
         # Detect A1111-style prompt weighting — only activate compel path
@@ -754,6 +811,31 @@ class DiffusersImageProvider(ImageProvider):
                 self._apply_compel(prompt, negative_prompt or None, defaults)
             if highres_fix:
                 return self._apply_highres_fix(prompt, defaults, highres_fix)
+
+            # Dispatch: inpaint (image+mask) → img2img (image only) → text2img.
+            # `strength` is diffusers' name for denoising strength; we only
+            # forward it when the client explicitly set one, otherwise the
+            # pipeline's own default (0.8 for most) applies.
+            if input_image is not None:
+                call_kwargs = dict(defaults)
+                if denoising_strength is not None:
+                    call_kwargs["strength"] = float(denoising_strength)
+                if input_mask is not None:
+                    # Resize mask to image dimensions if mismatched — common
+                    # when clients upload a paint-app mask at arbitrary size.
+                    from PIL import Image as _Image
+                    mask = input_mask
+                    if mask.size != input_image.size:
+                        mask = mask.resize(input_image.size, _Image.NEAREST)
+                    pipe = self._ensure_inpaint_pipe()
+                    if use_compel:
+                        return pipe(image=input_image, mask_image=mask, **call_kwargs).images[0]
+                    return pipe(prompt=prompt, image=input_image, mask_image=mask, **call_kwargs).images[0]
+                pipe = self._ensure_img2img_pipe()
+                if use_compel:
+                    return pipe(image=input_image, **call_kwargs).images[0]
+                return pipe(prompt=prompt, image=input_image, **call_kwargs).images[0]
+
             if use_compel:
                 return self._pipeline(**defaults).images[0]
             # Pass `prompt` as kwarg — some pipelines (e.g. FLUX.2-klein)

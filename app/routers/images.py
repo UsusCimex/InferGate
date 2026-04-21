@@ -54,6 +54,16 @@ async def generate_images(
         params["textual_inversions"] = [ti.model_dump() for ti in body.textual_inversions]
     if body.highres_fix is not None:
         params["highres_fix"] = body.highres_fix.model_dump()
+    # img2img / inpaint inputs — pass through as base64 strings. The cache
+    # key naturally incorporates them (`make_key` hashes the full params
+    # dict), so two identical img2img requests with the same seed do
+    # cache-hit, while changing the input image busts the cache.
+    if body.image is not None:
+        params["image"] = body.image
+    if body.mask is not None:
+        params["mask"] = body.mask
+    if body.denoising_strength is not None:
+        params["denoising_strength"] = body.denoising_strength
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"

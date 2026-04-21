@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class HighresFixSpec(BaseModel):
@@ -93,6 +93,27 @@ class ImageGenerationRequest(BaseModel):
     # final image is `size * scale`.
     highres_fix: HighresFixSpec | None = None
 
+    # img2img / inpainting inputs. Both are base64-encoded PNG/JPEG — the
+    # JSON transport is uniform across local and remote providers (remote
+    # serialises params as JSON, so PIL.Image would have to re-encode to
+    # base64 anyway). A plain data-URI prefix `data:image/png;base64,…` is
+    # accepted and stripped by the provider.
+    #
+    # Semantics (OpenAI /v1/images/edits-style):
+    #   * `image` only        → img2img (whole-image modification)
+    #   * `image` + `mask`    → inpaint (modify where mask is white/alpha=0)
+    #   * neither             → text2img (current behaviour)
+    # `mask` without `image` is rejected at validation time — it would have
+    # no reference to apply to and silently fall through to text2img.
+    image: str | None = Field(None, max_length=20_000_000)  # ~15MB base64
+    mask: str | None = Field(None, max_length=20_000_000)
+    # Strength for img2img / inpaint passes. Lower = stay closer to input,
+    # higher = more creative rewrite. diffusers default is 0.8 when
+    # unspecified, which we respect (not our call to pick a number here).
+    # Name is distinct from HighresFixSpec.denoising_strength so one can
+    # coexist with highres_fix (highres operates on its own pass).
+    denoising_strength: float | None = Field(None, ge=0.0, le=1.0)
+
     @field_validator("loras")
     @classmethod
     def _cap_loras(cls, v: list[LoraSpec] | None) -> list[LoraSpec] | None:
@@ -106,6 +127,12 @@ class ImageGenerationRequest(BaseModel):
         if v is not None and len(v) > 10:
             raise ValueError("textual_inversions: at most 10 embeddings per request")
         return v
+
+    @model_validator(mode="after")
+    def _mask_requires_image(self) -> ImageGenerationRequest:
+        if self.mask is not None and self.image is None:
+            raise ValueError("mask requires image: inpainting needs a base image to modify")
+        return self
 
 
 class ImageData(BaseModel):
