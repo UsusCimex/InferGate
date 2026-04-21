@@ -749,7 +749,8 @@ pytest --cov=app --cov-branch
 
 - [ ] **SDXL Refiner** — base model → refiner model ensemble, передача latents между ними (`SDXLRefinerImageProvider`). Нужно держать два SDXL-образа одновременно в VRAM (~14 GB суммарно)
 - [ ] **Upscaler как отдельная категория** — Real-ESRGAN / SwinIR / 4x-UltraSharp через отдельный `ImageUpscaleProvider`, новый эндпоинт `/v1/images/upscale` с `image`-input
-- [ ] **img2img / inpainting** — принимать базовое изображение в запросе для модификации / inpaint через маску, отдельное поле `image` + `mask` в `ImageGenerationRequest`
+- [x] **img2img / inpainting** — `image` + `mask` + `denoising_strength` в `ImageGenerationRequest` (base64 PNG/JPEG, `data:…` URI тоже принимается). Провайдер диспатчит `AutoPipelineForImage2Image.from_pipe` / `AutoPipelineForInpainting.from_pipe` (zero-VRAM share с базой). E2e тест: `scripts/feature/img2img.sh`.
+- [ ] **OpenAI-style `/v1/images/edits` multipart endpoint** — текущий путь использует base64 в JSON (гибкий, но не 100% OpenAI-совместимый). Отдельный multipart-endpoint примет `image`/`mask` как `UploadFile` + `prompt`/`n`/`size` как `Form()`, делегирует в тот же провайдерский dispatch. Follow-up к img2img.
 
 ### Инфраструктура
 
