@@ -111,16 +111,32 @@ CODE_A=$LAST_CODE
 [[ "$CODE_A" == "200" ]] || { err "baseline failed (HTTP $CODE_A); inspect $OUT_A"; exit 1; }
 
 # ── Build base64 payload of A + a centred-circle mask ────────────────
-log "Encoding baseline image and constructing inpaint mask …"
-IMAGE_B64=$("$PY" -c "import base64,sys; sys.stdout.write(base64.b64encode(open('${OUT_A}','rb').read()).decode())")
-MASK_B64=$("$PY" -c "
-import base64, io
+# Image: pure stdlib base64 on the host (no Pillow needed — we're just
+# wrapping an existing PNG file's bytes).
+# Mask: generated inside the worker container via `docker compose exec`
+# because Pillow is a transitive dep of diffusers there but may not be
+# installed on the host. Keeps the script host-Pillow-free on Windows/
+# macOS devboxes where `pip install Pillow` on system Python is awkward.
+log "Encoding baseline image (host stdlib) and building mask (inside worker) …"
+IMAGE_B64=$("$PY" -c "
+import base64, sys
+sys.stdout.write(base64.b64encode(open(sys.argv[1], 'rb').read()).decode())
+" "$OUT_A")
+
+MASK_B64=$("${COMPOSE[@]}" exec -T "$SERVICE" python -c "
+import base64, io, sys
 from PIL import Image, ImageDraw
 m = Image.new('L', (512, 512), 0)
 ImageDraw.Draw(m).ellipse((180, 180, 332, 332), fill=255)  # centred circle
 buf = io.BytesIO(); m.save(buf, format='PNG')
-print(base64.b64encode(buf.getvalue()).decode())
-")
+sys.stdout.write(base64.b64encode(buf.getvalue()).decode())
+" 2>/dev/null | tr -d '\r\n')
+
+if [[ -z "$MASK_B64" ]]; then
+    err "failed to build mask inside ${SERVICE}. Fallback: install Pillow on host and retry."
+    err "  Pillow install:  $PY -m pip install Pillow"
+    exit 1
+fi
 ok "payloads built (image=${#IMAGE_B64}B base64, mask=${#MASK_B64}B base64)"
 
 # Helper to materialise a JSON request body with the (large) base64
