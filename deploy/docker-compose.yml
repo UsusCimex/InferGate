@@ -110,6 +110,7 @@ services:
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
       - WORKER_URL_WHISPER_BASE=http://worker-whisper-base:8001
       - WORKER_URL_REALESRGAN_X4=http://worker-realesrgan-x4:8001
+      - WORKER_URL_XTTS_V2=http://worker-xtts-v2:8001
     volumes:
       - ../config:/app/config:ro
       - cache_data:/app/cache
@@ -379,10 +380,27 @@ services:
       <<: *build
       args:
         BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
-        APT_PACKAGES: git
+        # fish-speech → pyaudio (C-extension) needs gcc + portaudio headers
+        APT_PACKAGES: git build-essential portaudio19-dev
         WORKER_REQUIREMENTS: deploy/workers/openaudio-s1-mini/requirements.txt
     volumes:
       - ../config/models/openaudio-s1-mini.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts-gpu
+
+  worker-xtts-v2:
+    <<: *gpu
+    profiles: ["voice-clone", "xtts-v2"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/xtts-v2/requirements.txt
+    volumes:
+      - ../config/models/xtts-v2.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
