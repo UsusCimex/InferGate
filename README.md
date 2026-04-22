@@ -675,7 +675,7 @@ infergate/
 ├── scripts/
 │   ├── diagnose/                   #   Per-model smoke-scripts
 │   └── feature/                    #   End-to-end feature tests (на живых воркерах)
-├── tests/                          #   155 pytest-ов, 67% покрытия
+├── tests/                          #   194 pytest-ов
 └── pyproject.toml
 ```
 
@@ -818,7 +818,7 @@ pip install pytest-cov
 pytest --cov=app --cov-branch
 ```
 
-**155 pytest-ов**, **67% линейно-ветвевого покрытия** (исключая GPU-провайдеры — они проверяются e2e-скриптами против реальных воркеров, см. `scripts/feature/`).
+**194 pytest-а** (исключая GPU-провайдеры — они проверяются e2e-скриптами против реальных воркеров, см. `scripts/feature/`).
 
 Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, `cache`, `health`), middleware (auth, rate-limit, access-log), мониторинг (Prometheus-лейблы, request ID), `CacheManager`, `GpuScheduler`, `ProviderManager` (включая hot-reload `reload_model`), `ConfigWatcher`, воркер-эндпоинты (`/generate`, `/synthesize`, `/transcribe`, `/upscale`, `/reload`, `/voice-clone`), конфигурацию, валидацию схем, конкурентность, edge cases.
 
@@ -840,11 +840,21 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 
 Список того, что ещё предстоит сделать — в порядке приоритета.
 
+### Фичи
+
 1. [ ] **SDXL Refiner** — ensemble `base → refiner` с передачей latents. `SDXLRefinerImageProvider` должен держать две модели одновременно в VRAM (~14 GB суммарно); на 12 GB картах — sequential unload/load base→refiner или CPU offload обоих. Требует нового провайдера или custom-логики в `DiffusersImageProvider`.
 2. [ ] **Multi-GPU** — per-worker `CUDA_VISIBLE_DEVICES`-routing и distributed-LRU в `ProviderManager`. Нужно для multi-GPU машин, где сейчас все воркеры по умолчанию борются за первый GPU.
 3. [ ] **Upscaler tiling** — follow-up к `/v1/images/upscale`. Сейчас вход ограничен `max_input_side=2048` (guard против OOM). Для upscale изображений большего размера нужно tile-разбиение с перекрытием + gradient blending в `SpandrelUpscaleProvider`.
 4. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
 5. [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
+
+### Рефакторинг и code-hygiene
+
+6. [ ] **Разбить `diffusers_provider.py`** (897 строк) на подмодули: `_compel.py` (token weighting), `_lora.py` (LRU-кэш адаптеров), `_textual_inversion.py` (single/multi-token registration), `_highres_fix.py`, `_schedulers.py`. Текущий файл — самый крупный в кодовой базе и смешивает 5 независимых вертикалей. Цель: один модуль ≤ 250 строк, провайдер остаётся фасадом.
+7. [ ] **Общий `BaseRemoteMixin` для `RemoteProvider`**. Сейчас в `app/providers/remote.py` 5 категорий (image/text/tts/stt/upscale) дублируют boilerplate `_call_worker`, ретраи и обработку `httpx.HTTPStatusError`. Вынести общий транспорт в миксин, оставить в подклассах только сериализацию запроса/ответа.
+8. [ ] **Вынести инициализацию Prometheus-гейджей** из `app/routers/health.py:/metrics` в `app/monitoring/metrics.py` (рядом с их декларацией). Роутер должен только читать готовые значения — у него нет ответственности за регистрацию.
+9. [ ] **Централизовать логгеры**. Сейчас в половине модулей `logging.getLogger(__name__)`, в половине — именованный `logging.getLogger("infergate")` или `logger = ...` на уровне модуля с разными именами. Выбрать один шаблон (рекомендую `__name__`) и пройтись rename'ом.
+10. [ ] **Единый code-style по CLAUDE.md**. Пройтись `ruff check --fix tests/` — в тестах 60+ ошибок импорт-ордера и unused-импортов, которых в `app/` уже нет. После — включить ruff в CI как блокирующую проверку.
 
 ---
 
