@@ -79,8 +79,18 @@ def test_prometheus_available():
 
 def test_path_normalization():
     from app.monitoring import _normalize_path
+    # Static routes preserved (including newly-added STT/upscale/voice-clone/edits)
     assert _normalize_path("/v1/chat/completions") == "/v1/chat/completions"
-    assert _normalize_path("/v1/models/qwen3.5-4b/load") == "/v1/models/{id}"
+    assert _normalize_path("/v1/images/edits") == "/v1/images/edits"
+    assert _normalize_path("/v1/images/upscale") == "/v1/images/upscale"
+    assert _normalize_path("/v1/audio/transcriptions") == "/v1/audio/transcriptions"
+    assert _normalize_path("/v1/audio/speech/voice-clone") == "/v1/audio/speech/voice-clone"
+    # Per-model actions no longer collapse — load vs unload stay distinct
+    assert _normalize_path("/v1/models/qwen3.5-4b/load") == "/v1/models/{id}/load"
+    assert _normalize_path("/v1/models/qwen3.5-4b/unload") == "/v1/models/{id}/unload"
+    # Plain /v1/models/{id} still collapses
+    assert _normalize_path("/v1/models/qwen3.5-4b") == "/v1/models/{id}"
+    # Cache routes unchanged
     assert _normalize_path("/cache/stats/some-model") == "/cache/stats/{model_id}"
     assert _normalize_path("/cache/entry/abc123") == "/cache/entry/{key}"
     assert _normalize_path("/cache") == "/cache"

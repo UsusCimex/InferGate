@@ -43,7 +43,11 @@ class RequestIdMiddleware:
 _STATIC_ROUTES = frozenset({
     "/v1/chat/completions",
     "/v1/images/generations",
+    "/v1/images/edits",
+    "/v1/images/upscale",
     "/v1/audio/speech",
+    "/v1/audio/speech/voice-clone",
+    "/v1/audio/transcriptions",
     "/v1/models",
     "/health",
     "/metrics",
@@ -55,7 +59,12 @@ def _normalize_path(path: str) -> str:
     """Collapse dynamic path segments for metric labels."""
     if path in _STATIC_ROUTES:
         return path
+    # /v1/models/{id}/{action} — preserve the trailing action so load vs
+    # unload show up as distinct metric lines instead of collapsing.
     if path.startswith("/v1/models/"):
+        parts = path.split("/")
+        if len(parts) >= 5:
+            return f"/v1/models/{{id}}/{parts[4]}"
         return "/v1/models/{id}"
     if path.startswith("/cache/stats/"):
         return "/cache/stats/{model_id}"
