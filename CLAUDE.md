@@ -73,6 +73,8 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 - `provider_manager.py` — Model registry, loading/unloading, OrderedDict LRU, per-model + state locks, shutdown timeouts
 - `gpu_scheduler.py` — Request queue with asyncio.Lock-protected counters and concurrency limits
 - `cache_manager.py` — Per-model caching with SQLite WAL metadata, atomic writes, miss tracking
+- `config_watcher.py` — Polls `config/models/*.yaml` and calls back on change → `reload_model` + scheduler concurrency update
+- `memory_watchdog.py` — Background task that polls per-worker VRAM + host RAM; emergency-evicts LRU when usage overshoots declared budgets
 
 ### Configuration
 
@@ -93,6 +95,26 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 - PyTorch with CUDA 12.6
 - aiosqlite (cache metadata with WAL), pydantic (validation with Field constraints), ruff + pyright (linting + type checking)
 - Docker with multi-layer build caching, uv package manager, non-root user
+
+## Code Style
+
+Single canonical style — do not diverge.
+
+- **Imports**: `from __future__ import annotations` first line in every module. Imports sorted by ruff (`I`), first-party = `app`.
+- **Type hints**: PEP 604 / PEP 585 only — `dict[str, X]`, `list[X]`, `str | None`. Never `Dict`/`List`/`Optional` from `typing`.
+- **Privacy**: single underscore `_foo` for module/class internals; double underscore only for deliberate name-mangling.
+- **Line length**: 100 (`tool.ruff.line-length`). `E501` is ignored — format-first, wrap when it reads better.
+- **Lint**: ruff with `E, W, F, I, UP, B, SIM, ASYNC, C4, T20, RUF`. No `print` in production code (`T20`). `ruff check app/` must be clean before commit.
+- **Types**: `pyright` in `basic` mode (`tool.pyright`); new code should not introduce `pyright` errors.
+- **Async**: prefer asyncio primitives (`asyncio.Lock`, `asyncio.Semaphore`) over threading. Wrap blocking filesystem/CPU work with `asyncio.to_thread`.
+
+## Comment Policy
+
+Keep comments rare, short, and load-bearing. Three rules — everything else is noise.
+
+1. **No comment by default.** Identifier names and types are already documentation.
+2. **Comments explain WHY, never WHAT.** Only legitimate reasons to add one: a non-obvious invariant, a workaround with its cause, a parameter-priority subtlety, an ordering that exists for crash-safety, or behaviour that would surprise a reader. A comment that restates the line below it (`# Check TTL` above `if ttl_expires and ...`) must be deleted. No `# --- Section ---` dividers. No references to past fixes, incidents, or PRs — that belongs in `git log`.
+3. **Docstrings only on public contracts** — classes, router endpoints, provider ABCs, public service methods. One-liner when it is enough; multi-line with Returns/Raises/Notes only when the contract genuinely needs it. No decorative docstrings on trivial helpers.
 
 ## Testing
 
