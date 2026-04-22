@@ -143,6 +143,11 @@ curl http://localhost:8000/v1/audio/speech \
 curl http://localhost:8000/v1/audio/transcriptions \
   -F "file=@speech.mp3" -F "model=whisper-base" -F "language=ru"
 
+# STT subtitle форматы — srt и vtt
+curl http://localhost:8000/v1/audio/transcriptions \
+  -F "file=@speech.mp3" -F "model=whisper-base" -F "response_format=srt" \
+  -o subtitles.srt
+
 # Upscale изображения 4×
 curl http://localhost:8000/v1/images/upscale \
   -F "file=@small.png" -F "model=realesrgan-x4" -F "response_format=png" \
@@ -775,7 +780,7 @@ pytest --cov=app --cov-branch
 ### Инфраструктура
 
 - [ ] **Web UI** — панель администрирования (gallery, prompt history, live metrics)
-- [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
+- [~] **Voice cloning** — gateway-layer готов: `POST /v1/audio/speech/voice-clone` (multipart), `RemoteTtsProvider` ветвится на `/voice-clone` worker-endpoint когда передан `reference_audio`, `FishSpeechTtsProvider` пробрасывает `reference_audio`/`reference_text` в `TTS.synthesize`, cache keyed по SHA reference-bytes. **Blocked** worker-side: fish-speech upstream master имеет переработанный API (`TTSInferenceEngine` vs старые `fish_speech.tts.api`/`fish_speech.inference`), плюс `torchvision` circular-import conflict от несовместимых torch-версий. Требуется pin конкретной working fish-speech версии или migration на другой voice-clone backend (XTTS-v2, Coqui TTS). Код провайдера graceful: при absence API возвращает HTTP 400 с четким сообщением.
 - [x] **Speech-to-Text** — `POST /v1/audio/transcriptions` (OpenAI-compatible multipart). Новая категория провайдера `SttProvider` + `WhisperProvider` на faster-whisper (CTranslate2). Три формата ответа: `json` (строгая OpenAI-форма `{text}`), `text` (raw), `verbose_json` (text + language + duration + segments[]). Worker `whisper-base` (Systran/faster-whisper-base, ~90MB RAM на CPU int8). Профиль `--profile stt` / `--profile whisper-base`. E2e тест: `scripts/feature/stt-whisper.sh`.
 - [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
 - [x] **Hot-reload конфигов (gateway-side)** — `ConfigWatcher` polls `config/models/*.yaml` каждые 2с, при изменении вызывает `ProviderManager.reload_model()` (unload+re-register, с автоматическим `load()` если модель была в GPU) и `GpuScheduler.update_concurrency()`. Новые YAML регистрируют модель, `enabled: false` снимает её с registry, ошибки парсинга логируются без падения gateway. E2e тест: `scripts/feature/hot-reload-config.sh` (гоняется без worker'ов — проверяет именно gateway-side).
