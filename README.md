@@ -790,23 +790,14 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 
 ## 14. TODO
 
-Закрытые пункты убираются из списка — их состояние отражено в актуальной документации выше (разделы 3 «Модели», 4 «API», 10 «Мониторинг»). Здесь только **то, что ещё предстоит сделать** или **заблокировано внешними причинами**.
+Список того, что ещё предстоит сделать — в порядке приоритета. Обозначение `[~]` = частично (gateway-слой готов, worker-слой ждёт работы).
 
-Обозначения: `[ ]` — не начато, `[~]` — частично (gateway-слой есть, worker-слой заблокирован или наоборот), `⛔` — архитектурный блокер.
-
-### Пайплайны и модели
-
-- [ ] **SDXL Refiner** — ensemble `base → refiner` с передачей latents. `SDXLRefinerImageProvider` должен держать две модели одновременно в VRAM (~14 GB суммарно); на 12 GB картах — sequential unload/load base→refiner или CPU offload обоих. Требует нового провайдера + новой категории или custom-логики в `DiffusersImageProvider`.
-- [ ] **Upscaler tiling** — follow-up к сделанному `/v1/images/upscale`. Сейчас вход ограничен `max_input_side=2048` (guard против OOM). Для upscale изображений большего размера нужно tile-разбиение с перекрытием + gradient blending в `SpandrelUpscaleProvider`.
-- [ ] ⛔ **Compel для SD 3.5 / FLUX** — архитектурный блокер: `StableDiffusion3Pipeline` ожидает `[B,154,4096]` (CLIP-L+CLIP-G+T5 padded до 4096 и конкатенированных по seq-dim), FLUX использует T5 вместо CLIP-G. Compel эмитит SDXL-shape `[B,77,2048]` — runtime shape-mismatch. Наш провайдер корректно пропускает compel-init на этих классах по имени. Полноценная поддержка требует fork'а compel с SD3/FLUX-aware энкодерами.
-- [ ] ⛔ **LyCORIS (LoHa / LoKr / IA3 / DyLoRA)** — `pipe.load_lora_weights` в `diffusers≥0.37` поддерживает **LoRA и LoCon** (именно это у нас и работает). Расширенные LyCORIS-типы (LoHa, LoKr, IA3, DyLoRA) **не загружаются нативно** ([diffusers#5079](https://github.com/huggingface/diffusers/issues/5079), [discussion #6771](https://github.com/huggingface/diffusers/discussions/6771)). Полноценная поддержка требует либо нативного патча в `diffusers`, либо интеграции [`lycoris-lora`](https://github.com/KohakuBlueleaf/LyCORIS) с кастомным инжектором в UNet. `peft.LoKrConfig` **не решает** — он для PEFT-saved адаптеров, не для civitai `.safetensors` LyCORIS-чекпоинтов. Отложено до реального спроса.
-
-### Инфраструктура
-
-- [~] **Voice cloning (worker-side)** — gateway-слой готов: `POST /v1/audio/speech/voice-clone` (multipart), `RemoteTtsProvider` маршрутизирует на `/voice-clone` при наличии `reference_audio`, `FishSpeechTtsProvider` проксирует `reference_audio`/`reference_text` в `TTS.synthesize`, cache keyed по SHA reference-байт, **5 pytest-ов** через fake provider зелёные. Блокер на стороне worker-образа `openaudio-s1-mini`: fish-speech upstream master имеет переработанный API (`TTSInferenceEngine` вместо `fish_speech.tts.api`/`fish_speech.inference`) + `torchvision` circular-import от несовместимых torch-версий в pinned install. Нужно либо pin конкретной working fish-speech версии, либо переезд на XTTS-v2 / Coqui TTS. Провайдер graceful: возвращает HTTP 400 с понятным сообщением когда API не найден.
-- [ ] **Multi-GPU** — per-worker `CUDA_VISIBLE_DEVICES`-routing и distributed-LRU в `ProviderManager`. Нужно для multi-GPU машин, где сейчас все воркеры по умолчанию борются за первый GPU.
-- [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
-- [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
+1. [~] **Voice cloning (worker-side)** — gateway-слой уже готов: `POST /v1/audio/speech/voice-clone` (multipart), `RemoteTtsProvider` маршрутизирует на `/voice-clone` при наличии `reference_audio`, `FishSpeechTtsProvider` проксирует `reference_audio`/`reference_text` в `TTS.synthesize`, cache keyed по SHA reference-байт, **5 pytest-ов** через fake provider зелёные. Остаётся воркер-образ `openaudio-s1-mini`: fish-speech upstream master имеет переработанный API (`TTSInferenceEngine` вместо `fish_speech.tts.api`/`fish_speech.inference`) + `torchvision` circular-import от несовместимых torch-версий. Нужно pin конкретной working fish-speech версии или переезд на XTTS-v2 / Coqui TTS.
+2. [ ] **SDXL Refiner** — ensemble `base → refiner` с передачей latents. `SDXLRefinerImageProvider` должен держать две модели одновременно в VRAM (~14 GB суммарно); на 12 GB картах — sequential unload/load base→refiner или CPU offload обоих. Требует нового провайдера или custom-логики в `DiffusersImageProvider`.
+3. [ ] **Multi-GPU** — per-worker `CUDA_VISIBLE_DEVICES`-routing и distributed-LRU в `ProviderManager`. Нужно для multi-GPU машин, где сейчас все воркеры по умолчанию борются за первый GPU.
+4. [ ] **Upscaler tiling** — follow-up к `/v1/images/upscale`. Сейчас вход ограничен `max_input_side=2048` (guard против OOM). Для upscale изображений большего размера нужно tile-разбиение с перекрытием + gradient blending в `SpandrelUpscaleProvider`.
+5. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
+6. [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
 
 ---
 
