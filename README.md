@@ -60,7 +60,8 @@ Defaults в `config/models/*.yaml` заточены под 12GB GPU (nf4-ква�
 | `text` | qwen3.5-4b (enabled) |
 | `image` | sd35-medium (enabled) |
 | `tts` | kokoro-82m (enabled) |
-| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m` | Индивидуальные |
+| `stt` | whisper-base (enabled) |
+| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m`, `whisper-base` | Индивидуальные |
 | `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `openaudio-s1-mini` | Disabled по умолчанию, запуск через индивидуальный profile |
 
 ### Локальная разработка
@@ -136,6 +137,10 @@ curl http://localhost:8000/v1/images/generations \
 curl http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
   -d '{"model": "kokoro-82m", "input": "Привет, мир!"}' -o speech.mp3
+
+# Распознавание речи (multipart — как OpenAI /v1/audio/transcriptions)
+curl http://localhost:8000/v1/audio/transcriptions \
+  -F "file=@speech.mp3" -F "model=whisper-base" -F "language=ru"
 ```
 
 ### Продвинутые примеры генерации изображений
@@ -279,6 +284,7 @@ curl http://localhost:8000/v1/images/generations \
 | `POST` | `/v1/chat/completions` | Генерация текста (+ streaming) |
 | `POST` | `/v1/images/generations` | Генерация изображений |
 | `POST` | `/v1/audio/speech` | Синтез речи |
+| `POST` | `/v1/audio/transcriptions` | Распознавание речи (multipart) |
 | `GET` | `/v1/models` | Список всех моделей |
 | `POST` | `/v1/models/{id}/load` | Загрузить модель в GPU |
 | `POST` | `/v1/models/{id}/unload` | Выгрузить модель |
@@ -756,7 +762,7 @@ pytest --cov=app --cov-branch
 
 - [ ] **Web UI** — панель администрирования (gallery, prompt history, live metrics)
 - [ ] **Voice cloning** — клонирование голоса через XTTS-v2 / OpenAudio S1
-- [ ] **Speech-to-Text** — эндпоинт `/v1/audio/transcriptions`
+- [x] **Speech-to-Text** — `POST /v1/audio/transcriptions` (OpenAI-compatible multipart). Новая категория провайдера `SttProvider` + `WhisperProvider` на faster-whisper (CTranslate2). Три формата ответа: `json` (строгая OpenAI-форма `{text}`), `text` (raw), `verbose_json` (text + language + duration + segments[]). Worker `whisper-base` (Systran/faster-whisper-base, ~90MB RAM на CPU int8). Профиль `--profile stt` / `--profile whisper-base`. E2e тест: `scripts/feature/stt-whisper.sh`.
 - [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
 - [x] **Hot-reload конфигов (gateway-side)** — `ConfigWatcher` polls `config/models/*.yaml` каждые 2с, при изменении вызывает `ProviderManager.reload_model()` (unload+re-register, с автоматическим `load()` если модель была в GPU) и `GpuScheduler.update_concurrency()`. Новые YAML регистрируют модель, `enabled: false` снимает её с registry, ошибки парсинга логируются без падения gateway. E2e тест: `scripts/feature/hot-reload-config.sh` (гоняется без worker'ов — проверяет именно gateway-side).
 - [x] **Hot-reload конфигов (worker-side)** — `POST /reload` endpoint в `app/worker.py`, gateway через `ProviderManager.reload_model()` → `RemoteProvider.reload()` отправляет new ModelConfig в worker. Worker классифицирует изменение: `metadata` (обновляется in-place) или `full_reload` (unload + rebuild + load). E2e тест: `scripts/feature/worker-reload.sh`. Serialises inflight requests через `reload_lock`.
