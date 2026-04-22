@@ -1,4 +1,5 @@
 # torch is provided by the GPU base image (pytorch/pytorch:...).
 spandrel>=0.4.1
+huggingface_hub>=0.24.0  # checkpoint download from HF (not a transitive spandrel dep)
 Pillow>=10.0.0
 numpy>=1.24.0
