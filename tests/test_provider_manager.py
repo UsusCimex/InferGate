@@ -246,7 +246,7 @@ async def test_byte_budget_raises_when_all_pinned(services):
 
     # Loading test-text (1000 MB) would push total to 2000 > 1500, but
     # the only loaded model is pinned so LRU can't help.
-    with pytest.raises(InsufficientResourcesError, match="No VRAM budget"):
+    with pytest.raises(InsufficientResourcesError, match="Cannot fit"):
         await manager.ensure_loaded("test-text")
 
 
@@ -429,6 +429,83 @@ async def test_reload_remote_calls_worker_endpoint(services):
     assert len(fake.reload_calls) == 1
     assert fake.reload_calls[0].display_name == "renamed"
     assert fake.config.display_name == "renamed"
+
+
+# ── Eviction planning / admission control ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_plan_eviction_empty_when_already_fits(services):
+    """Nothing loaded → empty plan, never None."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 5000
+    manager._vram_headroom_mb = 0
+    assert manager._plan_eviction(1000) == []
+
+
+@pytest.mark.asyncio
+async def test_plan_eviction_returns_ordered_victims(services):
+    """Plan is the LRU walk — oldest loaded appears first."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 2500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    # Incoming 1000 MB + currently 2000 MB → need to free 500 MB → evict one.
+    plan = manager._plan_eviction(1000)
+    assert plan == ["test-image"]
+
+
+@pytest.mark.asyncio
+async def test_plan_eviction_accumulates_until_fits(services):
+    """Larger incoming forces multi-step eviction."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 2500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    # Incoming 2500 MB → need to free both current 1000 MB slots to fit.
+    plan = manager._plan_eviction(2500)
+    assert plan == ["test-image", "test-text"]
+
+
+@pytest.mark.asyncio
+async def test_plan_eviction_infeasible_when_all_pinned(services):
+    """Every loaded model pinned and still wouldn't fit → None."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 1500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    manager._pinned.add("test-image")
+    assert manager._plan_eviction(1000) is None
+
+
+@pytest.mark.asyncio
+async def test_plan_eviction_infeasible_when_all_active(services):
+    """In-flight models are excluded from plan; no other candidates → None."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 1500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    async with manager.active_request("test-image"):
+        assert manager._plan_eviction(1000) is None
+
+
+@pytest.mark.asyncio
+async def test_plan_respects_category_reservation_until_forced(services):
+    """Plan honours soft reservation in pass 1; fall-through pass 2
+    when otherwise infeasible."""
+    manager = services["manager"]
+    manager._category_reservations = {"text": 1}
+    manager._max_vram_budget_mb = 2500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-text")
+    await manager.ensure_loaded("test-image")
+    # 1000 incoming → one slot is enough. Pass 1 finds test-image
+    # (reservation on text skips it), plan = [test-image].
+    assert manager._plan_eviction(1000) == ["test-image"]
+    # 2500 incoming → both slots must go. Reservation bends in pass 2
+    # when no alternative remains. Plan keeps LRU order.
+    assert manager._plan_eviction(2500) == ["test-image", "test-text"]
 
 
 # ── Category reservations (QoS) ──────────────────────────────────────

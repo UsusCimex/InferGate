@@ -426,78 +426,88 @@ class ProviderManager:
         )
 
     async def _make_room(self, incoming_vram_mb: int = 0) -> None:
-        """Evict LRU GPU models until both caps are satisfied:
-
-        1. count: `len(loaded_gpu) < max_loaded_models` (existing guard)
-        2. bytes: `loaded_vram + incoming_vram_mb <= max_vram_budget_mb
-                   - vram_headroom_mb` (new, when budget > 0)
-
-        Evicts the least-recently-used non-pinned model one at a time
-        until both conditions hold. Bail out when all remaining loaded
-        models are pinned — the new load will then likely fail at the
-        driver level, but that's explicitly the operator's choice
-        (they pinned too many).
-        """
-        effective_budget = (
-            self._max_vram_budget_mb - self._vram_headroom_mb
-            if self._max_vram_budget_mb > 0
-            else 0
-        )
-
-        while True:
-            gpu_loaded = [m for m in self._loaded_order if self._is_gpu_model(m)]
-            count_ok = len(gpu_loaded) < self._max_loaded
-
+        """Plan eviction up-front, then execute. Fast-fails with
+        InsufficientResourcesError when no combination of evictions
+        can fit the incoming model."""
+        plan = self._plan_eviction(incoming_vram_mb)
+        if plan is None:
+            effective_budget = self._effective_budget()
             if effective_budget > 0:
-                projected_vram = self._loaded_vram_mb() + max(incoming_vram_mb, 0)
-                bytes_ok = projected_vram <= effective_budget
-            else:
-                bytes_ok = True
-
-            if count_ok and bytes_ok:
-                break
-
-            victim_id = self._find_lru_victim()
-            if victim_id is None:
-                # Count-cap overflow with all-pinned is a soft warning
-                # (driver-level OOM will likely catch). Byte-budget
-                # overflow is harder — raise so the caller can 503 the
-                # request instead of dying on CUDA OOM + swap-spiralling
-                # the host.
-                if not bytes_ok and effective_budget > 0:
-                    raise InsufficientResourcesError(
-                        f"No VRAM budget left for {incoming_vram_mb} MB — "
-                        f"{self._loaded_vram_mb()} MB currently loaded, "
-                        f"budget {effective_budget} MB, all loaded models pinned. "
-                        f"Unpin a model or raise gpu.max_vram_budget_mb."
-                    )
-                logger.warning(
-                    "Cannot make room (count=%d/%d) — all loaded models are pinned",
-                    len(gpu_loaded), self._max_loaded,
+                raise InsufficientResourcesError(
+                    f"Cannot fit {incoming_vram_mb} MB — "
+                    f"{self._loaded_vram_mb()} MB loaded, budget {effective_budget} MB, "
+                    f"remaining models all pinned or in-flight. "
+                    f"Unpin a model or raise gpu.max_vram_budget_mb."
                 )
-                break
-
-            reason = "count" if not count_ok else "byte-budget"
-            logger.info(
-                "Evicting model %s (LRU, %s): freeing %d MB VRAM",
-                victim_id, reason, self._registry[victim_id].vram_mb,
+            logger.warning(
+                "Cannot make room — every loaded model is pinned or in-flight"
             )
-            await self._registry[victim_id].unload()
-            del self._loaded_order[victim_id]
+            return
+        for victim in plan:
+            logger.info(
+                "Evicting %s (freeing %d MB for incoming %d MB)",
+                victim, self._registry[victim].vram_mb, incoming_vram_mb,
+            )
+            await self._registry[victim].unload()
+            del self._loaded_order[victim]
 
-    def _find_lru_victim(self) -> str | None:
+    def _effective_budget(self) -> int:
+        """Byte-budget minus headroom; 0 when byte-budget disabled."""
+        if self._max_vram_budget_mb <= 0:
+            return 0
+        return self._max_vram_budget_mb - self._vram_headroom_mb
+
+    def _plan_eviction(self, incoming_vram_mb: int) -> list[str] | None:
+        """Simulate LRU walk and return the ordered list of models to
+        evict to fit `incoming_vram_mb`. [] = already fits, None =
+        infeasible even after evicting everything evictable."""
+        effective_budget = self._effective_budget()
+        excluded: set[str] = set()
+        plan: list[str] = []
+
+        def fits() -> bool:
+            gpu_loaded = [
+                m for m in self._loaded_order
+                if self._is_gpu_model(m) and m not in excluded
+            ]
+            if len(gpu_loaded) >= self._max_loaded:
+                return False
+            if effective_budget > 0:
+                loaded_vram = sum(self._registry[m].vram_mb for m in gpu_loaded)
+                if loaded_vram + max(incoming_vram_mb, 0) > effective_budget:
+                    return False
+            return True
+
+        if fits():
+            return []
+        while True:
+            victim = self._find_lru_victim(excluded=excluded)
+            if victim is None:
+                return None
+            plan.append(victim)
+            excluded.add(victim)
+            if fits():
+                return plan
+
+    def _find_lru_victim(self, excluded: set[str] | None = None) -> str | None:
         """Least-recently-used model eligible for eviction.
 
         Two passes: first honour category reservations, then fall back
         to violating them if the byte budget leaves no choice. Pinned
-        and in-flight models are never touched."""
+        and in-flight models are never touched. `excluded` lets a
+        planner hide models already chosen in an earlier pass."""
+        excluded = excluded or set()
         for model_id in self._loaded_order:
+            if model_id in excluded:
+                continue
             if not self._evictable(model_id):
                 continue
-            if self._would_violate_reservation(model_id):
+            if self._would_violate_reservation(model_id, excluded=excluded):
                 continue
             return model_id
         for model_id in self._loaded_order:
+            if model_id in excluded:
+                continue
             if self._evictable(model_id):
                 return model_id
         return None
