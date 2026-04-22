@@ -108,6 +108,7 @@ services:
       - WORKER_URL_MEISSONIC=http://worker-meissonic:8001
       - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
+      - WORKER_URL_WHISPER_BASE=http://worker-whisper-base:8001
     volumes:
       - ../config:/app/config:ro
       - cache_data:/app/cache
@@ -385,6 +386,23 @@ services:
     env_file: *env-file
     environment: *env
     healthcheck: *hc-tts-gpu
+
+  # ─── STT workers ─────────────────────────────────────────────────────
+  worker-whisper-base:
+    restart: unless-stopped
+    profiles: ["stt", "whisper-base"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: python:3.12-slim
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/whisper-base/requirements.txt
+    volumes:
+      - ../config/models/whisper-base.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts
 
 volumes:
   cache_data:

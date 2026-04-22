@@ -67,6 +67,8 @@ target "worker" {
       # ─── TTS ─────────────────────────────────────────────────────────
       { id = "kokoro-82m",        base = CPU_BASE_IMAGE, apt = "gcc",             post = "python -m spacy download en_core_web_sm" },
       { id = "openaudio-s1-mini", base = GPU_BASE_IMAGE, apt = "git",             post = "" },
+      # ─── STT ─────────────────────────────────────────────────────────
+      { id = "whisper-base",      base = CPU_BASE_IMAGE, apt = "",                post = "" },
     ]
   }
 }

@@ -1,0 +1,4 @@
+# faster-whisper pulls in ctranslate2 (native wheels, CPU + CUDA 12) and
+# tokenizers; onnxruntime is the default Silero VAD runtime (vad_filter path).
+faster-whisper>=1.1.0
+onnxruntime>=1.17.0

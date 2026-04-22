@@ -1,0 +1,37 @@
+id: whisper-base
+display_name: "Whisper Base"
+category: stt
+provider_class: WhisperProvider
+enabled: ${oc.decode:${oc.env:WHISPER_BASE_ENABLED,true}}
+
+model:
+  # Systran ships CTranslate2-converted Whisper checkpoints ready for
+  # faster-whisper. Use tiny/base/small/medium/large-v3 via hub_id override.
+  hub_id: "Systran/faster-whisper-base"
+  device: ${oc.env:WHISPER_BASE_DEVICE,cpu}
+  # int8 is the default — ~90MB RAM for base, ~3x realtime on a laptop CPU.
+  # Swap to float16 (GPU) or int8_float16 (GPU with memory pressure).
+  compute_type: ${oc.env:WHISPER_BASE_COMPUTE_TYPE,int8}
+  cpu_threads: ${oc.decode:${oc.env:WHISPER_BASE_CPU_THREADS,0}}
+  vram_mb: ${oc.decode:${oc.env:WHISPER_BASE_VRAM_MB,0}}
+  default_params:
+    beam_size: ${oc.decode:${oc.env:WHISPER_BASE_BEAM_SIZE,5}}
+    # Silero VAD pre-pass drops long silences — speeds up podcast-style
+    # audio and avoids hallucinated "thanks for watching" on trailing silence.
+    vad_filter: ${oc.decode:${oc.env:WHISPER_BASE_VAD_FILTER,false}}
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 512
+
+queue:
+  priority: ${oc.env:WHISPER_BASE_PRIORITY,high}
+  timeout_seconds: ${oc.decode:${oc.env:WHISPER_BASE_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:WHISPER_BASE_MAX_CONCURRENT,2}}
+
+metadata:
+  license: MIT
+  description: "Whisper Base (faster-whisper / CTranslate2) — multilingual speech-to-text"
+  tags: ["whisper", "stt", "cpu", "multilingual"]
