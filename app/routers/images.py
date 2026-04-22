@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import time
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import JSONResponse, Response
 
 from app.dependencies import (
     get_cache_manager,
@@ -16,6 +17,8 @@ from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prom
 from app.schemas.images import ImageData, ImageGenerationRequest, ImageGenerationResponse
 
 router = APIRouter()
+
+_MAX_UPSCALE_BYTES = 50 * 1024 * 1024  # 50MB input cap
 
 
 @router.post("/v1/images/generations")
@@ -127,4 +130,105 @@ async def generate_images(
             "X-InferGate-Queue-Position": str(scheduler.last_position),
             "X-InferGate-Generation-Ms": str(elapsed),
         },
+    )
+
+
+@router.post("/v1/images/upscale")
+async def upscale_image(
+    request: Request,
+    file: UploadFile = File(...),
+    model: str | None = Form(None),
+    response_format: str = Form("b64_json"),
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+    cache=Depends(get_cache_manager),
+    defaults=Depends(get_defaults),
+):
+    """Super-resolution endpoint — multipart upload, returns upscaled PNG
+    as base64-JSON (default, matches /v1/images/generations shape) or raw
+    bytes (response_format=png, convenient for pipelines)."""
+    if response_format not in {"b64_json", "png"}:
+        return JSONResponse(
+            {"error": {"message": "response_format must be 'b64_json' or 'png'"}},
+            status_code=400,
+        )
+
+    model_id = model or defaults.get("upscale")
+    if not model_id:
+        return JSONResponse({"error": {"message": "No upscale model specified"}}, status_code=400)
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
+    if len(image_bytes) > _MAX_UPSCALE_BYTES:
+        return JSONResponse(
+            {"error": {"message": f"Image exceeds {_MAX_UPSCALE_BYTES // (1024*1024)}MB limit"}},
+            status_code=413,
+        )
+
+    start = time.monotonic()
+    provider = await manager.ensure_loaded(model_id)
+    config = manager.get_config(model_id)
+
+    no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
+    cache_cfg = config.cache.model_dump()
+    sha = hashlib.sha256(image_bytes).hexdigest()[:32]
+    params = {"sha": sha, "size": len(image_bytes)}
+    should_cache = not no_cache and cache.should_cache(cache_cfg, params)
+    cache_key = cache.make_key(model_id, params)
+    cache_status = "DISABLED"
+
+    if should_cache:
+        cached = await cache.get(cache_key)
+        if cached:
+            elapsed = int((time.monotonic() - start) * 1000)
+            if is_prometheus_available():
+                CACHE_HITS.labels(model_id=model_id).inc()
+            return _upscale_response(cached, response_format, model_id, elapsed, "HIT",
+                                      scheduler.last_position)
+        cache_status = "MISS"
+        await cache.record_miss(model_id)
+        if is_prometheus_available():
+            CACHE_MISSES.labels(model_id=model_id).inc()
+    elif no_cache:
+        cache_status = "SKIP"
+
+    timeout = config.queue.timeout_seconds
+    priority = config.queue.priority
+
+    inference_start = time.monotonic()
+    png_bytes = await scheduler.submit(
+        model_id, priority, provider.upscale(image_bytes), timeout
+    )
+    if is_prometheus_available():
+        INFERENCE_DURATION.labels(model_id=model_id, category="upscale").observe(
+            time.monotonic() - inference_start
+        )
+
+    if should_cache:
+        await cache.put(cache_key, png_bytes, model_id, cache_cfg)
+
+    elapsed = int((time.monotonic() - start) * 1000)
+    return _upscale_response(png_bytes, response_format, model_id, elapsed, cache_status,
+                              scheduler.last_position)
+
+
+def _upscale_response(
+    png_bytes: bytes, response_format: str, model_id: str, elapsed_ms: int,
+    cache_status: str, queue_position: int,
+):
+    headers = {
+        "X-InferGate-Cache": cache_status,
+        "X-InferGate-Model": model_id,
+        "X-InferGate-Queue-Position": str(queue_position),
+        "X-InferGate-Generation-Ms": str(elapsed_ms),
+    }
+    if response_format == "png":
+        return Response(content=png_bytes, media_type="image/png", headers=headers)
+    # Default b64_json — same envelope as /v1/images/generations for
+    # clients that already handle that shape.
+    b64 = base64.b64encode(png_bytes).decode()
+    return JSONResponse(
+        {"created": int(time.time()), "data": [{"b64_json": b64}]},
+        headers=headers,
     )

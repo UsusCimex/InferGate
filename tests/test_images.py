@@ -148,3 +148,88 @@ async def test_image_denoising_strength_bounds(client):
         },
     )
     assert resp.status_code == 422
+
+
+# ── /v1/images/upscale ──────────────────────────────────────────────
+
+
+_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+    b"\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+@pytest.mark.asyncio
+async def test_upscale_b64_json_default(client):
+    """Default response_format=b64_json mirrors /v1/images/generations envelope."""
+    resp = await client.post(
+        "/v1/images/upscale",
+        files={"file": ("in.png", _PNG_BYTES, "image/png")},
+        data={"model": "test-upscale"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "data" in body and body["data"][0]["b64_json"]
+    decoded = base64.b64decode(body["data"][0]["b64_json"])
+    assert decoded.endswith(b"UPSCALED")  # fake provider sentinel
+
+
+@pytest.mark.asyncio
+async def test_upscale_raw_png(client):
+    """response_format=png returns image bytes with image/png Content-Type."""
+    resp = await client.post(
+        "/v1/images/upscale",
+        files={"file": ("in.png", _PNG_BYTES, "image/png")},
+        data={"model": "test-upscale", "response_format": "png"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert resp.content.startswith(b"\x89PNG")
+    assert resp.content.endswith(b"UPSCALED")
+
+
+@pytest.mark.asyncio
+async def test_upscale_uses_default_model(client):
+    """Omitted model falls back to defaults['upscale']."""
+    resp = await client.post(
+        "/v1/images/upscale",
+        files={"file": ("in.png", _PNG_BYTES, "image/png")},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_upscale_rejects_empty(client):
+    resp = await client.post(
+        "/v1/images/upscale",
+        files={"file": ("empty.png", b"", "image/png")},
+        data={"model": "test-upscale"},
+    )
+    assert resp.status_code == 400
+    assert "Empty" in resp.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_upscale_rejects_unknown_format(client):
+    resp = await client.post(
+        "/v1/images/upscale",
+        files={"file": ("in.png", _PNG_BYTES, "image/png")},
+        data={"model": "test-upscale", "response_format": "jpeg"},
+    )
+    assert resp.status_code == 400
+    assert "response_format" in resp.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_upscale_cache_hit_on_same_image(client):
+    files = {"file": ("in.png", _PNG_BYTES, "image/png")}
+    r1 = await client.post("/v1/images/upscale", files=files, data={"model": "test-upscale"})
+    assert r1.status_code == 200
+    assert r1.headers["x-infergate-cache"] == "MISS"
+
+    files = {"file": ("in.png", _PNG_BYTES, "image/png")}
+    r2 = await client.post("/v1/images/upscale", files=files, data={"model": "test-upscale"})
+    assert r2.status_code == 200
+    assert r2.headers["x-infergate-cache"] == "HIT"

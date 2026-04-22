@@ -83,3 +83,13 @@ class SttProvider(BaseProvider):
         """Transcribe audio bytes to text. Returns OpenAI-format dict:
         at minimum `{"text": str}`; verbose_json adds `language`, `duration`,
         `segments`."""
+
+
+class ImageUpscaleProvider(BaseProvider):
+    """Interface for super-resolution / upscaling image models (Real-ESRGAN, SwinIR, etc.)."""
+
+    @abstractmethod
+    async def upscale(self, image: bytes, **params: Any) -> bytes:
+        """Upscale an input image. Returns PNG bytes at the upscaled
+        resolution. Scale factor (2, 3, 4) is provider-specific and set
+        at model load time from YAML."""

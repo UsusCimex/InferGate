@@ -297,3 +297,19 @@ async def transcribe(
                 {"error": {"message": str(e), "type": "invalid_request"}},
                 status_code=400,
             )
+
+
+@app.post("/upscale")
+async def upscale(request: Request, file: UploadFile = File(...)):
+    """Super-resolution endpoint. Image in, image out (raw PNG bytes)."""
+    async with request.app.state.reload_lock:
+        provider: BaseProvider = request.app.state.provider
+        image = await file.read()
+        try:
+            png_bytes = await provider.upscale(image)
+            return Response(content=png_bytes, media_type="image/png")
+        except ValueError as e:
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "invalid_request"}},
+                status_code=400,
+            )

@@ -9,7 +9,13 @@ from typing import Any
 
 import httpx
 
-from app.providers.base import ImageProvider, SttProvider, TextProvider, TtsProvider
+from app.providers.base import (
+    ImageProvider,
+    ImageUpscaleProvider,
+    SttProvider,
+    TextProvider,
+    TtsProvider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -214,3 +220,29 @@ class RemoteSttProvider(SttProvider):
         resp = await self._client.post("/transcribe", files=files, data=form)
         resp.raise_for_status()
         return resp.json()
+
+
+class RemoteUpscaleProvider(ImageUpscaleProvider):
+    """Proxies super-resolution requests to a remote worker via multipart."""
+
+    def __init__(self, config: Any) -> None:
+        super().__init__(config)
+        _RemoteMixin._init_remote(self)
+
+    async def load(self, model_dir: str) -> None:
+        await _RemoteMixin._remote_load(self)
+
+    async def unload(self) -> None:
+        await _RemoteMixin._remote_unload(self)
+
+    async def check_health(self) -> bool:
+        return await _RemoteMixin._check_health(self)
+
+    async def reload(self, new_config: Any) -> str:
+        return await _RemoteMixin._remote_reload(self, new_config)
+
+    async def upscale(self, image: bytes, **params: Any) -> bytes:
+        files = {"file": ("image.png", image, "image/png")}
+        resp = await self._client.post("/upscale", files=files)
+        resp.raise_for_status()
+        return resp.content

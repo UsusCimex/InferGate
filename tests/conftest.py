@@ -8,7 +8,13 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelConfig, ModelCacheConfig, ModelQueueConfig, ModelMetadata
-from app.providers.base import ImageProvider, SttProvider, TextProvider, TtsProvider
+from app.providers.base import (
+    ImageProvider,
+    ImageUpscaleProvider,
+    SttProvider,
+    TextProvider,
+    TtsProvider,
+)
 from app.providers.registry import register_provider
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler
@@ -92,6 +98,26 @@ class FakeSttProvider(SttProvider):
         }
 
 
+@register_provider
+class FakeUpscaleProvider(ImageUpscaleProvider):
+    async def load(self, model_dir: str) -> None:
+        self._loaded = True
+
+    async def unload(self) -> None:
+        self._loaded = False
+
+    async def upscale(self, image: bytes, **params: Any) -> bytes:
+        # Fake: return the same 1x1 PNG with an appended marker so tests
+        # can tell the upscale path ran vs. short-circuited.
+        return (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+            b"\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+            b"\x00UPSCALED"  # sentinel
+        )
+
+
 # --- Fixtures ---
 
 def _make_model_config(
@@ -123,17 +149,20 @@ async def services(tmp_path):
     txt_config = _make_model_config("test-text", "text", "FakeTextProvider")
     tts_config = _make_model_config("test-tts", "tts", "FakeTtsProvider", "always")
     stt_config = _make_model_config("test-stt", "stt", "FakeSttProvider", "always")
+    ups_config = _make_model_config("test-upscale", "upscale", "FakeUpscaleProvider", "always")
 
     manager._registry["test-image"] = FakeImageProvider(img_config)
     manager._registry["test-text"] = FakeTextProvider(txt_config)
     manager._registry["test-tts"] = FakeTtsProvider(tts_config)
     manager._registry["test-stt"] = FakeSttProvider(stt_config)
+    manager._registry["test-upscale"] = FakeUpscaleProvider(ups_config)
 
     scheduler = GpuScheduler(max_queue_size=10)
     scheduler.register_model("test-image", 2)
     scheduler.register_model("test-text", 2)
     scheduler.register_model("test-tts", 2)
     scheduler.register_model("test-stt", 2)
+    scheduler.register_model("test-upscale", 2)
 
     cache_mgr = CacheManager({
         "enabled": True,
@@ -145,7 +174,7 @@ async def services(tmp_path):
 
     defaults = {
         "image": "test-image", "text": "test-text",
-        "tts": "test-tts", "stt": "test-stt",
+        "tts": "test-tts", "stt": "test-stt", "upscale": "test-upscale",
     }
 
     yield {

@@ -92,6 +92,7 @@ class ProviderManager:
             RemoteSttProvider,
             RemoteTextProvider,
             RemoteTtsProvider,
+            RemoteUpscaleProvider,
         )
 
         category_map: dict[str, type[BaseProvider]] = {
@@ -99,6 +100,7 @@ class ProviderManager:
             "image": RemoteImageProvider,
             "tts": RemoteTtsProvider,
             "stt": RemoteSttProvider,
+            "upscale": RemoteUpscaleProvider,
         }
         cls = category_map.get(config.category)
         if cls is None:
