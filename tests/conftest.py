@@ -15,9 +15,7 @@ from app.services.gpu_scheduler import GpuScheduler
 from app.services.provider_manager import ProviderManager
 
 
-# --- Fake providers for testing ---
-# Decorated so that reload_model() / get_provider_class("FakeImageProvider")
-# can resolve them through the same registry that production providers use.
+# Fake providers — @register_provider lets reload_model() resolve them by class name.
 
 @register_provider
 class FakeImageProvider(ImageProvider):

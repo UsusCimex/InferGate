@@ -250,29 +250,11 @@ class ProviderManager:
                 self._loaded_order.pop(model_id, None)
 
     async def reload_model(self, config: ModelConfig) -> bool:
-        """Re-register a model with a new config — hot-reload entry point.
+        """Re-register a model with a new config (hot-reload entry point).
 
-        Returns True if a change was applied, False for a no-op (identical
-        config or still-disabled model). The per-model lock serialises
-        unload+re-register against concurrent `ensure_loaded()` / `get()`
-        calls, so any in-flight `generate()` completes on the old provider
-        before the swap becomes visible.
-
-        Behaviour matrix:
-          * identical config      → no-op
-          * enabled → disabled    → unload + remove from registry
-          * disabled → enabled    → register (+ reload if it was the
-                                    default model and prior one was loaded)
-          * any other change      → unload (if loaded), rebuild provider,
-                                    reload if previously loaded
-          * new model_id          → register
-
-        Caveats:
-          * Remote providers: the worker process keeps running with its
-            original YAML. Only gateway-side metadata (display_name,
-            queue.priority, cache strategy, …) reflects immediately.
-            `provider_class` or `hub_id` changes for a remote model need
-            a worker restart — out of scope for hot-reload.
+        Returns True if a change was applied. Remote providers route through
+        existing.reload() (POST /reload to worker) when worker_url is
+        unchanged and the provider is connected; otherwise we rebuild.
         """
         model_id = config.id
         existing = self._registry.get(model_id)
@@ -300,12 +282,8 @@ class ProviderManager:
             if env_url:
                 config.worker_url = env_url
 
-        # Remote-provider hot-path: if we already have a connected remote
-        # provider for this id and the worker_url hasn't changed, keep
-        # the existing RemoteProvider instance (and its httpx connection
-        # pool) but push the new config to the worker via POST /reload.
-        # This avoids flapping the health state visible to clients during
-        # a pure metadata edit.
+        # Remote hot-path: keep provider instance + httpx pool, push new
+        # config to worker via /reload. Avoids disconnected-state flicker.
         if (
             existing is not None
             and existing.config.worker_url
@@ -353,8 +331,8 @@ class ProviderManager:
                     provider_cls = get_provider_class(config.provider_class)
                     new_provider = provider_cls(config)
             except ValueError as e:
-                # Bad YAML (unknown provider_class) — keep the old one so
-                # the gateway doesn't lose the model entirely on a typo.
+                # Bad YAML (e.g. unknown provider_class) — keep the old
+                # provider so a typo doesn't drop the model from registry.
                 logger.error("reload_model(%s) rejected new config: %s", model_id, e)
                 if existing is not None:
                     self._registry[model_id] = existing
@@ -362,10 +340,9 @@ class ProviderManager:
 
             self._registry[model_id] = new_provider
 
-            # Re-load into GPU if the model was loaded before — caller
-            # expectation: "I don't want restart just to ship a config change".
-            # Remote providers handle their own connect via worker_monitor;
-            # local providers get an explicit load() call here.
+            # Local providers: reload into GPU if previously loaded so the
+            # user doesn't need to re-request. Remote ones reconnect via
+            # worker_monitor.
             if was_loaded and not config.worker_url:
                 await new_provider.load(self._model_dir)
                 async with self._state_lock:

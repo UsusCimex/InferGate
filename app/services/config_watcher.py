@@ -1,27 +1,4 @@
-"""Background watcher for `config/models/*.yaml` — drives hot-reload.
-
-Polls the directory every `interval` seconds and invokes `callback(config)`
-for every file whose mtime advanced (creates + modifies). Removed files
-log a warning — the corresponding model stays registered in the gateway
-until the next restart. We defer auto-unregister because a file-system
-race (editor saves via temp-file + rename) would otherwise briefly flash
-the model as removed and disrupt inflight requests.
-
-Why polling rather than watchdog / inotify:
-  * ~17 YAML files × `os.stat()` per 2s is sub-millisecond CPU — not
-    measurable in a gateway that already runs httpx/SQLite.
-  * avoids a ~250KB dependency and its native-build requirement.
-  * inotify is unreliable inside some WSL2 + Docker-on-Windows setups,
-    which would undercut the DevEx value this feature exists for.
-
-Safety properties:
-  * YAML parse errors are logged and swallowed — an operator mid-edit
-    must not take down the gateway.
-  * A callback exception is caught per-file, so one bad reload doesn't
-    skip the rest of a batch.
-  * First scan establishes a baseline snapshot without firing callbacks —
-    startup already loaded every file via `load_model_configs()`.
-"""
+"""Poll-based watcher for `config/models/*.yaml` that drives hot-reload."""
 from __future__ import annotations
 
 import asyncio
@@ -38,14 +15,7 @@ ReloadCallback = Callable[[ModelConfig], Awaitable[None]]
 
 
 class ConfigWatcher:
-    """Poll-based file watcher for per-model YAML configs.
-
-    Lifecycle mirrors the other background services on the app:
-        watcher = ConfigWatcher(dir, callback)
-        watcher.start()   # schedules asyncio task
-        ...
-        watcher.stop()    # cancels and awaits
-    """
+    """Polls a directory of per-model YAML configs and fires a callback on change."""
 
     def __init__(
         self,
@@ -59,9 +29,6 @@ class ConfigWatcher:
         self._interval = interval
         self._debounce = debounce
         self._task: asyncio.Task | None = None
-        # path → last-observed mtime. First scan populates this without
-        # dispatching callbacks — otherwise every startup would re-fire
-        # reloads for every file.
         self._mtimes: dict[Path, float] = {}
         self._initialized = False
 
@@ -97,9 +64,7 @@ class ConfigWatcher:
             raise
 
     async def scan_once(self) -> list[Path]:
-        """Single scan pass — returns the list of changed paths that
-        were dispatched. Exposed for testing so we don't have to race
-        the 2-second sleep loop."""
+        """Single scan pass — exposed so tests don't race the sleep loop."""
         if not self._models_dir.exists():
             return []
         current: dict[Path, float] = {}
@@ -110,6 +75,7 @@ class ConfigWatcher:
                 logger.debug("stat(%s) failed: %s", path, e)
                 continue
 
+        # First scan only snapshots — startup already loaded every file.
         if not self._initialized:
             self._mtimes = current
             self._initialized = True
@@ -118,10 +84,8 @@ class ConfigWatcher:
         changed: list[Path] = []
         for path, mtime in current.items():
             prev = self._mtimes.get(path)
-            if prev is None:
-                changed.append(path)  # newly appeared file
-            elif mtime > prev + self._debounce:
-                changed.append(path)  # genuine content edit
+            if prev is None or mtime > prev + self._debounce:
+                changed.append(path)
 
         for missing in set(self._mtimes) - set(current):
             logger.warning(
@@ -130,18 +94,18 @@ class ConfigWatcher:
             )
 
         # Commit new mtimes even if a callback raises — otherwise we'd
-        # retry the same broken file every 2 seconds forever.
+        # retry the same broken file every interval.
         self._mtimes = current
 
         for path in changed:
             try:
                 config = load_single_model_config(path)
-            except Exception as e:  # noqa: BLE001 — parser errors are user-facing
+            except Exception as e:  # noqa: BLE001 — surface YAML errors to operator
                 logger.error("Failed to parse %s: %s", path.name, e)
                 continue
             try:
                 await self._callback(config)
-            except Exception as e:  # noqa: BLE001 — one bad reload shouldn't skip others
+            except Exception as e:  # noqa: BLE001 — one bad reload shouldn't starve others
                 logger.error("Reload callback for %s raised: %s", path.name, e)
 
         return changed

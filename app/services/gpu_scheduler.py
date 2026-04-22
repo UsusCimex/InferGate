@@ -62,16 +62,7 @@ class GpuScheduler:
         self._queues[model_id] = _ModelQueue(max_concurrent)
 
     def update_concurrency(self, model_id: str, max_concurrent: int) -> None:
-        """Update per-model concurrency limit in place.
-
-        Called on hot-reload when YAML `queue.max_concurrent` changes. The
-        live `active` counter and any queued waiters are preserved —
-        already-running requests keep their slots until completion, the
-        new limit takes effect the next time a slot is released. Raising
-        the limit may mean the currently-active tasks are already within
-        the new cap; lowering it means new acquisitions wait longer but
-        does NOT preempt running ones.
-        """
+        """Update per-model concurrency limit. New limit applies at next slot acquire."""
         queue = self._queues.get(model_id)
         if queue is None:
             self.register_model(model_id, max_concurrent)

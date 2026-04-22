@@ -1,14 +1,4 @@
-"""Tests for ConfigWatcher — the hot-reload poller.
-
-Instead of spinning up the real asyncio loop and waiting 2 seconds per
-test, we drive `scan_once()` directly and stub the filesystem with
-tmp_path. That way each case runs in milliseconds and is deterministic.
-
-The `debounce` interaction is the trickiest bit: mtime must ADVANCE by
-more than `debounce` seconds for a modification to fire. We pass
-`debounce=0.0` in these tests so a fresh `os.utime()` call is enough to
-trigger reload without us having to sleep.
-"""
+"""Tests for ConfigWatcher — drive scan_once() directly to avoid sleep-loop races."""
 from __future__ import annotations
 
 import asyncio

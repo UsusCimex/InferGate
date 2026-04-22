@@ -233,22 +233,7 @@ class DiffusersImageProvider(ImageProvider):
         logger.info("Loaded %s", self.model_id)
 
     def _init_compel(self) -> None:
-        """Attempt to initialise a Compel encoder for A1111-style weighting.
-
-        Only works on CLIP-based pipelines that consume `prompt_embeds` in
-        the SDXL/SD1.5 shape. Pipelines with T5-mixed embeds (FLUX, SD3) or
-        non-CLIP encoders (Qwen-Image, Hunyuan-DiT) are explicitly skipped:
-          * FLUX's `text_encoder_2` is T5 — Compel can't encode it.
-          * SD3Pipeline concatenates CLIP(L+G)+T5 into [B,154,4096]; Compel's
-            SDXL path emits [B,77,2048] which is a runtime shape mismatch
-            even when T5 is dropped (pipeline still pads CLIP to 4096).
-
-        Detection is by class name rather than duck-typing: SD3 exposes the
-        same `tokenizer_2 + text_encoder_2` pair as SDXL (both are CLIP-G),
-        so the capability test alone can't distinguish them.
-
-        Controlled by YAML `compel: true|false` (default true).
-        """
+        """Init Compel for A1111-style weighting (CLIP-only pipelines, opt-in via YAML)."""
         if not self.config.model.get("compel", True):
             return
         try:
@@ -259,9 +244,9 @@ class DiffusersImageProvider(ImageProvider):
 
         pipe = self._pipeline
         pipe_class = type(pipe).__name__
-        # Hard-coded block list for architectures known to reject SDXL-shape
-        # embeds. Matches diffusers class names (StableDiffusion3Pipeline,
-        # StableDiffusion3Img2ImgPipeline, FluxPipeline, FluxImg2ImgPipeline).
+        # SD3 / FLUX use T5-mixed embeds ([B,154,4096] / T5-only) — incompatible
+        # with Compel's SDXL [B,77,2048] output. Detect by class name because
+        # SD3 duck-types as SDXL via tokenizer_2 + text_encoder_2.
         if "StableDiffusion3" in pipe_class or pipe_class.startswith("Flux"):
             logger.info(
                 "Compel skipped for %s (%s): architecture uses T5-mixed embeds "
@@ -509,14 +494,7 @@ class DiffusersImageProvider(ImageProvider):
         return self._img2img_pipeline
 
     def _ensure_inpaint_pipe(self):
-        """Lazy-build an inpaint pipeline sharing weights with the base.
-
-        Mirrors `_ensure_img2img_pipe` — the only difference is the auto-
-        class. Inpaint needs a specialised UNet input layout for some
-        architectures (SD1.5-inpaint has 9 input channels vs 4), but for
-        SDXL / SD3 / FLUX the same UNet handles both via channel broadcast
-        and the Auto-factory picks the right code path internally.
-        """
+        """Lazy inpaint pipeline via from_pipe — shares UNet/VAE/text encoders."""
         from diffusers import AutoPipelineForInpainting
 
         if self._inpaint_pipeline is None:
@@ -526,17 +504,12 @@ class DiffusersImageProvider(ImageProvider):
 
     @staticmethod
     def _decode_image(b64_str: str, mode: str | None = None):
-        """Decode a base64 PNG/JPEG (with or without `data:*;base64,` prefix)
-        into a PIL Image. `mode` optionally converts ('RGB' for images, 'L'
-        for masks). Raises ValueError with a short message on bad input —
-        the worker's ValueError handler surfaces this as HTTP 400 upstream.
-        """
+        """Decode base64 (with/without data: prefix) to PIL.Image, raises ValueError on bad input."""
         import base64 as _b64
         import io as _io
 
         from PIL import Image, UnidentifiedImageError
 
-        # Tolerate `data:image/png;base64,AAAA…` wrapper from browser canvases.
         payload = b64_str.split(",", 1)[1] if b64_str.startswith("data:") else b64_str
         try:
             raw = _b64.b64decode(payload, validate=False)
@@ -777,16 +750,12 @@ class DiffusersImageProvider(ImageProvider):
         # pipelines (SD3, some FLUX variants) raise TypeError on stray
         # `seed` kwargs, which is why we pop it unconditionally.
         seed = defaults.pop("seed", None)
-        # img2img / inpaint inputs — decode base64 here (cheap CPU work)
-        # rather than inside the worker thread so a decode failure returns
-        # HTTP 400 immediately, without taking a GPU slot for nothing.
+        # Decode base64 before the GPU executor hop so bad input 400s fast.
         image_b64 = defaults.pop("image", None)
         mask_b64 = defaults.pop("mask", None)
         denoising_strength = defaults.pop("denoising_strength", None)
         input_image = self._decode_image(image_b64, mode="RGB") if image_b64 else None
         input_mask = self._decode_image(mask_b64, mode="L") if mask_b64 else None
-        # Schema validator already blocks mask-without-image on the router
-        # side, but providers are called directly in tests too — defend here.
         if input_mask is not None and input_image is None:
             raise ValueError("mask requires image: inpainting needs a base image")
         model_dir = self._model_dir or "/app/models"
@@ -812,17 +781,13 @@ class DiffusersImageProvider(ImageProvider):
             if highres_fix:
                 return self._apply_highres_fix(prompt, defaults, highres_fix)
 
-            # Dispatch: inpaint (image+mask) → img2img (image only) → text2img.
-            # `strength` is diffusers' name for denoising strength; we only
-            # forward it when the client explicitly set one, otherwise the
-            # pipeline's own default (0.8 for most) applies.
+            # Dispatch: inpaint (image+mask) → img2img (image) → text2img.
             if input_image is not None:
                 call_kwargs = dict(defaults)
                 if denoising_strength is not None:
                     call_kwargs["strength"] = float(denoising_strength)
                 if input_mask is not None:
-                    # Resize mask to image dimensions if mismatched — common
-                    # when clients upload a paint-app mask at arbitrary size.
+                    # Paint-app masks can come at any resolution — normalise.
                     from PIL import Image as _Image
                     mask = input_mask
                     if mask.size != input_image.size:

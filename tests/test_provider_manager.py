@@ -205,9 +205,7 @@ async def test_scheduler_update_concurrency_registers_unknown(services):
 # ── Remote-provider reload path ──────────────────────────────────────
 
 class _FakeRemoteProvider:
-    """Stand-in for a RemoteProvider that records calls without hitting
-    HTTP — lets us verify reload_model picks the worker /reload fast
-    path instead of tearing down the provider instance."""
+    """Records reload() calls without hitting HTTP."""
     def __init__(self, config):
         self.config = config
         self._loaded = True
@@ -232,10 +230,7 @@ class _FakeRemoteProvider:
 
 @pytest.mark.asyncio
 async def test_reload_remote_calls_worker_endpoint(services):
-    """When the existing provider is a connected remote one and the
-    worker_url is unchanged, reload_model routes through its .reload()
-    rather than recreating the instance — preserves HTTP connection
-    pool and avoids flashing the model as disconnected to clients."""
+    """Connected remote + unchanged worker_url → reload_model routes via existing.reload()."""
     manager = services["manager"]
 
     remote_cfg = _make_test_config()
@@ -258,9 +253,7 @@ async def test_reload_remote_calls_worker_endpoint(services):
 
 @pytest.mark.asyncio
 async def test_reload_remote_falls_back_on_worker_error(services):
-    """If worker /reload raises (worker mid-restart, network glitch),
-    reload_model must not lose the model — it falls back to recreating
-    the gateway-side provider so at least metadata tracks YAML."""
+    """Worker /reload failure → recreate gateway-side provider so model stays registered."""
     manager = services["manager"]
 
     class _FailingRemote(_FakeRemoteProvider):

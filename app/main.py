@@ -101,13 +101,9 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_cleanup_loop())
 
-    # Hot-reload watcher for per-model YAML configs. When a file under
-    # `config/models/` changes the provider is re-registered and (if it
-    # was loaded) re-loaded into GPU — no gateway restart needed. See
-    # ProviderManager.reload_model for the exact semantics matrix.
+    # Watches config/models/*.yaml → reload_model + scheduler concurrency update.
     async def _on_config_reload(new_cfg):
         await manager.reload_model(new_cfg)
-        # Keep scheduler's per-model concurrency in sync with the YAML.
         scheduler.update_concurrency(new_cfg.id, new_cfg.queue.max_concurrent)
 
     config_watcher = ConfigWatcher("config/models", _on_config_reload)
