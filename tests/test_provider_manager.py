@@ -232,6 +232,25 @@ async def test_byte_budget_respects_headroom(services):
 
 
 @pytest.mark.asyncio
+async def test_byte_budget_raises_when_all_pinned(services):
+    """Every model pinned + new load doesn't fit → InsufficientResourcesError.
+    Gateway turns this into HTTP 503 (instead of letting CUDA OOM take out
+    the worker on a real system)."""
+    from app.services.provider_manager import InsufficientResourcesError
+
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 1500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    manager._pinned.add("test-image")  # freeze the only evictable slot
+
+    # Loading test-text (1000 MB) would push total to 2000 > 1500, but
+    # the only loaded model is pinned so LRU can't help.
+    with pytest.raises(InsufficientResourcesError, match="No VRAM budget"):
+        await manager.ensure_loaded("test-text")
+
+
+@pytest.mark.asyncio
 async def test_byte_budget_disabled_falls_back_to_count(services):
     """max_vram_budget_mb=0 → old count-based LRU only."""
     manager = services["manager"]

@@ -31,6 +31,13 @@ class ConfigError(ValueError):
     pass
 
 
+class InsufficientResourcesError(Exception):
+    """Raised when ensure_loaded cannot free enough VRAM for a new model —
+    the byte-budget LRU tried to evict but every remaining loaded model
+    is pinned, and the incoming model doesn't fit in the leftover budget.
+    Router maps this to HTTP 503 with actionable copy."""
+
+
 class ProviderManager:
     """Registry of providers. Loads configs, manages model lifecycle with LRU swapping.
 
@@ -446,12 +453,21 @@ class ProviderManager:
 
             victim_id = self._find_lru_victim()
             if victim_id is None:
+                # Count-cap overflow with all-pinned is a soft warning
+                # (driver-level OOM will likely catch). Byte-budget
+                # overflow is harder — raise so the caller can 503 the
+                # request instead of dying on CUDA OOM + swap-spiralling
+                # the host.
+                if not bytes_ok and effective_budget > 0:
+                    raise InsufficientResourcesError(
+                        f"No VRAM budget left for {incoming_vram_mb} MB — "
+                        f"{self._loaded_vram_mb()} MB currently loaded, "
+                        f"budget {effective_budget} MB, all loaded models pinned. "
+                        f"Unpin a model or raise gpu.max_vram_budget_mb."
+                    )
                 logger.warning(
-                    "Cannot make room (count=%d/%d, vram=%d/%d MB + incoming %d MB) "
-                    "— all loaded models are pinned",
+                    "Cannot make room (count=%d/%d) — all loaded models are pinned",
                     len(gpu_loaded), self._max_loaded,
-                    self._loaded_vram_mb(), effective_budget or -1,
-                    incoming_vram_mb,
                 )
                 break
 

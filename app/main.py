@@ -19,7 +19,12 @@ from app.routers import audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.config_watcher import ConfigWatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
-from app.services.provider_manager import ModelNotFoundError, ProviderManager, WorkerNotReadyError
+from app.services.provider_manager import (
+    InsufficientResourcesError,
+    ModelNotFoundError,
+    ProviderManager,
+    WorkerNotReadyError,
+)
 
 logger = logging.getLogger("infergate")
 
@@ -175,6 +180,13 @@ def create_app() -> FastAPI:
     async def worker_not_ready_handler(request, exc):
         return JSONResponse(
             {"error": {"message": str(exc), "type": "worker_not_ready"}}, status_code=503
+        )
+
+    @app.exception_handler(InsufficientResourcesError)
+    async def insufficient_resources_handler(request, exc):
+        return JSONResponse(
+            {"error": {"message": str(exc), "type": "insufficient_resources"}},
+            status_code=503,
         )
 
     @app.exception_handler(RequestTimeoutError)
