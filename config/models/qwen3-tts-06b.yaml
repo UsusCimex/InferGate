@@ -1,0 +1,38 @@
+id: qwen3-tts-06b
+display_name: "Qwen3-TTS 0.6B (Voice Clone, 10 languages)"
+category: tts
+provider_class: Qwen3TtsProvider
+# Disabled by default — Qwen3-TTS needs ~2GB VRAM; flip
+# QWEN3_TTS_06B_ENABLED=true in deploy/.env to turn it on.
+enabled: ${oc.decode:${oc.env:QWEN3_TTS_06B_ENABLED,false}}
+
+model:
+  hub_id: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+  device: ${oc.env:QWEN3_TTS_06B_DEVICE,cuda:0}
+  vram_mb: ${oc.decode:${oc.env:QWEN3_TTS_06B_VRAM_MB,2500}}
+  torch_dtype: ${oc.env:QWEN3_TTS_06B_TORCH_DTYPE,bfloat16}
+  # flash_attention_2 cuts VRAM but needs flash-attn installed in the
+  # worker image. Default is "eager" so the container boots everywhere;
+  # set QWEN3_TTS_06B_ATTN=flash_attention_2 after installing flash-attn.
+  attn_implementation: ${oc.env:QWEN3_TTS_06B_ATTN,eager}
+  default_params:
+    # Supported: Chinese, English, Japanese, Korean, German, French,
+    # Russian, Portuguese, Spanish, Italian.
+    language: ${oc.env:QWEN3_TTS_06B_LANGUAGE,English}
+    output_format: ${oc.env:QWEN3_TTS_06B_OUTPUT_FORMAT,wav}
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 1024
+
+queue:
+  priority: ${oc.env:QWEN3_TTS_06B_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:QWEN3_TTS_06B_TIMEOUT,120}}
+  max_concurrent: ${oc.decode:${oc.env:QWEN3_TTS_06B_MAX_CONCURRENT,1}}
+
+metadata:
+  license: "Apache-2.0"
+  description: "Qwen3-TTS 0.6B-Base — zero-shot voice cloning across 10 languages (EN, ZH, JA, KO, DE, FR, RU, PT, ES, IT)"
+  tags: ["qwen3-tts", "voice-clone", "multilingual", "alibaba"]

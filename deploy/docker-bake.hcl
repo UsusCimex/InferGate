@@ -68,6 +68,7 @@ target "worker" {
       { id = "kokoro-82m",        base = CPU_BASE_IMAGE, apt = "gcc",             post = "python -m spacy download en_core_web_sm" },
       { id = "openaudio-s1-mini", base = GPU_BASE_IMAGE, apt = "git build-essential portaudio19-dev", post = "" },
       { id = "xtts-v2",           base = GPU_BASE_IMAGE, apt = "",                post = "" },
+      { id = "qwen3-tts-06b",     base = GPU_BASE_IMAGE, apt = "",                post = "" },
       # ─── STT ─────────────────────────────────────────────────────────
       { id = "whisper-base",      base = CPU_BASE_IMAGE, apt = "",                post = "" },
       # ─── Upscale (super-resolution) ──────────────────────────────────
