@@ -34,10 +34,19 @@ x-env: &env
   WORKER_MODELS_DIR: /app/models
   HF_TOKEN: ${HF_TOKEN:-}
   HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
-  # Disable expandable_segments — incompatible with enable_model_cpu_offload
-  # on Blackwell/WSL2 (triggers CUDACachingAllocator handles_.at assert).
-  # Override to "expandable_segments:True" only if you need it.
-  PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-}
+  # garbage_collection_threshold:0.8  — triggers allocator GC when 80% of
+  #                                     the budget is in use; prevents
+  #                                     fragmentation OOM under ensemble
+  #                                     loads (SDXL base+refiner, img2img+
+  #                                     highres_fix, etc.)
+  # max_split_size_mb:512            — caps individual block size so a
+  #                                     single large tensor can't pin an
+  #                                     oversized contiguous region
+  # expandable_segments is OFF by default — it's incompatible with
+  # enable_model_cpu_offload on Blackwell/WSL2 (triggers
+  # CUDACachingAllocator handles_.at assert). Override via env if you
+  # run on Ampere/Ada without CPU offload.
+  PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-garbage_collection_threshold:0.8,max_split_size_mb:512}
 
 x-hc-text: &hc-text
   test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -69,7 +78,16 @@ x-hc-tts-gpu: &hc-tts-gpu
 
 x-gpu: &gpu
   restart: unless-stopped
-  shm_size: "1g"
+  shm_size: ${GPU_WORKER_SHM_SIZE:-2g}
+  # Host-protection memory caps. When a runaway model (e.g. SDXL base +
+  # refiner together on a 12GB card) overshoots these limits, Linux OOMKiller
+  # kills the container process — the HOST stays alive. Without these the
+  # WSL2/Docker-Desktop case easily spirals into host swap-storm → reboot.
+  # memswap_limit == mem_limit disables swap for this container specifically,
+  # so the kernel reaches OOMKill faster (seconds) instead of thrashing.
+  # Tune via deploy/.env: GPU_WORKER_MEM_LIMIT=24g on a 64 GB server.
+  mem_limit: ${GPU_WORKER_MEM_LIMIT:-16g}
+  memswap_limit: ${GPU_WORKER_MEM_LIMIT:-16g}
   deploy:
     resources:
       reservations:
@@ -77,6 +95,14 @@ x-gpu: &gpu
           - driver: nvidia
             count: 1
             capabilities: [gpu]
+
+x-cpu-worker: &cpu-worker
+  restart: unless-stopped
+  # Symmetric cap for CPU-only workers (kokoro, whisper). These don't touch
+  # VRAM but can still pin multi-GB RAM under concurrent load. Default is
+  # lower than GPU workers because CPU-only models are smaller.
+  mem_limit: ${CPU_WORKER_MEM_LIMIT:-6g}
+  memswap_limit: ${CPU_WORKER_MEM_LIMIT:-6g}
 
 x-build: &build
   context: ..
@@ -116,6 +142,10 @@ services:
       - ../config:/app/config:ro
       - cache_data:/app/cache
     restart: unless-stopped
+    # Gateway is small (~500MB + request buffers); cap it too so a client
+    # flooding it with huge base64 uploads can't push the host over.
+    mem_limit: ${GATEWAY_MEM_LIMIT:-2g}
+    memswap_limit: ${GATEWAY_MEM_LIMIT:-2g}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -358,7 +388,7 @@ services:
 
   # ─── TTS workers ─────────────────────────────────────────────────────
   worker-kokoro-82m:
-    restart: unless-stopped
+    <<: *cpu-worker
     profiles: ["tts", "kokoro-82m"]
     build:
       <<: *build
@@ -409,7 +439,7 @@ services:
 
   # ─── STT workers ─────────────────────────────────────────────────────
   worker-whisper-base:
-    restart: unless-stopped
+    <<: *cpu-worker
     profiles: ["stt", "whisper-base"]
     build:
       <<: *build
