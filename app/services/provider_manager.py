@@ -87,12 +87,18 @@ class ProviderManager:
     @staticmethod
     def _create_remote_provider(config: ModelConfig) -> BaseProvider:
         """Create a remote provider based on model category."""
-        from app.providers.remote import RemoteImageProvider, RemoteTextProvider, RemoteTtsProvider
+        from app.providers.remote import (
+            RemoteImageProvider,
+            RemoteSttProvider,
+            RemoteTextProvider,
+            RemoteTtsProvider,
+        )
 
         category_map: dict[str, type[BaseProvider]] = {
             "text": RemoteTextProvider,
             "image": RemoteImageProvider,
             "tts": RemoteTtsProvider,
+            "stt": RemoteSttProvider,
         }
         cls = category_map.get(config.category)
         if cls is None:

@@ -8,7 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelConfig, ModelCacheConfig, ModelQueueConfig, ModelMetadata
-from app.providers.base import ImageProvider, TextProvider, TtsProvider
+from app.providers.base import ImageProvider, SttProvider, TextProvider, TtsProvider
 from app.providers.registry import register_provider
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler
@@ -73,6 +73,25 @@ class FakeTtsProvider(TtsProvider):
         return b"RIFF" + b"\x00" * 40
 
 
+@register_provider
+class FakeSttProvider(SttProvider):
+    async def load(self, model_dir: str) -> None:
+        self._loaded = True
+
+    async def unload(self) -> None:
+        self._loaded = False
+
+    async def transcribe(self, audio: bytes, **params: Any) -> dict:
+        # Deterministic echo so tests can assert shape + param propagation.
+        lang = params.get("language", "en")
+        return {
+            "text": "hello world" if params.get("response_format") != "verbose_json" else "hello world",
+            "language": lang,
+            "duration": 1.0,
+            "segments": [{"id": 0, "start": 0.0, "end": 1.0, "text": "hello world"}],
+        }
+
+
 # --- Fixtures ---
 
 def _make_model_config(
@@ -103,15 +122,18 @@ async def services(tmp_path):
     img_config = _make_model_config("test-image", "image", "FakeImageProvider", "seed_only")
     txt_config = _make_model_config("test-text", "text", "FakeTextProvider")
     tts_config = _make_model_config("test-tts", "tts", "FakeTtsProvider", "always")
+    stt_config = _make_model_config("test-stt", "stt", "FakeSttProvider", "always")
 
     manager._registry["test-image"] = FakeImageProvider(img_config)
     manager._registry["test-text"] = FakeTextProvider(txt_config)
     manager._registry["test-tts"] = FakeTtsProvider(tts_config)
+    manager._registry["test-stt"] = FakeSttProvider(stt_config)
 
     scheduler = GpuScheduler(max_queue_size=10)
     scheduler.register_model("test-image", 2)
     scheduler.register_model("test-text", 2)
     scheduler.register_model("test-tts", 2)
+    scheduler.register_model("test-stt", 2)
 
     cache_mgr = CacheManager({
         "enabled": True,
@@ -121,7 +143,10 @@ async def services(tmp_path):
     })
     await cache_mgr.initialize()
 
-    defaults = {"image": "test-image", "text": "test-text", "tts": "test-tts"}
+    defaults = {
+        "image": "test-image", "text": "test-text",
+        "tts": "test-tts", "stt": "test-stt",
+    }
 
     yield {
         "manager": manager,

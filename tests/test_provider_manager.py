@@ -10,9 +10,9 @@ from app.services.provider_manager import ModelNotFoundError
 async def test_list_models(services):
     manager = services["manager"]
     models = manager.list_models()
-    assert len(models) == 3
+    assert len(models) == 4
     ids = {m["id"] for m in models}
-    assert ids == {"test-image", "test-text", "test-tts"}
+    assert ids == {"test-image", "test-text", "test-tts", "test-stt"}
 
 
 @pytest.mark.asyncio
@@ -67,7 +67,7 @@ async def test_list_models_endpoint(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["object"] == "list"
-    assert len(data["data"]) == 3
+    assert len(data["data"]) == 4
 
 
 # ── Hot-reload coverage ──────────────────────────────────────────────

@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from app.providers.base import ImageProvider, TextProvider, TtsProvider
+from app.providers.base import ImageProvider, SttProvider, TextProvider, TtsProvider
 
 logger = logging.getLogger(__name__)
 
@@ -178,3 +178,39 @@ class RemoteTtsProvider(TtsProvider):
         resp = await self._client.post("/synthesize", json={"text": text, **params})
         resp.raise_for_status()
         return resp.content
+
+
+class RemoteSttProvider(SttProvider):
+    """Proxies speech-to-text requests to a remote worker.
+
+    Unlike the other remote providers that ship JSON params, STT also
+    streams audio bytes — we send them as a multipart/form-data so the
+    worker can use the same decoding path as a direct client upload.
+    """
+
+    def __init__(self, config: Any) -> None:
+        super().__init__(config)
+        _RemoteMixin._init_remote(self)
+
+    async def load(self, model_dir: str) -> None:
+        await _RemoteMixin._remote_load(self)
+
+    async def unload(self) -> None:
+        await _RemoteMixin._remote_unload(self)
+
+    async def check_health(self) -> bool:
+        return await _RemoteMixin._check_health(self)
+
+    async def reload(self, new_config: Any) -> str:
+        return await _RemoteMixin._remote_reload(self, new_config)
+
+    async def transcribe(self, audio: bytes, **params: Any) -> dict:
+        filename = str(params.pop("filename", "audio.wav"))
+        # Form fields must be strings; skip None and coerce numbers.
+        form: dict[str, str] = {
+            k: str(v) for k, v in params.items() if v is not None
+        }
+        files = {"file": (filename, audio, "application/octet-stream")}
+        resp = await self._client.post("/transcribe", files=files, data=form)
+        resp.raise_for_status()
+        return resp.json()

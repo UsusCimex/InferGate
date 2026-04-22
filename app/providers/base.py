@@ -73,3 +73,13 @@ class TtsProvider(BaseProvider):
     @abstractmethod
     async def synthesize(self, text: str, **params: Any) -> bytes:
         """Synthesize speech from text. Returns audio bytes."""
+
+
+class SttProvider(BaseProvider):
+    """Interface for speech-to-text / automatic-speech-recognition models."""
+
+    @abstractmethod
+    async def transcribe(self, audio: bytes, **params: Any) -> dict:
+        """Transcribe audio bytes to text. Returns OpenAI-format dict:
+        at minimum `{"text": str}`; verbose_json adds `language`, `duration`,
+        `segments`."""

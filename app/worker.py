@@ -12,7 +12,7 @@ import os
 import warnings
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from starlette.responses import StreamingResponse
 
@@ -261,6 +261,37 @@ async def synthesize(request: Request):
             text = body.pop("text")
             audio_bytes = await provider.synthesize(text, **body)
             return Response(content=audio_bytes, media_type="application/octet-stream")
+        except ValueError as e:
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "invalid_request"}},
+                status_code=400,
+            )
+
+
+@app.post("/transcribe")
+async def transcribe(
+    request: Request,
+    file: UploadFile = File(...),
+    language: str | None = Form(None),
+    prompt: str | None = Form(None),
+    response_format: str = Form("json"),
+    temperature: float = Form(0.0),
+):
+    """Transcribe audio → text. Multipart form-data to mirror /v1/audio/transcriptions."""
+    async with request.app.state.reload_lock:
+        provider: BaseProvider = request.app.state.provider
+        audio = await file.read()
+        params = {
+            "language": language,
+            "prompt": prompt,
+            "response_format": response_format,
+            "temperature": temperature,
+            "filename": file.filename or "audio.wav",
+        }
+        params = {k: v for k, v in params.items() if v is not None}
+        try:
+            result = await provider.transcribe(audio, **params)
+            return JSONResponse(result)
         except ValueError as e:
             return JSONResponse(
                 {"error": {"message": str(e), "type": "invalid_request"}},

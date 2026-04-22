@@ -34,7 +34,7 @@ def get_provider_class(name: str) -> type[BaseProvider]:
 def _discover_providers() -> None:
     """Auto-import all provider modules to trigger @register_provider."""
     providers_dir = Path(__file__).parent
-    for subdir in ("image", "tts", "text"):
+    for subdir in ("image", "tts", "text", "stt"):
         pkg_path = providers_dir / subdir
         if not pkg_path.exists():
             continue

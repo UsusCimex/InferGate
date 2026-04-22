@@ -30,7 +30,7 @@ async def test_models_list(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["object"] == "list"
-    assert len(data["data"]) == 3  # test-image, test-text, test-tts
+    assert len(data["data"]) == 4  # test-image, test-text, test-tts, test-stt
 
 
 @pytest.mark.asyncio

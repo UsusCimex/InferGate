@@ -9,3 +9,20 @@ class AudioSpeechRequest(BaseModel):
     voice: str = "default"
     response_format: str = "mp3"
     speed: float = Field(1.0, ge=0.25, le=4.0)
+
+
+class TranscriptionSegment(BaseModel):
+    """verbose_json segment — mirrors OpenAI's /v1/audio/transcriptions shape."""
+    id: int
+    start: float
+    end: float
+    text: str
+
+
+class TranscriptionResponse(BaseModel):
+    """Default (json) transcription response is `{text: ...}`; verbose_json
+    adds optional language, duration, segments."""
+    text: str
+    language: str | None = None
+    duration: float | None = None
+    segments: list[TranscriptionSegment] | None = None
