@@ -1,0 +1,33 @@
+id: xtts-v2
+display_name: "XTTS v2 (Coqui)"
+category: tts
+provider_class: XttsTtsProvider
+# Disabled by default — XTTS-v2 requires ~2GB VRAM and a Coqui Public
+# Model License acceptance; set XTTS_V2_ENABLED=true to opt in.
+enabled: ${oc.decode:${oc.env:XTTS_V2_ENABLED,false}}
+
+model:
+  # Resolved from the Coqui Model Zoo — NOT a HuggingFace repo ID.
+  hub_id: "tts_models/multilingual/multi-dataset/xtts_v2"
+  device: ${oc.env:XTTS_V2_DEVICE,cuda}
+  vram_mb: ${oc.decode:${oc.env:XTTS_V2_VRAM_MB,2000}}
+  sample_rate: 24000
+  default_params:
+    language: ${oc.env:XTTS_V2_LANGUAGE,en}
+    output_format: ${oc.env:XTTS_V2_OUTPUT_FORMAT,wav}
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 1024
+
+queue:
+  priority: ${oc.env:XTTS_V2_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:XTTS_V2_TIMEOUT,120}}
+  max_concurrent: ${oc.decode:${oc.env:XTTS_V2_MAX_CONCURRENT,1}}
+
+metadata:
+  license: "Coqui Public Model License (CPML, non-commercial)"
+  description: "XTTS v2 — voice cloning from a 6-second reference clip, 17 languages"
+  tags: ["xtts", "voice-clone", "multilingual", "coqui"]
