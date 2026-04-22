@@ -62,8 +62,9 @@ Defaults в `config/models/*.yaml` заточены под 12GB GPU (nf4-ква�
 | `tts` | kokoro-82m (enabled) |
 | `stt` | whisper-base (enabled) |
 | `upscale` | realesrgan-x4 (enabled) |
-| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m`, `whisper-base`, `realesrgan-x4` | Индивидуальные |
-| `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `openaudio-s1-mini` | Disabled по умолчанию, запуск через индивидуальный profile |
+| `voice-clone` | xtts-v2 (disabled — CPML license opt-in) |
+| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m`, `whisper-base`, `realesrgan-x4`, `xtts-v2` | Индивидуальные |
+| `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `openaudio-s1-mini`, `xtts-v2` | Disabled по умолчанию, запуск через индивидуальный profile |
 
 ### Локальная разработка
 
@@ -147,6 +148,11 @@ curl http://localhost:8000/v1/audio/transcriptions \
 curl http://localhost:8000/v1/audio/transcriptions \
   -F "file=@speech.mp3" -F "model=whisper-base" -F "response_format=srt" \
   -o subtitles.srt
+
+# Voice cloning (XTTS-v2) — 6-секундный reference + текст → склонированный голос
+curl http://localhost:8000/v1/audio/speech/voice-clone \
+  -F "reference_audio=@my_voice.wav" -F "input=Hello in my voice" \
+  -F "model=xtts-v2" -F "language=en" -o cloned.wav
 
 # Upscale изображения 4×
 curl http://localhost:8000/v1/images/upscale \
@@ -282,11 +288,10 @@ curl http://localhost:8000/v1/images/generations \
 | **Qwen 3 8B** | Текст | vLLM | 7 GB | Apache 2.0 |
 | **Llama 3.1 8B** | Текст | vLLM | 8 GB | Llama Community |
 | **Kokoro 82M** | TTS | kokoro | CPU | MIT |
-| **OpenAudio S1 Mini** | TTS (+ voice-clone¹) | fish-speech | 4 GB | Apache 2.0 |
+| **OpenAudio S1 Mini** | TTS | fish-speech | 4 GB | Apache 2.0 |
+| **XTTS v2** | Voice-cloning TTS | coqui-tts | 2 GB (fp16) | CPML (non-commercial) |
 | **Whisper Base** | STT | faster-whisper (CT2) | CPU (int8, ~90 MB) | MIT |
 | **Real-ESRGAN 4×** | Upscale | spandrel | 1.5 GB (fp16) | BSD-3-Clause |
-
-¹ Voice-cloning endpoint `/v1/audio/speech/voice-clone` готов gateway-side, но worker-side временно заблокирован на несовместимости fish-speech upstream (см. раздел TODO).
 
 **Три архитектурных семейства изображений** в одном стеке: диффузия (SD/FLUX/Qwen/Hunyuan/Z-Image), autoregressive (Janus-Pro) и masked non-AR (Meissonic) — все под единым `ImageProvider` интерфейсом с OpenAI-совместимым API. STT/Upscale/TTS живут под собственными ABC-категориями (`SttProvider`, `ImageUpscaleProvider`, `TtsProvider`).
 
@@ -610,7 +615,7 @@ infergate/
 ├── deploy/
 │   ├── Dockerfile.gateway          #   Лёгкий gateway (~500MB)
 │   ├── Dockerfile.worker           #   Единый параметризованный Dockerfile для всех воркеров
-│   ├── docker-compose.yml          #   Compose с profiles (gateway + 20 workers, YAML-якоря)
+│   ├── docker-compose.yml          #   Compose с profiles (gateway + 21 workers, YAML-якоря)
 │   ├── docker-bake.hcl             #   Матрица сборки (1 строка = 1 модель)
 │   ├── .env.example
 │   ├── docker-compose.server.example.yml
@@ -620,7 +625,8 @@ infergate/
 │   │   ├── kokoro-82m/requirements.txt
 │   │   ├── whisper-base/requirements.txt
 │   │   ├── realesrgan-x4/requirements.txt
-│   │   └── …                       #   20 моделей
+│   │   ├── xtts-v2/requirements.txt
+│   │   └── …                       #   21 модель
 │   └── monitoring/                 #   Prometheus + Grafana stack (auto-provisioning)
 │       ├── prometheus.yml
 │       ├── docker-compose.monitoring.yml
@@ -643,6 +649,7 @@ Client → Gateway (500MB, без GPU)
            ├→ worker-qwen3-5-4b       (vLLM, GPU)           — text
            ├→ worker-sd35-medium      (diffusers, GPU)      — image
            ├→ worker-kokoro-82m       (kokoro, CPU)         — TTS
+           ├→ worker-xtts-v2          (coqui-tts, GPU)      — voice cloning
            ├→ worker-whisper-base     (faster-whisper, CPU) — STT
            ├→ worker-realesrgan-x4    (spandrel, GPU)       — upscale
            └→ ...
@@ -725,7 +732,7 @@ Grafana поднимается с auto-provisioning: Prometheus datasource (`inf
 
 Сборка построена на принципе **одно описание — много вариантов**:
 
-- **Единый `deploy/Dockerfile.worker`** — параметризован build-args (`BASE_IMAGE`, `APT_PACKAGES`, `WORKER_REQUIREMENTS`, `POST_INSTALL`). Все 20 воркеров (image / text / tts / stt / upscale) собираются из него — нет копипаста.
+- **Единый `deploy/Dockerfile.worker`** — параметризован build-args (`BASE_IMAGE`, `APT_PACKAGES`, `WORKER_REQUIREMENTS`, `POST_INSTALL`). Все 21 воркеров (image / text / tts / stt / upscale / voice-clone) собираются из него — нет копипаста.
 - **`deploy/docker-bake.hcl`** — матрица сборки (HCL), 1 модель = 1 строка. `docker buildx bake` собирает все параллельно, с общим кэшем слоёв и поддержкой registry push.
 - **`deploy/docker-compose.yml`** с YAML-якорями для общих блоков (environment, healthcheck, GPU reservations).
 - **uv** вместо pip — установка в 10–100x быстрее.
@@ -774,7 +781,7 @@ pytest --cov=app --cov-branch
 
 Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, `cache`, `health`), middleware (auth, rate-limit, access-log), мониторинг (Prometheus-лейблы, request ID), `CacheManager`, `GpuScheduler`, `ProviderManager` (включая hot-reload `reload_model`), `ConfigWatcher`, воркер-эндпоинты (`/generate`, `/synthesize`, `/transcribe`, `/upscale`, `/reload`, `/voice-clone`), конфигурацию, валидацию схем, конкурентность, edge cases.
 
-**E2e feature-скрипты** (`scripts/feature/*.sh`) — прогоняются на живых Docker-контейнерах и закрывают то, что нельзя через моки: `sd35-lora.sh`, `img2img.sh`, `hot-reload-config.sh`, `worker-reload.sh`, `stt-whisper.sh`, `upscale.sh`, `grafana-provisioning.sh`, `lora-hot-load.sh`, `textual-inversion.sh`, `highres-fix.sh`, `scheduler-swap.sh`, `token-weighting.sh`, `per-request-tunables.sh`, `error-forwarding.sh`.
+**E2e feature-скрипты** (`scripts/feature/*.sh`) — прогоняются на живых Docker-контейнерах и закрывают то, что нельзя через моки: `sd35-lora.sh`, `img2img.sh`, `hot-reload-config.sh`, `worker-reload.sh`, `stt-whisper.sh`, `upscale.sh`, `voice-clone-xtts.sh`, `grafana-provisioning.sh`, `lora-hot-load.sh`, `textual-inversion.sh`, `highres-fix.sh`, `scheduler-swap.sh`, `token-weighting.sh`, `per-request-tunables.sh`, `error-forwarding.sh`.
 
 ---
 
@@ -790,14 +797,13 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 
 ## 14. TODO
 
-Список того, что ещё предстоит сделать — в порядке приоритета. Обозначение `[~]` = частично (gateway-слой готов, worker-слой ждёт работы).
+Список того, что ещё предстоит сделать — в порядке приоритета.
 
-1. [~] **Voice cloning (worker-side)** — gateway-слой уже готов: `POST /v1/audio/speech/voice-clone` (multipart), `RemoteTtsProvider` маршрутизирует на `/voice-clone` при наличии `reference_audio`, `FishSpeechTtsProvider` проксирует `reference_audio`/`reference_text` в `TTS.synthesize`, cache keyed по SHA reference-байт, **5 pytest-ов** через fake provider зелёные. Остаётся воркер-образ `openaudio-s1-mini`: fish-speech upstream master имеет переработанный API (`TTSInferenceEngine` вместо `fish_speech.tts.api`/`fish_speech.inference`) + `torchvision` circular-import от несовместимых torch-версий. Нужно pin конкретной working fish-speech версии или переезд на XTTS-v2 / Coqui TTS.
-2. [ ] **SDXL Refiner** — ensemble `base → refiner` с передачей latents. `SDXLRefinerImageProvider` должен держать две модели одновременно в VRAM (~14 GB суммарно); на 12 GB картах — sequential unload/load base→refiner или CPU offload обоих. Требует нового провайдера или custom-логики в `DiffusersImageProvider`.
-3. [ ] **Multi-GPU** — per-worker `CUDA_VISIBLE_DEVICES`-routing и distributed-LRU в `ProviderManager`. Нужно для multi-GPU машин, где сейчас все воркеры по умолчанию борются за первый GPU.
-4. [ ] **Upscaler tiling** — follow-up к `/v1/images/upscale`. Сейчас вход ограничен `max_input_side=2048` (guard против OOM). Для upscale изображений большего размера нужно tile-разбиение с перекрытием + gradient blending в `SpandrelUpscaleProvider`.
-5. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
-6. [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
+1. [ ] **SDXL Refiner** — ensemble `base → refiner` с передачей latents. `SDXLRefinerImageProvider` должен держать две модели одновременно в VRAM (~14 GB суммарно); на 12 GB картах — sequential unload/load base→refiner или CPU offload обоих. Требует нового провайдера или custom-логики в `DiffusersImageProvider`.
+2. [ ] **Multi-GPU** — per-worker `CUDA_VISIBLE_DEVICES`-routing и distributed-LRU в `ProviderManager`. Нужно для multi-GPU машин, где сейчас все воркеры по умолчанию борются за первый GPU.
+3. [ ] **Upscaler tiling** — follow-up к `/v1/images/upscale`. Сейчас вход ограничен `max_input_side=2048` (guard против OOM). Для upscale изображений большего размера нужно tile-разбиение с перекрытием + gradient blending в `SpandrelUpscaleProvider`.
+4. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
+5. [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
 
 ---
 
