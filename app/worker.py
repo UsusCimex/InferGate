@@ -86,6 +86,55 @@ async def health(request: Request):
     }
 
 
+@app.get("/stats")
+async def stats(request: Request):
+    """Live resource usage — polled by the gateway's VRAM watchdog every
+    few seconds. Keep cheap: no synchronize(), no per-model introspection.
+    All fields best-effort — missing tools (no CUDA / no psutil / no
+    nvidia-ml-py) give 0/null instead of erroring so the gateway side
+    can still reason about whatever is present."""
+    provider: BaseProvider = request.app.state.provider
+    config = request.app.state.config
+
+    vram_used_mb = 0
+    vram_total_mb = 0
+    vram_free_mb = 0
+    try:
+        import torch
+        if torch.cuda.is_available():
+            # mem_get_info is a cheap driver call (µs); torch_allocated is
+            # what OUR process pinned, free is what the device still has.
+            free_b, total_b = torch.cuda.mem_get_info(0)
+            vram_free_mb = free_b // (1024 * 1024)
+            vram_total_mb = total_b // (1024 * 1024)
+            vram_used_mb = vram_total_mb - vram_free_mb
+    except Exception:  # noqa: BLE001 — stats never raise
+        pass
+
+    ram_used_mb = 0
+    ram_total_mb = 0
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        ram_total_mb = vm.total // (1024 * 1024)
+        ram_used_mb = (vm.total - vm.available) // (1024 * 1024)
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "model": config.id,
+        "loaded": provider.is_loaded(),
+        "vram_used_mb": vram_used_mb,
+        "vram_free_mb": vram_free_mb,
+        "vram_total_mb": vram_total_mb,
+        "ram_used_mb": ram_used_mb,
+        "ram_total_mb": ram_total_mb,
+        "declared_vram_mb": config.model.get("vram_mb", 0),
+    }
+
+
 @app.post("/load")
 async def load(request: Request):
     """Explicit load signal from gateway. Reloads model if it was previously unloaded."""

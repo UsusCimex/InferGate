@@ -193,6 +193,24 @@ async def test_scheduler_update_concurrency(services):
 
 
 @pytest.mark.asyncio
+async def test_provider_get_stats_default(services):
+    """BaseProvider.get_stats returns a declared-only snapshot when the
+    concrete provider doesn't override (covers every local provider:
+    FakeImageProvider, DiffusersImageProvider, etc.)."""
+    manager = services["manager"]
+    await manager.ensure_loaded("test-image")
+    stats = await manager.get("test-image").get_stats()
+    assert stats["model"] == "test-image"
+    assert stats["loaded"] is True
+    assert stats["declared_vram_mb"] == 1000  # from _make_model_config
+    assert stats["vram_used_mb"] == 1000  # declared == used when loaded
+    # Unloaded → zero
+    await manager.unload_model("test-image")
+    stats = await manager.get("test-image").get_stats()
+    assert stats["vram_used_mb"] == 0
+
+
+@pytest.mark.asyncio
 async def test_scheduler_update_concurrency_registers_unknown(services):
     """update_concurrency on an unknown model_id transparently registers
     the queue — avoids a race when reload_model creates the model and

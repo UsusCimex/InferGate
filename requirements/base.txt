@@ -10,3 +10,4 @@ aiofiles>=24.0
 httpx>=0.27.0
 prometheus-client>=0.20.0  # /metrics/prometheus for shipped Grafana stack
 python-multipart>=0.0.20  # FastAPI File()/Form() parsing (STT transcription uploads)
+psutil>=5.9.0             # host RAM monitoring for watchdog + /stats

@@ -43,6 +43,18 @@ class BaseProvider(ABC):
     def is_loaded(self) -> bool:
         return self._loaded
 
+    async def get_stats(self) -> dict:
+        """Return live resource-usage snapshot. Default implementation
+        reports declared-only numbers; remote providers override with
+        live readings from the worker. Watchdog polls this to decide
+        whether to evict."""
+        return {
+            "model": self.model_id,
+            "loaded": self.is_loaded(),
+            "declared_vram_mb": self.vram_mb,
+            "vram_used_mb": self.vram_mb if self.is_loaded() else 0,
+        }
+
 
 class ImageProvider(BaseProvider):
     """Interface for image generation models (diffusers, etc.)."""

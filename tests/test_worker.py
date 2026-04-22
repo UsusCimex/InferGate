@@ -45,13 +45,14 @@ async def text_worker():
     app.state.reload_lock = asyncio.Lock()
 
     # Import worker routes
-    from app.worker import health, load, unload, generate, synthesize, reload_config
+    from app.worker import health, load, unload, generate, synthesize, reload_config, stats
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/load", load, methods=["POST"])
     app.add_api_route("/unload", unload, methods=["POST"])
     app.add_api_route("/generate", generate, methods=["POST"])
     app.add_api_route("/synthesize", synthesize, methods=["POST"])
     app.add_api_route("/reload", reload_config, methods=["POST"])
+    app.add_api_route("/stats", stats, methods=["GET"])
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://worker") as ac:
@@ -196,6 +197,24 @@ async def test_reload_rejects_malformed_config(text_worker):
     resp = await text_worker.post("/reload", json={"this": "is not a ModelConfig"})
     assert resp.status_code == 400
     assert "invalid config" in resp.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_stats_returns_usage_snapshot(text_worker):
+    """GET /stats returns the full envelope — fake-provider env has no
+    CUDA so VRAM fields are 0, but the shape must be correct."""
+    resp = await text_worker.get("/stats")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Required keys even when CUDA/psutil unavailable:
+    for key in ("model", "loaded", "vram_used_mb", "vram_free_mb",
+                "vram_total_mb", "ram_used_mb", "ram_total_mb",
+                "declared_vram_mb"):
+        assert key in body, f"missing key: {key}"
+    assert body["model"] == "test-text"
+    assert body["loaded"] is True
+    # _make_config in this file doesn't set model.vram_mb, so declared = 0.
+    assert body["declared_vram_mb"] == 0
 
 
 @pytest.mark.asyncio

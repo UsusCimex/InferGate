@@ -101,6 +101,19 @@ class _RemoteMixin:
         resp.raise_for_status()
         return resp.json().get("action", "unknown")
 
+    async def _remote_stats(self) -> dict:
+        """GET /stats from worker — cheap poll for watchdog. Returns
+        empty dict if worker unreachable so caller can reason about
+        "no data" distinctly from "0 used"."""
+        if self._client is None:
+            return {}
+        try:
+            resp = await self._client.get("/stats", timeout=httpx.Timeout(5.0))
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError:
+            return {}
+
 
 class RemoteTextProvider(TextProvider):
     """Proxies text generation requests to a remote worker."""
@@ -120,6 +133,9 @@ class RemoteTextProvider(TextProvider):
 
     async def reload(self, new_config: Any) -> str:
         return await _RemoteMixin._remote_reload(self, new_config)
+
+    async def get_stats(self) -> dict:
+        return await _RemoteMixin._remote_stats(self)
 
     async def generate(self, messages: list[dict], **params: Any) -> dict:
         resp = await self._client.post("/generate", json={"messages": messages, **params})
@@ -155,6 +171,9 @@ class RemoteImageProvider(ImageProvider):
     async def reload(self, new_config: Any) -> str:
         return await _RemoteMixin._remote_reload(self, new_config)
 
+    async def get_stats(self) -> dict:
+        return await _RemoteMixin._remote_stats(self)
+
     async def generate(self, prompt: str, **params: Any) -> bytes:
         resp = await self._client.post("/generate", json={"prompt": prompt, **params})
         resp.raise_for_status()
@@ -179,6 +198,9 @@ class RemoteTtsProvider(TtsProvider):
 
     async def reload(self, new_config: Any) -> str:
         return await _RemoteMixin._remote_reload(self, new_config)
+
+    async def get_stats(self) -> dict:
+        return await _RemoteMixin._remote_stats(self)
 
     async def synthesize(self, text: str, **params: Any) -> bytes:
         # Voice-cloning branch: reference_audio bytes → multipart to
@@ -222,6 +244,9 @@ class RemoteSttProvider(SttProvider):
     async def reload(self, new_config: Any) -> str:
         return await _RemoteMixin._remote_reload(self, new_config)
 
+    async def get_stats(self) -> dict:
+        return await _RemoteMixin._remote_stats(self)
+
     async def transcribe(self, audio: bytes, **params: Any) -> dict:
         filename = str(params.pop("filename", "audio.wav"))
         # Form fields must be strings; skip None and coerce numbers.
@@ -252,6 +277,9 @@ class RemoteUpscaleProvider(ImageUpscaleProvider):
 
     async def reload(self, new_config: Any) -> str:
         return await _RemoteMixin._remote_reload(self, new_config)
+
+    async def get_stats(self) -> dict:
+        return await _RemoteMixin._remote_stats(self)
 
     async def upscale(self, image: bytes, **params: Any) -> bytes:
         files = {"file": ("image.png", image, "image/png")}
