@@ -57,6 +57,7 @@ class ProviderManager:
         pinned: list[str] | None = None,
         max_vram_budget_mb: int = 0,
         vram_headroom_mb: int = 0,
+        category_reservations: dict[str, int] | None = None,
     ):
         self._registry: dict[str, BaseProvider] = {}
         self._loaded_order: OrderedDict[str, None] = OrderedDict()
@@ -65,14 +66,12 @@ class ProviderManager:
         self._vram_headroom_mb = vram_headroom_mb
         self._model_dir = model_dir
         self._pinned = set(pinned or [])
-        self._state_lock = asyncio.Lock()  # protects _loaded_order and state changes
-        self._model_locks: dict[str, asyncio.Lock] = {}  # per-model load serialization
+        self._category_reservations = dict(category_reservations or {})
+        self._state_lock = asyncio.Lock()
+        self._model_locks: dict[str, asyncio.Lock] = {}
         self._monitor_task: asyncio.Task | None = None
-        # Per-model counter of requests currently inside the scheduler's
-        # slot (between acquire and release). LRU eviction + watchdog skip
-        # models with active > 0 so we never yank a provider out from under
-        # an in-flight generation. Aligned with LocalAI 2026 behaviour:
-        # "skip evicting models that have active API calls."
+        # LRU + watchdog skip models with active > 0 to avoid yanking
+        # weights out from under an in-flight forward pass.
         self._active_counts: dict[str, int] = {}
 
     def validate_config(self) -> None:
@@ -487,18 +486,52 @@ class ProviderManager:
             del self._loaded_order[victim_id]
 
     def _find_lru_victim(self) -> str | None:
-        """Find the least recently used non-pinned model with zero
-        in-flight requests. Skipping the busy ones prevents eviction
-        during an ongoing generate/synthesize/transcribe call — the
-        provider's unload() would yank weights out from under an
-        active forward pass and crash the worker."""
+        """Least-recently-used model eligible for eviction.
+
+        Two passes: first honour category reservations, then fall back
+        to violating them if the byte budget leaves no choice. Pinned
+        and in-flight models are never touched."""
         for model_id in self._loaded_order:
-            if model_id in self._pinned:
+            if not self._evictable(model_id):
                 continue
-            if self._active_counts.get(model_id, 0) > 0:
+            if self._would_violate_reservation(model_id):
                 continue
             return model_id
+        for model_id in self._loaded_order:
+            if self._evictable(model_id):
+                return model_id
         return None
+
+    def _evictable(self, model_id: str) -> bool:
+        if model_id in self._pinned:
+            return False
+        if self._active_counts.get(model_id, 0) > 0:
+            return False
+        return True
+
+    def _would_violate_reservation(
+        self, model_id: str, excluded: set[str] | None = None
+    ) -> bool:
+        """True if unloading `model_id` drops its category below the
+        reserved floor. `excluded` is the set of models already counted
+        as evicted in a simulated plan, so planning iterations see the
+        correct post-eviction category counts."""
+        provider = self._registry.get(model_id)
+        if provider is None:
+            return False
+        category = provider.config.category
+        reserved = self._category_reservations.get(category, 0)
+        if reserved <= 0:
+            return False
+        excluded = excluded or set()
+        remaining = 0
+        for m in self._loaded_order:
+            if m == model_id or m in excluded:
+                continue
+            p = self._registry.get(m)
+            if p is not None and p.config.category == category:
+                remaining += 1
+        return remaining < reserved
 
     @contextlib.asynccontextmanager
     async def active_request(self, model_id: str):

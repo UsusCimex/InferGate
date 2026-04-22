@@ -431,6 +431,87 @@ async def test_reload_remote_calls_worker_endpoint(services):
     assert fake.config.display_name == "renamed"
 
 
+# ── Category reservations (QoS) ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_category_reservation_protects_last_member(services):
+    """With text reserved at 1, chat traffic can't evict the only text
+    model when an image-category peer is a valid alternative."""
+    manager = services["manager"]
+    manager._category_reservations = {"text": 1}
+    manager._max_loaded = 2
+
+    await manager.ensure_loaded("test-text")   # oldest — normally LRU target
+    await manager.ensure_loaded("test-image")  # would be the next victim
+
+    await manager.ensure_loaded("test-tts")    # forces eviction
+    # Reservation held: text survives, image (newer but unreserved) evicted.
+    assert manager.get("test-text").is_loaded()
+    assert not manager.get("test-image").is_loaded()
+    assert manager.get("test-tts").is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_category_reservation_violated_when_no_alternative(services):
+    """Reservation is soft: if every non-reserved model is pinned/active,
+    fall through and evict the reserved category rather than 503."""
+    manager = services["manager"]
+    manager._category_reservations = {"text": 1}
+    manager._max_loaded = 2
+
+    await manager.ensure_loaded("test-text")
+    await manager.ensure_loaded("test-image")
+    manager._pinned.add("test-image")  # image cannot be touched
+
+    await manager.ensure_loaded("test-tts")
+    # No alternative → text evicted despite reservation.
+    assert not manager.get("test-text").is_loaded()
+    assert manager.get("test-image").is_loaded()
+    assert manager.get("test-tts").is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_category_reservation_allows_eviction_above_floor(services):
+    """Reservation of 1 does not protect the second+ member — only the
+    last one. Two text models loaded → evicting the older one still
+    leaves reservation satisfied."""
+    manager = services["manager"]
+    manager._category_reservations = {"image": 1}
+    manager._max_loaded = 2
+
+    # Two models in the same category: FakeImageProvider works fine
+    # as a stand-in since categories are derived from config.
+    await manager.ensure_loaded("test-image")
+    # Simulate a second image-category member by swapping a fixture in.
+    from tests.conftest import FakeImageProvider
+    second_cfg = manager.get("test-image").config.model_copy(update={"id": "test-image-2"})
+    manager._registry["test-image-2"] = FakeImageProvider(second_cfg)
+    await manager.ensure_loaded("test-image-2")
+
+    # Loading test-text would force eviction of LRU = test-image.
+    # Reservation of 1 image still satisfied (test-image-2 remains).
+    await manager.ensure_loaded("test-text")
+    assert not manager.get("test-image").is_loaded()
+    assert manager.get("test-image-2").is_loaded()
+    assert manager.get("test-text").is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_category_reservation_empty_dict_is_noop(services):
+    """Empty reservations {} must not change vanilla LRU behaviour."""
+    manager = services["manager"]
+    manager._category_reservations = {}
+    manager._max_loaded = 2
+
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    await manager.ensure_loaded("test-tts")
+    # Plain LRU → image (oldest) evicted.
+    assert not manager.get("test-image").is_loaded()
+    assert manager.get("test-text").is_loaded()
+    assert manager.get("test-tts").is_loaded()
+
+
 @pytest.mark.asyncio
 async def test_reload_remote_falls_back_on_worker_error(services):
     """Worker /reload failure → recreate gateway-side provider so model stays registered."""

@@ -34,6 +34,10 @@ gpu:
   watchdog_interval_seconds: ${oc.decode:${oc.env:GPU_WATCHDOG_INTERVAL_SECONDS,0}}
   watchdog_vram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_VRAM_THRESHOLD,0.92}}
   watchdog_ram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_RAM_THRESHOLD,0.90}}
+  # Soft per-category floor — LRU won't drop a category below the
+  # reserved count while other candidates remain. Protects TTS from
+  # being evicted by a burst of chat traffic, and vice-versa.
+  category_reservations: {}
 
 queue:
   max_size: 50
