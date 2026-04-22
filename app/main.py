@@ -19,6 +19,7 @@ from app.routers import audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.config_watcher import ConfigWatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
+from app.services.memory_watchdog import MemoryWatchdog
 from app.services.provider_manager import (
     InsufficientResourcesError,
     ModelNotFoundError,
@@ -116,6 +117,17 @@ async def lifespan(app: FastAPI):
     config_watcher = ConfigWatcher("config/models", _on_config_reload)
     config_watcher.start()
 
+    # Memory watchdog — polls /stats on every loaded worker and emergency-
+    # evicts LRU when live VRAM crosses the threshold. Disabled by default
+    # (interval=0); enable in server.yaml gpu.watchdog_interval_seconds.
+    watchdog = MemoryWatchdog(
+        manager=manager,
+        interval_seconds=server_cfg.gpu.watchdog_interval_seconds,
+        vram_threshold=server_cfg.gpu.watchdog_vram_threshold,
+        ram_threshold=server_cfg.gpu.watchdog_ram_threshold,
+    )
+    watchdog.start()
+
     logger.info(
         "InferGate started — %d models registered, listening on %s:%d",
         len(model_cfgs),
@@ -126,6 +138,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    await watchdog.stop()
     await config_watcher.stop()
     cleanup_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
