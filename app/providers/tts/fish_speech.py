@@ -79,17 +79,59 @@ class FishSpeechTtsProvider(TtsProvider):
         defaults.pop("voice", None)
         defaults.pop("speed", None)
 
-        loop = asyncio.get_running_loop()
+        # Voice-cloning payload: write reference to a temp file so we can
+        # pass it as a path to TTS.synthesize — most Fish-Speech versions
+        # expect a filesystem path rather than raw bytes.
+        ref_audio = defaults.pop("reference_audio", None)
+        ref_filename = str(defaults.pop("reference_filename", "ref.wav"))
+        ref_text = defaults.pop("reference_text", None)
 
-        # Try new API first (OpenAudio S1-mini), fall back to old
-        if hasattr(self._model, "synthesize"):
-            audio_data = await loop.run_in_executor(
-                None, lambda: self._model.synthesize(text)
-            )
-        else:
-            audio_data = await loop.run_in_executor(
-                None, lambda: self._model(text)
-            )
+        import os
+        import tempfile
+
+        ref_path: str | None = None
+        if ref_audio is not None:
+            suffix = "." + ref_filename.rsplit(".", 1)[-1]
+            tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+            tmp.write(ref_audio)
+            tmp.close()
+            ref_path = tmp.name
+
+        def _run():
+            kwargs: dict[str, Any] = {}
+            if ref_path is not None:
+                kwargs["reference_audio"] = ref_path
+            if ref_text:
+                kwargs["reference_text"] = ref_text
+
+            if hasattr(self._model, "synthesize"):
+                try:
+                    return self._model.synthesize(text, **kwargs)
+                except TypeError as e:
+                    if kwargs:
+                        raise ValueError(
+                            f"this fish-speech build does not accept voice-cloning "
+                            f"kwargs (reference_audio/reference_text): {e}"
+                        ) from e
+                    return self._model.synthesize(text)
+            # Callable-style fallback; can't carry cloning kwargs.
+            if kwargs:
+                raise ValueError(
+                    "fish-speech model is call-style and cannot receive "
+                    "reference_audio/reference_text — upgrade fish_speech to "
+                    "a release whose TTS exposes a synthesize() method"
+                )
+            return self._model(text)
+
+        loop = asyncio.get_running_loop()
+        try:
+            audio_data = await loop.run_in_executor(None, _run)
+        finally:
+            if ref_path is not None:
+                try:
+                    os.unlink(ref_path)
+                except OSError:
+                    pass
 
         import soundfile as sf
 
