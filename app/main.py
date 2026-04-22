@@ -45,6 +45,8 @@ async def lifespan(app: FastAPI):
         model_dir=server_cfg.models_dir,
         max_loaded=server_cfg.gpu.max_loaded_models,
         pinned=server_cfg.gpu.pinned_models,
+        max_vram_budget_mb=server_cfg.gpu.max_vram_budget_mb,
+        vram_headroom_mb=server_cfg.gpu.vram_headroom_mb,
     )
     manager.discover_models(model_cfgs)
     manager.validate_config()

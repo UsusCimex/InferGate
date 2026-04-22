@@ -193,6 +193,93 @@ async def test_scheduler_update_concurrency(services):
 
 
 @pytest.mark.asyncio
+async def test_byte_budget_lru_evicts_on_oversubscription(services):
+    """Loading a model that would push the sum of declared vram_mb past
+    the budget evicts the LRU until it fits — even if the count cap is
+    nowhere near its limit."""
+    manager = services["manager"]
+    # Each fixture model declares 1000 MB. Budget = 2500 MB with 0 headroom
+    # → 2 models fit (2 * 1000 = 2000 ≤ 2500), a third triggers eviction
+    # even though max_loaded (=3) hasn't been reached.
+    manager._max_vram_budget_mb = 2500
+    manager._vram_headroom_mb = 0
+
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    assert set(manager.loaded_models()) == {"test-image", "test-text"}
+
+    # Third load: 3 * 1000 > 2500 → byte-budget kicks in, evicts LRU
+    await manager.ensure_loaded("test-tts")
+    loaded = set(manager.loaded_models())
+    assert loaded == {"test-text", "test-tts"}
+    assert not manager.get("test-image").is_loaded()  # oldest evicted
+
+
+@pytest.mark.asyncio
+async def test_byte_budget_respects_headroom(services):
+    """vram_headroom_mb carves a gap out of the top — pinned + active
+    usage may not push past (budget - headroom)."""
+    manager = services["manager"]
+    # Budget 3000, headroom 500 → effective 2500 → 2 models fit
+    manager._max_vram_budget_mb = 3000
+    manager._vram_headroom_mb = 500
+
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    await manager.ensure_loaded("test-tts")
+    loaded = set(manager.loaded_models())
+    assert len(loaded) == 2  # same eviction as above, triggered by headroom
+
+
+@pytest.mark.asyncio
+async def test_byte_budget_disabled_falls_back_to_count(services):
+    """max_vram_budget_mb=0 → old count-based LRU only."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 0  # disabled
+    manager._max_loaded = 2  # hard count cap
+
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    await manager.ensure_loaded("test-tts")
+    loaded = set(manager.loaded_models())
+    # Count-based LRU evicts LRU (test-image) on the 3rd load
+    assert len(loaded) == 2
+    assert "test-image" not in loaded
+
+
+@pytest.mark.asyncio
+async def test_validate_config_rejects_pinned_over_budget():
+    """Pinning so many models that their declared vram sum ≥ budget
+    raises ConfigError at startup — operator must fix before serving."""
+    from app.services.provider_manager import ConfigError, ProviderManager
+
+    manager = ProviderManager(
+        model_dir=".", max_loaded=5,
+        pinned=["test-image", "test-text"],
+        max_vram_budget_mb=1500,  # two 1000 MB models = 2000 > 1500
+        vram_headroom_mb=0,
+    )
+    img_cfg = _make_test_config("test-image")
+    txt_cfg = _make_test_config("test-text")
+    manager._registry["test-image"] = _MinimalProvider(img_cfg)
+    manager._registry["test-text"] = _MinimalProvider(txt_cfg)
+
+    with pytest.raises(ConfigError, match="max_vram_budget_mb"):
+        manager.validate_config()
+
+
+class _MinimalProvider:
+    """Just enough surface for validate_config to read vram_mb without
+    needing a full fake provider fixture."""
+    def __init__(self, config):
+        self.config = config
+
+    @property
+    def vram_mb(self) -> int:
+        return self.config.model.get("vram_mb", 0)
+
+
+@pytest.mark.asyncio
 async def test_provider_get_stats_default(services):
     """BaseProvider.get_stats returns a declared-only snapshot when the
     concrete provider doesn't override (covers every local provider:

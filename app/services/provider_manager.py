@@ -32,12 +32,29 @@ class ConfigError(ValueError):
 
 
 class ProviderManager:
-    """Registry of providers. Loads configs, manages model lifecycle with LRU swapping."""
+    """Registry of providers. Loads configs, manages model lifecycle with LRU swapping.
 
-    def __init__(self, model_dir: str, max_loaded: int, pinned: list[str] | None = None):
+    LRU uses two complementary caps:
+    - `max_vram_budget_mb` (byte-budget): evicts until sum of declared
+      vram_mb of loaded non-pinned models + new model's vram_mb
+      ≤ budget. Disabled when set to 0.
+    - `max_loaded_models` (counter): back-stop for models that didn't
+      declare vram_mb or when budget is disabled.
+    """
+
+    def __init__(
+        self,
+        model_dir: str,
+        max_loaded: int,
+        pinned: list[str] | None = None,
+        max_vram_budget_mb: int = 0,
+        vram_headroom_mb: int = 0,
+    ):
         self._registry: dict[str, BaseProvider] = {}
         self._loaded_order: OrderedDict[str, None] = OrderedDict()
         self._max_loaded = max_loaded
+        self._max_vram_budget_mb = max_vram_budget_mb
+        self._vram_headroom_mb = vram_headroom_mb
         self._model_dir = model_dir
         self._pinned = set(pinned or [])
         self._state_lock = asyncio.Lock()  # protects _loaded_order and state changes
@@ -45,9 +62,10 @@ class ProviderManager:
         self._monitor_task: asyncio.Task | None = None
 
     def validate_config(self) -> None:
-        """Validate pinned models fit within the configured max_loaded capacity.
+        """Validate pinned models fit within the configured capacities.
 
-        Raises ConfigError if pinned GPU models would leave no room for LRU swaps.
+        Raises ConfigError when pinned GPU models exceed either the count
+        ceiling or the byte budget, which would leave no room for LRU swaps.
         """
         gpu_pinned = [m for m in self._pinned if self._is_gpu_model(m)]
         if len(gpu_pinned) >= self._max_loaded:
@@ -57,6 +75,17 @@ class ProviderManager:
                 f"gpu.max_loaded_models in server.yaml to at least "
                 f"{len(gpu_pinned) + 1} or remove a pinned model."
             )
+        if self._max_vram_budget_mb > 0:
+            pinned_vram = sum(self._registry[m].vram_mb for m in gpu_pinned
+                              if m in self._registry)
+            effective_budget = self._max_vram_budget_mb - self._vram_headroom_mb
+            if pinned_vram >= effective_budget:
+                raise ConfigError(
+                    f"Pinned GPU models declare {pinned_vram} MB VRAM, which "
+                    f"meets or exceeds max_vram_budget_mb={self._max_vram_budget_mb} "
+                    f"(minus headroom {self._vram_headroom_mb} MB). "
+                    f"Increase the budget or drop a pinned model."
+                )
 
     def discover_models(self, configs: list[ModelConfig]) -> None:
         """Register providers from model configs."""
@@ -246,7 +275,7 @@ class ProviderManager:
 
             async with self._state_lock:
                 if self._is_gpu_model(model_id):
-                    await self._make_room()
+                    await self._make_room(incoming_vram_mb=provider.vram_mb)
 
             await provider.load(self._model_dir)
 
@@ -375,17 +404,62 @@ class ProviderManager:
         )
         return True
 
-    async def _make_room(self) -> None:
-        """Unload LRU GPU models until there's room."""
+    def _loaded_vram_mb(self) -> int:
+        """Sum of declared vram_mb over currently-loaded GPU models."""
+        return sum(
+            self._registry[m].vram_mb
+            for m in self._loaded_order
+            if self._is_gpu_model(m) and m in self._registry
+        )
+
+    async def _make_room(self, incoming_vram_mb: int = 0) -> None:
+        """Evict LRU GPU models until both caps are satisfied:
+
+        1. count: `len(loaded_gpu) < max_loaded_models` (existing guard)
+        2. bytes: `loaded_vram + incoming_vram_mb <= max_vram_budget_mb
+                   - vram_headroom_mb` (new, when budget > 0)
+
+        Evicts the least-recently-used non-pinned model one at a time
+        until both conditions hold. Bail out when all remaining loaded
+        models are pinned — the new load will then likely fail at the
+        driver level, but that's explicitly the operator's choice
+        (they pinned too many).
+        """
+        effective_budget = (
+            self._max_vram_budget_mb - self._vram_headroom_mb
+            if self._max_vram_budget_mb > 0
+            else 0
+        )
+
         while True:
             gpu_loaded = [m for m in self._loaded_order if self._is_gpu_model(m)]
-            if len(gpu_loaded) < self._max_loaded:
+            count_ok = len(gpu_loaded) < self._max_loaded
+
+            if effective_budget > 0:
+                projected_vram = self._loaded_vram_mb() + max(incoming_vram_mb, 0)
+                bytes_ok = projected_vram <= effective_budget
+            else:
+                bytes_ok = True
+
+            if count_ok and bytes_ok:
                 break
+
             victim_id = self._find_lru_victim()
             if victim_id is None:
-                logger.warning("Cannot make room — all loaded models are pinned")
+                logger.warning(
+                    "Cannot make room (count=%d/%d, vram=%d/%d MB + incoming %d MB) "
+                    "— all loaded models are pinned",
+                    len(gpu_loaded), self._max_loaded,
+                    self._loaded_vram_mb(), effective_budget or -1,
+                    incoming_vram_mb,
+                )
                 break
-            logger.info("Evicting model %s (LRU)", victim_id)
+
+            reason = "count" if not count_ok else "byte-budget"
+            logger.info(
+                "Evicting model %s (LRU, %s): freeing %d MB VRAM",
+                victim_id, reason, self._registry[victim_id].vram_mb,
+            )
             await self._registry[victim_id].unload()
             del self._loaded_order[victim_id]
 
