@@ -137,21 +137,32 @@ class ProviderManager:
         """Periodically probe remote workers and connect when ready.
 
         Each worker gets an exponential-backoff retry schedule after
-        consecutive failures, capped at _WORKER_MAX_BACKOFF seconds, so
-        persistently broken workers don't flood the network with probes.
+        consecutive failures, capped at _WORKER_MAX_BACKOFF seconds.
+        Registry is re-read each iteration so reload_model-recreated
+        provider instances are picked up without restarting the monitor.
         """
-        remote_models = {
-            mid: p for mid, p in self._registry.items() if p.config.worker_url
-        }
-        if remote_models:
-            waiting = ", ".join(remote_models.keys())
-            logger.info("Worker monitor started — watching %d workers: %s", len(remote_models), waiting)
-
-        next_probe: dict[str, float] = dict.fromkeys(remote_models, 0.0)
-        fail_counts: dict[str, int] = dict.fromkeys(remote_models, 0)
+        next_probe: dict[str, float] = {}
+        fail_counts: dict[str, int] = {}
+        announced: set[str] = set()
 
         while True:
             now = asyncio.get_running_loop().time()
+            remote_models = {
+                mid: p for mid, p in self._registry.items() if p.config.worker_url
+            }
+            new_ids = set(remote_models) - announced
+            if new_ids:
+                logger.info("Worker monitor watching: %s", ", ".join(sorted(new_ids)))
+                announced |= new_ids
+            for mid in remote_models:
+                next_probe.setdefault(mid, 0.0)
+                fail_counts.setdefault(mid, 0)
+            for mid in list(next_probe):
+                if mid not in remote_models:
+                    next_probe.pop(mid, None)
+                    fail_counts.pop(mid, None)
+                    announced.discard(mid)
+
             for model_id, provider in remote_models.items():
                 if provider.is_loaded():
                     # Verify still healthy

@@ -61,13 +61,8 @@ async def lifespan(app: FastAPI):
 
     app.state.provider = provider
     app.state.config = config
-    # Serialises /reload against /generate and /synthesize. For most
-    # models this is a non-issue because their YAML has max_concurrent=1,
-    # so requests are already sequential. For models with
-    # max_concurrent>1 (e.g. kokoro TTS), a reload briefly serialises
-    # inflight work until the swap completes — acceptable tradeoff
-    # for a rare operator-driven operation vs. the complexity of a
-    # refcount-based drain protocol. See POST /reload docstring.
+    # Serialises /reload vs /generate+/synthesize. Brief sequentialisation
+    # during reload for max_concurrent>1 models — rare, acceptable.
     app.state.reload_lock = asyncio.Lock()
 
     logger.info("Worker ready: %s", config.id)
@@ -111,35 +106,12 @@ async def unload(request: Request):
 
 @app.post("/reload")
 async def reload_config(request: Request):
-    """Hot-swap the worker's model config without restarting the container.
+    """Hot-swap the provider from a new ModelConfig posted by the gateway.
 
-    Gateway calls this from `ProviderManager.reload_model()` when it
-    detects a YAML change on disk and the change touches the
-    worker-observable part of the config (`model.*`, `provider_class`,
-    `worker_url`). Pure metadata changes (display_name, description,
-    cache strategy) are handled gateway-side and never hit the worker.
-
-    Classification of changes:
-      * identical config              → no-op (action="noop")
-      * only metadata differs         → update state.config in place
-                                        so subsequent /generate sees
-                                        new defaults (action="metadata")
-      * `model.*` / provider_class /   → unload + build fresh provider
-         worker_url differs             + load, swap app.state.provider
-                                        atomically (action="full_reload")
-
-    Concurrency: takes `reload_lock` for the whole operation, which is
-    also held by `/generate` and `/synthesize`. Inflight requests
-    finish before the reload starts, and new requests wait until the
-    swap completes. For single-concurrent models (most diffusers
-    pipelines) this is a no-op; for concurrent TTS / text models the
-    reload briefly serialises requests — acceptable because reload is
-    operator-driven and rare.
-
-    Errors:
-      * 400 on malformed config or unknown provider_class
-      * 500 if the new provider's `load()` raises — in that case the
-        old provider is kept active so the worker stays serviceable.
+    Returns action=noop|metadata|full_reload. Holds reload_lock, which
+    also gates /generate and /synthesize, so inflight requests finish
+    before the swap. Errors: 400 on bad config / unknown provider_class,
+    500 if new provider's load() raises (old provider kept alive).
     """
     body = await request.json()
     try:
@@ -154,19 +126,47 @@ async def reload_config(request: Request):
         old_provider: BaseProvider = request.app.state.provider
         old_config: ModelConfig = request.app.state.config
 
-        if old_config.model_dump() == new_config.model_dump():
+        # Normalise both configs through JSON-mode model_dump so any
+        # pydantic/type-coercion differences (int vs float, list vs tuple
+        # for tags, omegaconf ListConfig vs list) collapse to the same
+        # representation on both sides. Raw `old_config.model != new.model`
+        # failed here because one side had values parsed from YAML via
+        # omegaconf while the other came off the wire through pydantic
+        # JSON — structurally equal, representationally different.
+        old_dump = old_config.model_dump(mode="json")
+        new_dump = new_config.model_dump(mode="json")
+
+        if old_dump == new_dump:
             return {"status": "ok", "action": "noop", "model": new_config.id}
 
-        # Decide between metadata-only and full reload. The worker only
-        # cares about things that affect inference: the model section
-        # (weights, defaults, quantization, device) and provider_class.
-        # Everything else — display_name, description, cache, queue
-        # priority/timeout — is gateway-side and doesn't need a swap here.
+        # Worker-observable fields only: `worker_url` is gateway-scope
+        # (worker doesn't know its own URL, gateway resolves it from env
+        # and ships it in the reload body) so comparing it would spurious-
+        # trigger a full reload on every metadata edit.
         full_reload_needed = (
-            old_config.provider_class != new_config.provider_class
-            or old_config.model != new_config.model
-            or old_config.worker_url != new_config.worker_url
+            old_dump.get("provider_class") != new_dump.get("provider_class")
+            or old_dump.get("model") != new_dump.get("model")
         )
+
+        if full_reload_needed:
+            triggers = []
+            if old_dump.get("provider_class") != new_dump.get("provider_class"):
+                triggers.append(
+                    f"provider_class: {old_dump.get('provider_class')!r} → "
+                    f"{new_dump.get('provider_class')!r}"
+                )
+            if old_dump.get("model") != new_dump.get("model"):
+                old_m = old_dump.get("model") or {}
+                new_m = new_dump.get("model") or {}
+                for k in sorted(set(old_m) | set(new_m)):
+                    if old_m.get(k) != new_m.get(k):
+                        triggers.append(
+                            f"model.{k}: {old_m.get(k)!r} → {new_m.get(k)!r}"
+                        )
+            logger.info(
+                "Full reload of %s triggered by: %s",
+                new_config.id, "; ".join(triggers) or "<unknown>",
+            )
 
         if not full_reload_needed:
             request.app.state.config = new_config
@@ -213,16 +213,7 @@ async def reload_config(request: Request):
 
 @app.post("/generate")
 async def generate(request: Request):
-    """Generate text or image depending on model category.
-
-    A ValueError raised anywhere in the provider stack is surfaced as
-    HTTP 400 with a structured JSON body the gateway can forward to
-    the client verbatim — instead of FastAPI's default 500 "Internal
-    Server Error" which hides the root cause.
-
-    Holds `reload_lock` for the duration of inference so a concurrent
-    /reload can't yank the provider out from under us.
-    """
+    """Generate text or image. ValueError → HTTP 400 with structured body."""
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         config = request.app.state.config
@@ -261,8 +252,7 @@ async def generate(request: Request):
 
 @app.post("/synthesize")
 async def synthesize(request: Request):
-    """Synthesize speech. Wrapped in `reload_lock` for the same reason
-    /generate is — see its docstring."""
+    """Synthesize speech."""
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         body = await request.json()
