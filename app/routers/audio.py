@@ -108,8 +108,41 @@ async def create_speech(
     )
 
 
-_TRANSCRIPTION_FORMATS = {"json", "text", "verbose_json"}
+_TRANSCRIPTION_FORMATS = {"json", "text", "verbose_json", "srt", "vtt"}
 _MAX_AUDIO_BYTES = 100 * 1024 * 1024  # 100MB — matches OpenAI's limit
+
+
+def _fmt_srt_time(seconds: float) -> str:
+    """00:00:03,500 — SRT wants a comma before milliseconds."""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int(round((seconds - int(seconds)) * 1000))
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def _fmt_vtt_time(seconds: float) -> str:
+    """00:00:03.500 — WebVTT wants a dot before milliseconds."""
+    return _fmt_srt_time(seconds).replace(",", ".")
+
+
+def _segments_to_srt(segments: list[dict]) -> str:
+    lines: list[str] = []
+    for i, seg in enumerate(segments, start=1):
+        lines.append(str(i))
+        lines.append(f"{_fmt_srt_time(seg['start'])} --> {_fmt_srt_time(seg['end'])}")
+        lines.append(seg.get("text", "").strip())
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _segments_to_vtt(segments: list[dict]) -> str:
+    lines: list[str] = ["WEBVTT", ""]
+    for seg in segments:
+        lines.append(f"{_fmt_vtt_time(seg['start'])} --> {_fmt_vtt_time(seg['end'])}")
+        lines.append(seg.get("text", "").strip())
+        lines.append("")
+    return "\n".join(lines)
 
 
 @router.post("/v1/audio/transcriptions")
@@ -133,6 +166,12 @@ async def create_transcription(
             status_code=400,
         )
 
+    # srt / vtt are subtitle formats — the provider returns verbose_json
+    # (which has the `segments` list with timestamps) and the gateway
+    # converts to the subtitle text. No provider-level srt/vtt logic
+    # needed; keeps concrete providers focused on transcription.
+    effective_format = "verbose_json" if response_format in {"srt", "vtt"} else response_format
+
     model_id = model or defaults.get("stt")
     if not model_id:
         return JSONResponse({"error": {"message": "No STT model specified"}}, status_code=400)
@@ -153,7 +192,7 @@ async def create_transcription(
     params = {
         "language": language,
         "prompt": prompt,
-        "response_format": response_format,
+        "response_format": effective_format,
         "temperature": temperature,
         "filename": file.filename or "audio.wav",
     }
@@ -231,6 +270,12 @@ def _transcription_response(
         return Response(content=result.get("text", ""), media_type="text/plain", headers=headers)
     if response_format == "verbose_json":
         return JSONResponse(result, headers=headers)
+    if response_format == "srt":
+        body = _segments_to_srt(result.get("segments") or [])
+        return Response(content=body, media_type="application/x-subrip", headers=headers)
+    if response_format == "vtt":
+        body = _segments_to_vtt(result.get("segments") or [])
+        return Response(content=body, media_type="text/vtt", headers=headers)
     # Default json — narrow to {text: ...} for strict OpenAI parity.
     return JSONResponse({"text": result.get("text", "")}, headers=headers)
 

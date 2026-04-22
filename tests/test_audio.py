@@ -99,10 +99,53 @@ async def test_stt_rejects_unknown_format(client):
     resp = await client.post(
         "/v1/audio/transcriptions",
         files={"file": ("a.wav", _FAKE_AUDIO, "audio/wav")},
-        data={"model": "test-stt", "response_format": "srt"},
+        data={"model": "test-stt", "response_format": "docx"},
     )
     assert resp.status_code == 400
     assert "response_format" in resp.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_stt_srt_format(client):
+    """response_format=srt renders segments as SubRip with comma-millisecond timestamps."""
+    resp = await client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("a.wav", _FAKE_AUDIO, "audio/wav")},
+        data={"model": "test-stt", "response_format": "srt"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/x-subrip")
+    # Fake provider returns a single segment: 0.0 → 1.0 "hello world"
+    body = resp.text
+    assert "1\n" in body
+    assert "00:00:00,000 --> 00:00:01,000" in body
+    assert "hello world" in body
+
+
+@pytest.mark.asyncio
+async def test_stt_vtt_format(client):
+    """response_format=vtt renders WEBVTT with dot-millisecond timestamps."""
+    resp = await client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("a.wav", _FAKE_AUDIO, "audio/wav")},
+        data={"model": "test-stt", "response_format": "vtt"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/vtt")
+    body = resp.text
+    assert body.startswith("WEBVTT\n")
+    assert "00:00:00.000 --> 00:00:01.000" in body
+    assert "hello world" in body
+
+
+def test_srt_vtt_time_formatting():
+    """Unit test for the time-conversion helpers on boundary values."""
+    from app.routers.audio import _fmt_srt_time, _fmt_vtt_time
+    # Zero, sub-second, round seconds, cross-hour
+    assert _fmt_srt_time(0.0) == "00:00:00,000"
+    assert _fmt_srt_time(1.5) == "00:00:01,500"
+    assert _fmt_srt_time(3725.123) == "01:02:05,123"
+    assert _fmt_vtt_time(3725.123) == "01:02:05.123"
 
 
 @pytest.mark.asyncio
