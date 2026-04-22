@@ -109,6 +109,7 @@ services:
       - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
       - WORKER_URL_WHISPER_BASE=http://worker-whisper-base:8001
+      - WORKER_URL_REALESRGAN_X4=http://worker-realesrgan-x4:8001
     volumes:
       - ../config:/app/config:ro
       - cache_data:/app/cache
@@ -403,6 +404,23 @@ services:
     env_file: *env-file
     environment: *env
     healthcheck: *hc-tts
+
+  # ─── Upscale workers (super-resolution) ─────────────────────────────
+  worker-realesrgan-x4:
+    <<: *gpu
+    profiles: ["upscale", "realesrgan-x4"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/realesrgan-x4/requirements.txt
+    volumes:
+      - ../config/models/realesrgan-x4.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
 
 volumes:
   cache_data:

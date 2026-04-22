@@ -69,6 +69,8 @@ target "worker" {
       { id = "openaudio-s1-mini", base = GPU_BASE_IMAGE, apt = "git",             post = "" },
       # ─── STT ─────────────────────────────────────────────────────────
       { id = "whisper-base",      base = CPU_BASE_IMAGE, apt = "",                post = "" },
+      # ─── Upscale (super-resolution) ──────────────────────────────────
+      { id = "realesrgan-x4",     base = GPU_BASE_IMAGE, apt = "",                post = "" },
     ]
   }
 }
