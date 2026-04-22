@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from app.config import load_model_configs, load_server_config
 from app.middleware import AccessLogMiddleware, ApiKeyMiddleware, RateLimitMiddleware
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
-from app.routers import audio, cache, chat, health, images, models
+from app.routers import admin, audio, cache, chat, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.config_watcher import ConfigWatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
@@ -240,6 +240,7 @@ def create_app() -> FastAPI:
     app.include_router(models.router)
     app.include_router(cache.router)
     app.include_router(health.router)
+    app.include_router(admin.router)
 
     return app
 

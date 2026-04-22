@@ -192,7 +192,7 @@ async def client(services):
     """Async test client for the FastAPI app (without lifespan, deps already set)."""
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
-    from app.routers import chat, images, audio, models, cache, health
+    from app.routers import admin, chat, images, audio, models, cache, health
     from app.services.provider_manager import ModelNotFoundError
     from app.services.gpu_scheduler import RequestTimeoutError, QueueFullError
 
@@ -229,6 +229,7 @@ async def client(services):
     app.include_router(models.router)
     app.include_router(cache.router)
     app.include_router(health.router)
+    app.include_router(admin.router)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

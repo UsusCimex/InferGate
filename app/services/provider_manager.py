@@ -571,6 +571,54 @@ class ProviderManager:
         observability; eviction decisions always re-read under the lock."""
         return self._active_counts.get(model_id, 0)
 
+    # ── Operator introspection ────────────────────────────────────────
+
+    def status_snapshot(self) -> dict[str, Any]:
+        """Smart-distribution state for operator dashboards."""
+        loaded = [
+            {
+                "id": model_id,
+                "category": self._registry[model_id].config.category,
+                "vram_mb": self._registry[model_id].vram_mb,
+                "pinned": model_id in self._pinned,
+                "active_requests": self._active_counts.get(model_id, 0),
+            }
+            for model_id in self._loaded_order
+        ]
+        return {
+            "loaded": loaded,
+            "total_declared_vram_mb": self._loaded_vram_mb(),
+            "max_loaded_models": self._max_loaded,
+            "max_vram_budget_mb": self._max_vram_budget_mb,
+            "vram_headroom_mb": self._vram_headroom_mb,
+            "effective_budget_mb": self._effective_budget(),
+            "pinned_models": sorted(self._pinned),
+            "category_reservations": dict(self._category_reservations),
+        }
+
+    def preview_load(self, model_id: str) -> dict[str, Any]:
+        """Dry-run the planner — report what ensure_loaded(model_id)
+        would evict without mutating state. Raises ModelNotFoundError."""
+        provider = self.get(model_id)
+        incoming_mb = provider.vram_mb
+        base: dict[str, Any] = {
+            "model_id": model_id,
+            "incoming_vram_mb": incoming_mb,
+            "already_loaded": provider.is_loaded(),
+        }
+        if provider.is_loaded() or not self._is_gpu_model(model_id):
+            return {**base, "feasible": True, "plan": [], "freed_mb": 0}
+        plan = self._plan_eviction(incoming_mb)
+        if plan is None:
+            return {
+                **base,
+                "feasible": False,
+                "plan": None,
+                "reason": "no combination of evictions can free enough VRAM",
+            }
+        freed = sum(self._registry[m].vram_mb for m in plan)
+        return {**base, "feasible": True, "plan": plan, "freed_mb": freed}
+
     def _touch_lru(self, model_id: str) -> None:
         """Move model to end of LRU (most recently used). O(1) with OrderedDict."""
         if model_id in self._loaded_order:

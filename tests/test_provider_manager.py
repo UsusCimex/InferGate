@@ -382,6 +382,130 @@ async def test_scheduler_update_concurrency_registers_unknown(services):
     assert scheduler._queues["brand-new"].max_concurrent == 3
 
 
+# ── Operator introspection ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_status_snapshot_reports_loaded_state(services):
+    """Snapshot shape: loaded list carries per-model metadata + global
+    caps. Operator UI keys off this payload."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 5000
+    manager._vram_headroom_mb = 500
+    manager._category_reservations = {"text": 1}
+    manager._pinned.add("test-text")
+    await manager.ensure_loaded("test-text")
+    await manager.ensure_loaded("test-image")
+
+    snap = manager.status_snapshot()
+    ids = [m["id"] for m in snap["loaded"]]
+    assert ids == ["test-text", "test-image"]
+    text_entry = next(m for m in snap["loaded"] if m["id"] == "test-text")
+    assert text_entry["category"] == "text"
+    assert text_entry["vram_mb"] == 1000
+    assert text_entry["pinned"] is True
+    assert text_entry["active_requests"] == 0
+    assert snap["total_declared_vram_mb"] == 2000
+    assert snap["max_vram_budget_mb"] == 5000
+    assert snap["vram_headroom_mb"] == 500
+    assert snap["effective_budget_mb"] == 4500
+    assert snap["pinned_models"] == ["test-text"]
+    assert snap["category_reservations"] == {"text": 1}
+
+
+@pytest.mark.asyncio
+async def test_status_snapshot_active_count_propagates(services):
+    manager = services["manager"]
+    await manager.ensure_loaded("test-image")
+    async with manager.active_request("test-image"):
+        snap = manager.status_snapshot()
+        entry = next(m for m in snap["loaded"] if m["id"] == "test-image")
+        assert entry["active_requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_preview_load_already_loaded_is_noop(services):
+    manager = services["manager"]
+    await manager.ensure_loaded("test-image")
+    preview = manager.preview_load("test-image")
+    assert preview["feasible"] is True
+    assert preview["already_loaded"] is True
+    assert preview["plan"] == []
+    assert preview["freed_mb"] == 0
+
+
+@pytest.mark.asyncio
+async def test_preview_load_reports_plan_without_mutating(services):
+    """Dry-run: plan is returned, but the model is NOT loaded and no
+    eviction happens."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 2500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+
+    preview = manager.preview_load("test-tts")
+    assert preview["feasible"] is True
+    assert preview["already_loaded"] is False
+    assert preview["plan"] == ["test-image"]
+    assert preview["freed_mb"] == 1000
+    # State unchanged: test-tts not loaded, test-image still loaded.
+    assert not manager.get("test-tts").is_loaded()
+    assert manager.get("test-image").is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_preview_load_reports_infeasible(services):
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 1500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    manager._pinned.add("test-image")
+
+    preview = manager.preview_load("test-text")
+    assert preview["feasible"] is False
+    assert preview["plan"] is None
+    assert "reason" in preview
+
+
+@pytest.mark.asyncio
+async def test_preview_load_unknown_model_raises(services):
+    from app.services.provider_manager import ModelNotFoundError
+    manager = services["manager"]
+    with pytest.raises(ModelNotFoundError):
+        manager.preview_load("does-not-exist")
+
+
+@pytest.mark.asyncio
+async def test_admin_memory_status_endpoint(client, services):
+    manager = services["manager"]
+    await manager.ensure_loaded("test-image")
+    resp = await client.get("/v1/admin/memory/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert any(m["id"] == "test-image" for m in body["loaded"])
+    assert "category_reservations" in body
+
+
+@pytest.mark.asyncio
+async def test_admin_preview_load_endpoint(client, services):
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 1500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+
+    resp = await client.get("/v1/admin/memory/preview-load/test-text")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["feasible"] is True
+    assert body["plan"] == ["test-image"]
+
+
+@pytest.mark.asyncio
+async def test_admin_preview_load_unknown_model_404(client):
+    resp = await client.get("/v1/admin/memory/preview-load/ghost")
+    assert resp.status_code == 404
+
+
 # ── Remote-provider reload path ──────────────────────────────────────
 
 class _FakeRemoteProvider:
