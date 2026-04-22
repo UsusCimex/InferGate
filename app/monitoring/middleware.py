@@ -49,6 +49,8 @@ _STATIC_ROUTES = frozenset({
     "/v1/audio/speech/voice-clone",
     "/v1/audio/transcriptions",
     "/v1/models",
+    "/cache",
+    "/cache/stats",
     "/health",
     "/metrics",
     "/metrics/prometheus",
@@ -70,8 +72,11 @@ def _normalize_path(path: str) -> str:
         return "/cache/stats/{model_id}"
     if path.startswith("/cache/entry/"):
         return "/cache/entry/{key}"
-    if path.startswith("/cache"):
-        return "/cache"
+    # /cache/<model_id> (per-model delete) stays distinct from /cache
+    # (delete-all) — otherwise operators can't tell a "wipe everything"
+    # call apart from a per-model purge in request-rate panels.
+    if path.startswith("/cache/"):
+        return "/cache/{model_id}"
     return path
 
 

@@ -90,7 +90,10 @@ def test_path_normalization():
     assert _normalize_path("/v1/models/qwen3.5-4b/unload") == "/v1/models/{id}/unload"
     # Plain /v1/models/{id} still collapses
     assert _normalize_path("/v1/models/qwen3.5-4b") == "/v1/models/{id}"
-    # Cache routes unchanged
+    # Cache routes: delete-all, per-model delete, stats all distinct
+    assert _normalize_path("/cache") == "/cache"
+    assert _normalize_path("/cache/stats") == "/cache/stats"
     assert _normalize_path("/cache/stats/some-model") == "/cache/stats/{model_id}"
     assert _normalize_path("/cache/entry/abc123") == "/cache/entry/{key}"
-    assert _normalize_path("/cache") == "/cache"
+    assert _normalize_path("/cache/kokoro-82m") == "/cache/{model_id}"  # per-model purge
+    assert _normalize_path("/cache/sd35-medium") == "/cache/{model_id}"
