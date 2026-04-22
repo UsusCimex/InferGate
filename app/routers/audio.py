@@ -83,9 +83,10 @@ async def create_speech(
     priority = config.queue.priority
 
     inference_start = time.monotonic()
-    audio_bytes = await scheduler.submit(
-        model_id, priority, provider.synthesize(body.input, **params), timeout
-    )
+    async with manager.active_request(model_id):
+        audio_bytes = await scheduler.submit(
+            model_id, priority, provider.synthesize(body.input, **params), timeout
+        )
     if is_prometheus_available():
         INFERENCE_DURATION.labels(model_id=model_id, category="tts").observe(
             time.monotonic() - inference_start
@@ -226,9 +227,10 @@ async def create_transcription(
     priority = config.queue.priority
 
     inference_start = time.monotonic()
-    result = await scheduler.submit(
-        model_id, priority, provider.transcribe(audio_bytes, **params), timeout
-    )
+    async with manager.active_request(model_id):
+        result = await scheduler.submit(
+            model_id, priority, provider.transcribe(audio_bytes, **params), timeout
+        )
     if is_prometheus_available():
         INFERENCE_DURATION.labels(model_id=model_id, category="stt").observe(
             time.monotonic() - inference_start
@@ -367,9 +369,10 @@ async def create_speech_voice_clone(
     priority = config.queue.priority
 
     inference_start = time.monotonic()
-    audio_bytes = await scheduler.submit(
-        model_id, priority, provider.synthesize(input, **params), timeout
-    )
+    async with manager.active_request(model_id):
+        audio_bytes = await scheduler.submit(
+            model_id, priority, provider.synthesize(input, **params), timeout
+        )
     if is_prometheus_available():
         INFERENCE_DURATION.labels(model_id=model_id, category="tts").observe(
             time.monotonic() - inference_start

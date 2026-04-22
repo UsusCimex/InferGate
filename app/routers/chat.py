@@ -103,9 +103,10 @@ async def chat_completions(
     messages = [m.model_dump() for m in body.messages]
 
     inference_start = time.monotonic()
-    result = await scheduler.submit(
-        model_id, priority, provider.generate(messages, **params), timeout
-    )
+    async with manager.active_request(model_id):
+        result = await scheduler.submit(
+            model_id, priority, provider.generate(messages, **params), timeout
+        )
     if is_prometheus_available():
         INFERENCE_DURATION.labels(model_id=model_id, category="text").observe(
             time.monotonic() - inference_start

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -67,6 +68,12 @@ class ProviderManager:
         self._state_lock = asyncio.Lock()  # protects _loaded_order and state changes
         self._model_locks: dict[str, asyncio.Lock] = {}  # per-model load serialization
         self._monitor_task: asyncio.Task | None = None
+        # Per-model counter of requests currently inside the scheduler's
+        # slot (between acquire and release). LRU eviction + watchdog skip
+        # models with active > 0 so we never yank a provider out from under
+        # an in-flight generation. Aligned with LocalAI 2026 behaviour:
+        # "skip evicting models that have active API calls."
+        self._active_counts: dict[str, int] = {}
 
     def validate_config(self) -> None:
         """Validate pinned models fit within the configured capacities.
@@ -480,11 +487,46 @@ class ProviderManager:
             del self._loaded_order[victim_id]
 
     def _find_lru_victim(self) -> str | None:
-        """Find the least recently used non-pinned model."""
+        """Find the least recently used non-pinned model with zero
+        in-flight requests. Skipping the busy ones prevents eviction
+        during an ongoing generate/synthesize/transcribe call — the
+        provider's unload() would yank weights out from under an
+        active forward pass and crash the worker."""
         for model_id in self._loaded_order:
-            if model_id not in self._pinned:
-                return model_id
+            if model_id in self._pinned:
+                continue
+            if self._active_counts.get(model_id, 0) > 0:
+                continue
+            return model_id
         return None
+
+    @contextlib.asynccontextmanager
+    async def active_request(self, model_id: str):
+        """Context manager that increments the active-request counter
+        for `model_id` on enter and decrements on exit. Routers wrap
+        `scheduler.submit(...)` with this so LRU eviction won't pick
+        a model while it's serving a request.
+
+        Count is updated under `_state_lock` so the watchdog + LRU
+        observe a consistent view.
+        """
+        async with self._state_lock:
+            self._active_counts[model_id] = self._active_counts.get(model_id, 0) + 1
+        try:
+            yield
+        finally:
+            async with self._state_lock:
+                current = self._active_counts.get(model_id, 0)
+                if current <= 1:
+                    self._active_counts.pop(model_id, None)
+                else:
+                    self._active_counts[model_id] = current - 1
+
+    def active_request_count(self, model_id: str) -> int:
+        """Number of currently in-flight requests for this model. Safe
+        to read without the state lock — dirty-read is fine for
+        observability; eviction decisions always re-read under the lock."""
+        return self._active_counts.get(model_id, 0)
 
     def _touch_lru(self, model_id: str) -> None:
         """Move model to end of LRU (most recently used). O(1) with OrderedDict."""

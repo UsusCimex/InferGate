@@ -299,6 +299,62 @@ class _MinimalProvider:
 
 
 @pytest.mark.asyncio
+async def test_active_request_counter_increments_and_decrements(services):
+    """Context manager pumps the counter exactly once."""
+    manager = services["manager"]
+    assert manager.active_request_count("test-image") == 0
+    async with manager.active_request("test-image"):
+        assert manager.active_request_count("test-image") == 1
+        async with manager.active_request("test-image"):
+            assert manager.active_request_count("test-image") == 2
+        assert manager.active_request_count("test-image") == 1
+    assert manager.active_request_count("test-image") == 0
+
+
+@pytest.mark.asyncio
+async def test_lru_skips_model_with_active_request(services):
+    """Core fix: a model with an in-flight request can't be evicted,
+    even if it's the LRU candidate."""
+    manager = services["manager"]
+    manager._max_loaded = 2  # count cap forces eviction on 3rd load
+
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    # Simulate an in-flight request on "test-image" (the LRU).
+    async with manager.active_request("test-image"):
+        # Loading test-tts would evict LRU non-active = test-text
+        # (skipping test-image because it's busy).
+        await manager.ensure_loaded("test-tts")
+        assert manager.get("test-image").is_loaded()  # busy — NOT evicted
+        assert not manager.get("test-text").is_loaded()  # LRU non-busy → evicted
+        assert manager.get("test-tts").is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_lru_falls_back_to_pinned_when_all_busy(services):
+    """All non-pinned loaded models are active → no victim, warning path.
+    Matches the all-pinned branch — returns None, caller decides."""
+    manager = services["manager"]
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+
+    async with manager.active_request("test-image"), manager.active_request("test-text"):
+        victim = manager._find_lru_victim()
+        assert victim is None
+
+
+@pytest.mark.asyncio
+async def test_active_counter_cleans_up_on_exception(services):
+    """Exception inside the context decrements counter correctly."""
+    manager = services["manager"]
+    with pytest.raises(RuntimeError, match="boom"):
+        async with manager.active_request("test-image"):
+            assert manager.active_request_count("test-image") == 1
+            raise RuntimeError("boom")
+    assert manager.active_request_count("test-image") == 0
+
+
+@pytest.mark.asyncio
 async def test_provider_get_stats_default(services):
     """BaseProvider.get_stats returns a declared-only snapshot when the
     concrete provider doesn't override (covers every local provider:

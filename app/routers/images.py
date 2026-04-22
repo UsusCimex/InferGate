@@ -106,9 +106,10 @@ async def generate_images(
     data_list = []
     for _ in range(body.n):
         inference_start = time.monotonic()
-        png_bytes = await scheduler.submit(
-            model_id, priority, provider.generate(body.prompt, **params), timeout
-        )
+        async with manager.active_request(model_id):
+            png_bytes = await scheduler.submit(
+                model_id, priority, provider.generate(body.prompt, **params), timeout
+            )
         if is_prometheus_available():
             INFERENCE_DURATION.labels(model_id=model_id, category="image").observe(
                 time.monotonic() - inference_start
@@ -266,9 +267,10 @@ async def upscale_image(
     priority = config.queue.priority
 
     inference_start = time.monotonic()
-    png_bytes = await scheduler.submit(
-        model_id, priority, provider.upscale(image_bytes), timeout
-    )
+    async with manager.active_request(model_id):
+        png_bytes = await scheduler.submit(
+            model_id, priority, provider.upscale(image_bytes), timeout
+        )
     if is_prometheus_available():
         INFERENCE_DURATION.labels(model_id=model_id, category="upscale").observe(
             time.monotonic() - inference_start
