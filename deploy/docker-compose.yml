@@ -111,6 +111,7 @@ services:
       - WORKER_URL_WHISPER_BASE=http://worker-whisper-base:8001
       - WORKER_URL_REALESRGAN_X4=http://worker-realesrgan-x4:8001
       - WORKER_URL_XTTS_V2=http://worker-xtts-v2:8001
+    env_file: *env-file
     volumes:
       - ../config:/app/config:ro
       - cache_data:/app/cache
