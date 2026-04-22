@@ -222,6 +222,82 @@ async def test_upscale_rejects_unknown_format(client):
     assert "response_format" in resp.json()["error"]["message"]
 
 
+# ── /v1/images/edits (OpenAI-style multipart) ──────────────────────
+
+@pytest.mark.asyncio
+async def test_edits_multipart_with_image(client):
+    """Multipart image + prompt → 200, same envelope as /v1/images/generations."""
+    png = base64.b64decode(_png_b64())
+    resp = await client.post(
+        "/v1/images/edits",
+        files={"image": ("in.png", png, "image/png")},
+        data={"prompt": "stylise this", "model": "test-image"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "data" in body and body["data"][0]["b64_json"]
+
+
+@pytest.mark.asyncio
+async def test_edits_multipart_with_mask(client):
+    """Multipart image + mask → inpaint path."""
+    png = base64.b64decode(_png_b64())
+    mask_bytes = base64.b64decode(_mask_b64())
+    resp = await client.post(
+        "/v1/images/edits",
+        files={
+            "image": ("in.png", png, "image/png"),
+            "mask":  ("mask.png", mask_bytes, "image/png"),
+        },
+        data={"prompt": "put a cat here", "model": "test-image", "denoising_strength": "0.8"},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_edits_uses_default_model(client):
+    """Omitted model falls back to defaults['image']."""
+    png = base64.b64decode(_png_b64())
+    resp = await client.post(
+        "/v1/images/edits",
+        files={"image": ("in.png", png, "image/png")},
+        data={"prompt": "x"},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_edits_rejects_empty_image(client):
+    resp = await client.post(
+        "/v1/images/edits",
+        files={"image": ("in.png", b"", "image/png")},
+        data={"prompt": "x", "model": "test-image"},
+    )
+    assert resp.status_code == 400
+    assert "Empty" in resp.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_edits_rejects_missing_image_field(client):
+    resp = await client.post(
+        "/v1/images/edits",
+        data={"prompt": "x", "model": "test-image"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_edits_denoising_strength_bounds(client):
+    """FastAPI Form ge/le validation → 422 for out-of-range."""
+    png = base64.b64decode(_png_b64())
+    resp = await client.post(
+        "/v1/images/edits",
+        files={"image": ("in.png", png, "image/png")},
+        data={"prompt": "x", "model": "test-image", "denoising_strength": "1.5"},
+    )
+    assert resp.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_upscale_cache_hit_on_same_image(client):
     files = {"file": ("in.png", _PNG_BYTES, "image/png")}

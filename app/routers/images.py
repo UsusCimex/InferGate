@@ -133,6 +133,73 @@ async def generate_images(
     )
 
 
+@router.post("/v1/images/edits")
+async def edit_images(
+    request: Request,
+    image: UploadFile = File(...),
+    prompt: str = Form(..., min_length=1, max_length=10000),
+    mask: UploadFile | None = File(None),
+    model: str | None = Form(None),
+    n: int = Form(1, ge=1, le=10),
+    size: str = Form("1024x1024"),
+    response_format: str = Form("b64_json"),
+    seed: int | None = Form(None),
+    negative_prompt: str | None = Form(None),
+    num_inference_steps: int | None = Form(None, ge=1, le=150),
+    guidance_scale: float | None = Form(None, ge=0.0, le=30.0),
+    scheduler_name: str | None = Form(None, alias="scheduler"),
+    denoising_strength: float | None = Form(None, ge=0.0, le=1.0),
+    manager=Depends(get_provider_manager),
+    scheduler_dep=Depends(get_gpu_scheduler),
+    cache=Depends(get_cache_manager),
+    defaults=Depends(get_defaults),
+):
+    """OpenAI-style multipart image edit / inpaint.
+
+    Transport surface parity with OpenAI's /v1/images/edits (file +
+    optional mask + prompt in multipart form-data). Delegates to the
+    same img2img / inpaint provider path that /v1/images/generations
+    uses when `image` is provided as base64 in JSON — the only
+    difference is how bytes arrive on the wire.
+    """
+    image_bytes = await image.read()
+    if not image_bytes:
+        return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
+
+    mask_bytes: bytes | None = None
+    if mask is not None and mask.filename:
+        mask_bytes = await mask.read()
+        if not mask_bytes:
+            mask_bytes = None  # field present but empty → treat as absent
+
+    try:
+        body = ImageGenerationRequest(
+            model=model,
+            prompt=prompt,
+            n=n,
+            size=size,
+            response_format=response_format,
+            seed=seed,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            scheduler=scheduler_name,
+            denoising_strength=denoising_strength,
+            image=base64.b64encode(image_bytes).decode(),
+            mask=base64.b64encode(mask_bytes).decode() if mask_bytes else None,
+        )
+    except ValueError as e:
+        return JSONResponse(
+            {"error": {"message": f"invalid request: {e}", "type": "invalid_request"}},
+            status_code=422,
+        )
+
+    return await generate_images(
+        body=body, request=request,
+        manager=manager, scheduler=scheduler_dep, cache=cache, defaults=defaults,
+    )
+
+
 @router.post("/v1/images/upscale")
 async def upscale_image(
     request: Request,
