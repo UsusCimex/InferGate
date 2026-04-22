@@ -502,6 +502,37 @@ docker compose -f deploy/docker-compose.yml up -d
 
 Соглашение имени: `<MODEL_ID_UPPER>_<FIELD>` (дефисы и точки в ID → `_`). Например `qwen-image` → `QWEN_IMAGE_*`, `qwen3.5-4b` → `QWEN3_5_4B_*`.
 
+### Memory safety — три рубежа защиты
+
+Runaway-модель не должна взорвать хост. Защита многослойная, каждый слой параметризуется:
+
+**Слой 1: docker container limits** (`deploy/.env`)
+Linux OOMKiller убивает контейнер прежде, чем хост уйдёт в swap-spiral.
+```
+GPU_WORKER_MEM_LIMIT=16g    # RAM-cap на GPU-воркер
+CPU_WORKER_MEM_LIMIT=6g     # RAM-cap на CPU-воркер (kokoro, whisper)
+GATEWAY_MEM_LIMIT=2g        # RAM-cap на gateway
+GPU_WORKER_SHM_SIZE=2g      # /dev/shm для torch multiprocessing
+PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.8,max_split_size_mb:512
+```
+
+**Слой 2: byte-budget LRU** (`config/server.yaml`, env-override)
+`ProviderManager` вытесняет LRU когда сумма объявленных `vram_mb` загруженных моделей + новая модель > бюджет. Если вытеснять нечего (всё pinned), возвращается **HTTP 503 `insufficient_resources`** вместо CUDA OOM.
+```
+GPU_MAX_VRAM_BUDGET_MB=10000   # 12GB → 10000, 24GB → 22000, 48GB → 44000
+GPU_VRAM_HEADROOM_MB=2000      # Резерв под activation spikes
+```
+
+**Слой 3: MemoryWatchdog** (фоновая задача)
+Опрашивает `GET /stats` на каждом загруженном воркере (`torch.cuda.mem_get_info` + `psutil.virtual_memory`). При превышении порога — аварийно вытесняет LRU. Ловит леаки и подзанижения `vram_mb` в YAML'ах, которые статический бюджет не видит.
+```
+GPU_WATCHDOG_INTERVAL_SECONDS=15   # 0 = off (default)
+GPU_WATCHDOG_VRAM_THRESHOLD=0.92   # evict LRU когда live VRAM ≥ 92%
+GPU_WATCHDOG_RAM_THRESHOLD=0.90    # warn (без eviction) для host RAM
+```
+
+Метрики живого VRAM/RAM доступны на `GET /v1/models` (per-model) и через воркерский `GET /stats` (live). Prometheus дашборд рендерит их в панели «GPU VRAM used».
+
 ### Host-specific overrides — compose override-файлы
 
 Для вещей, которые не выразить через env (GPU count, volumes, deploy-секции), — override-файл поверх базового compose:
@@ -526,8 +557,18 @@ auth:
   api_keys: []                     # ["key1", "key2"]
 
 gpu:
-  max_loaded_models: 3             # Макс моделей в GPU одновременно
+  max_loaded_models: 3             # Backstop count-based LRU
   pinned_models: []                # Модели, которые не выгружаются
+  # Primary: byte-budget LRU. When sum(declared vram_mb of loaded models)
+  # would exceed this, evict LRU until it fits. 0 = disabled.
+  # 12GB → 10000, 24GB → 22000, 48GB → 44000.
+  max_vram_budget_mb: 0
+  vram_headroom_mb: 0              # Safety headroom for activation spikes
+  # MemoryWatchdog — live VRAM/RAM monitor; emergency-evict LRU at threshold.
+  # 0 = disabled; 10-30s recommended in production.
+  watchdog_interval_seconds: 0
+  watchdog_vram_threshold: 0.92
+  watchdog_ram_threshold: 0.90
 
 cache:
   enabled: true
