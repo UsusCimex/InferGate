@@ -181,7 +181,19 @@ class RemoteTtsProvider(TtsProvider):
         return await _RemoteMixin._remote_reload(self, new_config)
 
     async def synthesize(self, text: str, **params: Any) -> bytes:
-        resp = await self._client.post("/synthesize", json={"text": text, **params})
+        # Voice-cloning branch: reference_audio bytes → multipart to
+        # /voice-clone; everything else uses the JSON /synthesize path.
+        ref = params.pop("reference_audio", None)
+        if ref is not None:
+            filename = str(params.pop("reference_filename", "ref.wav"))
+            form: dict[str, str] = {"input": text}
+            for k, v in params.items():
+                if v is not None:
+                    form[k] = str(v)
+            files = {"reference_audio": (filename, ref, "application/octet-stream")}
+            resp = await self._client.post("/voice-clone", files=files, data=form)
+        else:
+            resp = await self._client.post("/synthesize", json={"text": text, **params})
         resp.raise_for_status()
         return resp.content
 

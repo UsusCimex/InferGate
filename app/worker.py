@@ -268,6 +268,37 @@ async def synthesize(request: Request):
             )
 
 
+@app.post("/voice-clone")
+async def voice_clone(
+    request: Request,
+    reference_audio: UploadFile = File(...),
+    input: str = Form(...),
+    reference_text: str | None = Form(None),
+    speed: float = Form(1.0),
+    output_format: str = Form("mp3"),
+):
+    """Voice-cloning TTS — multipart because reference is a raw clip."""
+    async with request.app.state.reload_lock:
+        provider: BaseProvider = request.app.state.provider
+        ref = await reference_audio.read()
+        params: dict = {
+            "speed": speed,
+            "output_format": output_format,
+            "reference_audio": ref,
+            "reference_filename": reference_audio.filename or "ref.wav",
+        }
+        if reference_text is not None:
+            params["reference_text"] = reference_text
+        try:
+            audio_bytes = await provider.synthesize(input, **params)
+            return Response(content=audio_bytes, media_type="application/octet-stream")
+        except ValueError as e:
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "invalid_request"}},
+                status_code=400,
+            )
+
+
 @app.post("/transcribe")
 async def transcribe(
     request: Request,

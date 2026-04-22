@@ -129,3 +129,73 @@ async def test_stt_cache_hit_on_same_audio(client):
     assert r2.status_code == 200
     assert r2.headers["x-infergate-cache"] == "HIT"
     assert r2.json() == {"text": "hello world"}
+
+
+# ── Voice cloning ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_basic(client):
+    """Multipart request with reference_audio returns synthesised audio."""
+    resp = await client.post(
+        "/v1/audio/speech/voice-clone",
+        files={"reference_audio": ("ref.wav", _FAKE_AUDIO, "audio/wav")},
+        data={"input": "hello world", "model": "test-tts"},
+    )
+    assert resp.status_code == 200
+    # Fake provider returns a RIFF-prefixed blob regardless of params.
+    assert resp.content.startswith(b"RIFF")
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_uses_default_model(client):
+    resp = await client.post(
+        "/v1/audio/speech/voice-clone",
+        files={"reference_audio": ("ref.wav", _FAKE_AUDIO, "audio/wav")},
+        data={"input": "hi"},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_rejects_empty_reference(client):
+    resp = await client.post(
+        "/v1/audio/speech/voice-clone",
+        files={"reference_audio": ("ref.wav", b"", "audio/wav")},
+        data={"input": "hi", "model": "test-tts"},
+    )
+    assert resp.status_code == 400
+    assert "Empty" in resp.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_cache_hit_on_identical_request(client):
+    """Same input + same reference bytes + same speed → cache HIT."""
+    files = {"reference_audio": ("ref.wav", _FAKE_AUDIO, "audio/wav")}
+    data = {"input": "same text", "model": "test-tts", "speed": "1.0"}
+    r1 = await client.post("/v1/audio/speech/voice-clone", files=files, data=data)
+    assert r1.status_code == 200
+    assert r1.headers["x-infergate-cache"] == "MISS"
+
+    files = {"reference_audio": ("ref.wav", _FAKE_AUDIO, "audio/wav")}
+    r2 = await client.post("/v1/audio/speech/voice-clone", files=files, data=data)
+    assert r2.status_code == 200
+    assert r2.headers["x-infergate-cache"] == "HIT"
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_different_references_bust_cache(client):
+    """Identical text + same model but different reference audio → different cache keys."""
+    data = {"input": "same text", "model": "test-tts"}
+    r1 = await client.post(
+        "/v1/audio/speech/voice-clone",
+        files={"reference_audio": ("a.wav", b"AAAA" + _FAKE_AUDIO, "audio/wav")},
+        data=data,
+    )
+    assert r1.headers["x-infergate-cache"] == "MISS"
+    r2 = await client.post(
+        "/v1/audio/speech/voice-clone",
+        files={"reference_audio": ("b.wav", b"BBBB" + _FAKE_AUDIO, "audio/wav")},
+        data=data,
+    )
+    assert r2.headers["x-infergate-cache"] == "MISS"  # different voice → different key
