@@ -61,7 +61,8 @@ Defaults в `config/models/*.yaml` заточены под 12GB GPU (nf4-ква�
 | `image` | sd35-medium (enabled) |
 | `tts` | kokoro-82m (enabled) |
 | `stt` | whisper-base (enabled) |
-| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m`, `whisper-base` | Индивидуальные |
+| `upscale` | realesrgan-x4 (enabled) |
+| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m`, `whisper-base`, `realesrgan-x4` | Индивидуальные |
 | `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `openaudio-s1-mini` | Disabled по умолчанию, запуск через индивидуальный profile |
 
 ### Локальная разработка
@@ -141,6 +142,11 @@ curl http://localhost:8000/v1/audio/speech \
 # Распознавание речи (multipart — как OpenAI /v1/audio/transcriptions)
 curl http://localhost:8000/v1/audio/transcriptions \
   -F "file=@speech.mp3" -F "model=whisper-base" -F "language=ru"
+
+# Upscale изображения 4×
+curl http://localhost:8000/v1/images/upscale \
+  -F "file=@small.png" -F "model=realesrgan-x4" -F "response_format=png" \
+  -o upscaled.png
 ```
 
 ### Продвинутые примеры генерации изображений
@@ -285,6 +291,7 @@ curl http://localhost:8000/v1/images/generations \
 | `POST` | `/v1/images/generations` | Генерация изображений |
 | `POST` | `/v1/audio/speech` | Синтез речи |
 | `POST` | `/v1/audio/transcriptions` | Распознавание речи (multipart) |
+| `POST` | `/v1/images/upscale` | Super-resolution изображений (multipart) |
 | `GET` | `/v1/models` | Список всех моделей |
 | `POST` | `/v1/models/{id}/load` | Загрузить модель в GPU |
 | `POST` | `/v1/models/{id}/unload` | Выгрузить модель |
@@ -754,7 +761,7 @@ pytest --cov=app --cov-branch
 ### Мульти-стадийные и специализированные пайплайны
 
 - [ ] **SDXL Refiner** — base model → refiner model ensemble, передача latents между ними (`SDXLRefinerImageProvider`). Нужно держать два SDXL-образа одновременно в VRAM (~14 GB суммарно)
-- [ ] **Upscaler как отдельная категория** — Real-ESRGAN / SwinIR / 4x-UltraSharp через отдельный `ImageUpscaleProvider`, новый эндпоинт `/v1/images/upscale` с `image`-input
+- [x] **Upscaler как отдельная категория** — новая `ImageUpscaleProvider` ABC + `POST /v1/images/upscale` (multipart). `SpandrelUpscaleProvider` — универсальный wrapper на `spandrel` (поддерживает ESRGAN, Real-ESRGAN, SwinIR, DAT, HAT и др. через HF hub по `hub_id + filename`). Worker `realesrgan-x4` (ai-forever/Real-ESRGAN, float16 на cuda). Два response-формата: `b64_json` (OpenAI-envelope) и `png` (raw bytes). Профиль `--profile upscale`. Scale-factor читается из модели. Guard `max_input_side` против OOM (2048 default). Tiling для больших изображений — follow-up. E2e тест: `scripts/feature/upscale.sh`.
 - [x] **img2img / inpainting** — `image` + `mask` + `denoising_strength` в `ImageGenerationRequest` (base64 PNG/JPEG, `data:…` URI тоже принимается). Провайдер диспатчит `AutoPipelineForImage2Image.from_pipe` / `AutoPipelineForInpainting.from_pipe` (zero-VRAM share с базой). E2e тест: `scripts/feature/img2img.sh`.
 - [ ] **OpenAI-style `/v1/images/edits` multipart endpoint** — текущий путь использует base64 в JSON (гибкий, но не 100% OpenAI-совместимый). Отдельный multipart-endpoint примет `image`/`mask` как `UploadFile` + `prompt`/`n`/`size` как `Form()`, делегирует в тот же провайдерский dispatch. Follow-up к img2img.
 
