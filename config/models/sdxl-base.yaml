@@ -14,6 +14,12 @@ model:
   sequential_cpu_offload: ${oc.decode:${oc.env:SDXL_BASE_SEQUENTIAL_OFFLOAD,false}}
   warmup: ${oc.decode:${oc.env:SDXL_BASE_WARMUP,false}}
   variant: ${oc.env:SDXL_BASE_VARIANT,fp16}
+  # SDXL Refiner ensemble — opt-in, empty by default. Enable with
+  # SDXL_BASE_REFINER_HUB_ID=stabilityai/stable-diffusion-xl-refiner-1.0
+  # Base + refiner together use ~13 GB VRAM at fp16; on 12 GB cards
+  # set SDXL_BASE_SEQUENTIAL_OFFLOAD=true to fit.
+  refiner_hub_id: ${oc.env:SDXL_BASE_REFINER_HUB_ID,}
+  refiner_variant: ${oc.env:SDXL_BASE_REFINER_VARIANT,fp16}
   default_params:
     num_inference_steps: ${oc.decode:${oc.env:SDXL_BASE_STEPS,30}}
     guidance_scale: ${oc.decode:${oc.env:SDXL_BASE_CFG,7.0}}

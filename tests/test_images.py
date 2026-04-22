@@ -150,6 +150,37 @@ async def test_image_denoising_strength_bounds(client):
     assert resp.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_image_refiner_switch_at_accepted(client):
+    """refiner_switch_at in [0.0, 1.0] passes through to the provider."""
+    resp = await client.post(
+        "/v1/images/generations",
+        json={
+            "model": "test-image",
+            "prompt": "a cyberpunk cat",
+            "refiner_switch_at": 0.8,
+        },
+    )
+    # Fake provider ignores refiner_switch_at (it has no refiner loaded);
+    # what we assert is that the schema accepts + router propagates.
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_image_refiner_switch_at_bounds(client):
+    """refiner_switch_at is bounded to [0.0, 1.0]."""
+    resp = await client.post(
+        "/v1/images/generations",
+        json={"model": "test-image", "prompt": "x", "refiner_switch_at": 1.5},
+    )
+    assert resp.status_code == 422
+    resp = await client.post(
+        "/v1/images/generations",
+        json={"model": "test-image", "prompt": "x", "refiner_switch_at": -0.1},
+    )
+    assert resp.status_code == 422
+
+
 # ── /v1/images/upscale ──────────────────────────────────────────────
 
 

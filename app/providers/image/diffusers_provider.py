@@ -158,6 +158,10 @@ class DiffusersImageProvider(ImageProvider):
         # request touches the respective slot.
         self._img2img_pipeline = None
         self._inpaint_pipeline = None
+        # Optional SDXL refiner — loaded eagerly at load() time when
+        # `model.refiner_hub_id` is set in YAML. Shares text_encoder_2
+        # and VAE with the base pipeline (~2-3 GB VRAM saving).
+        self._refiner = None
 
     async def load(self, model_dir: str) -> None:
         import torch
@@ -219,6 +223,38 @@ class DiffusersImageProvider(ImageProvider):
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
         self._init_compel()
+
+        # Optional SDXL Refiner. Shares text_encoder_2 + VAE with the base
+        # to avoid duplicating ~2-3 GB of VRAM. Only triggered on requests
+        # that pass `refiner_switch_at`; if YAML doesn't set refiner_hub_id
+        # the ensemble mode is unreachable.
+        refiner_hub_id = self.config.model.get("refiner_hub_id")
+        if refiner_hub_id:
+            logger.info("Loading refiner %s for %s", refiner_hub_id, self.model_id)
+
+            def _load_refiner():
+                from diffusers import StableDiffusionXLImg2ImgPipeline
+
+                ref_kwargs: dict[str, Any] = {
+                    "text_encoder_2": self._pipeline.text_encoder_2,
+                    "vae": self._pipeline.vae,
+                    "torch_dtype": dtype,
+                    "cache_dir": model_dir,
+                    "use_safetensors": True,
+                }
+                if variant := self.config.model.get("refiner_variant", self.config.model.get("variant")):
+                    ref_kwargs["variant"] = variant
+                ref = StableDiffusionXLImg2ImgPipeline.from_pretrained(refiner_hub_id, **ref_kwargs)
+                if sequential_offload:
+                    ref.enable_sequential_cpu_offload()
+                elif cpu_offload:
+                    ref.enable_model_cpu_offload()
+                else:
+                    ref.to("cuda")
+                return ref
+
+            self._refiner = await loop.run_in_executor(_GPU_EXECUTOR, _load_refiner)
+            logger.info("Loaded refiner for %s", self.model_id)
 
         # Warmup: run a minimal dummy generation so cuDNN kernel tuning,
         # Triton compilation, and offload-swap patterns happen *here* instead
@@ -698,6 +734,11 @@ class DiffusersImageProvider(ImageProvider):
 
         import torch
 
+        if self._refiner is not None:
+            if hasattr(self._refiner, "maybe_free_model_hooks"):
+                self._refiner.maybe_free_model_hooks()
+            del self._refiner
+            self._refiner = None
         if self._pipeline is not None:
             if hasattr(self._pipeline, "maybe_free_model_hooks"):
                 self._pipeline.maybe_free_model_hooks()
@@ -754,6 +795,12 @@ class DiffusersImageProvider(ImageProvider):
         image_b64 = defaults.pop("image", None)
         mask_b64 = defaults.pop("mask", None)
         denoising_strength = defaults.pop("denoising_strength", None)
+        refiner_switch_at = defaults.pop("refiner_switch_at", None)
+        if refiner_switch_at is not None and self._refiner is None:
+            raise ValueError(
+                "refiner_switch_at requires a refiner model — set "
+                "model.refiner_hub_id in the YAML for this worker"
+            )
         input_image = self._decode_image(image_b64, mode="RGB") if image_b64 else None
         input_mask = self._decode_image(mask_b64, mode="L") if mask_b64 else None
         if input_mask is not None and input_image is None:
@@ -800,6 +847,31 @@ class DiffusersImageProvider(ImageProvider):
                 if use_compel:
                     return pipe(image=input_image, **call_kwargs).images[0]
                 return pipe(prompt=prompt, image=input_image, **call_kwargs).images[0]
+
+            # SDXL Refiner ensemble — base until `switch_at`, refiner finishes.
+            if refiner_switch_at is not None:
+                base_kwargs = dict(defaults)
+                base_kwargs["denoising_end"] = float(refiner_switch_at)
+                base_kwargs["output_type"] = "latent"
+                if use_compel:
+                    latents = self._pipeline(**base_kwargs).images
+                else:
+                    latents = self._pipeline(prompt=prompt, **base_kwargs).images
+
+                # Refiner gets num_inference_steps, guidance_scale, generator;
+                # size is driven by the latent shape so we drop width/height.
+                ref_kwargs: dict[str, Any] = {
+                    "image": latents,
+                    "denoising_start": float(refiner_switch_at),
+                }
+                for k in ("num_inference_steps", "guidance_scale", "generator",
+                          "negative_prompt"):
+                    if k in defaults:
+                        ref_kwargs[k] = defaults[k]
+                # Refiner doesn't take compel-style prompt_embeds directly —
+                # use the text prompt even when compel was on for base. The
+                # refiner is polishing details, weighting is less critical.
+                return self._refiner(prompt=prompt, **ref_kwargs).images[0]
 
             if use_compel:
                 return self._pipeline(**defaults).images[0]

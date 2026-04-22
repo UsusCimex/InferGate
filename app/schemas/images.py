@@ -99,6 +99,11 @@ class ImageGenerationRequest(BaseModel):
     mask: str | None = Field(None, max_length=20_000_000)
     # Strength for img2img/inpaint (unset → pipeline default, usually 0.8).
     denoising_strength: float | None = Field(None, ge=0.0, le=1.0)
+    # SDXL Refiner ensemble — fraction of the schedule the base model
+    # handles (1.0 − value = refiner share). Only honoured when the
+    # loaded model has `refiner_hub_id` configured in its YAML. Typical
+    # value 0.8 (base does 80%, refiner polishes the last 20%).
+    refiner_switch_at: float | None = Field(None, ge=0.0, le=1.0)
 
     @field_validator("loras")
     @classmethod

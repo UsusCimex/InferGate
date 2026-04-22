@@ -63,6 +63,8 @@ async def generate_images(
         params["mask"] = body.mask
     if body.denoising_strength is not None:
         params["denoising_strength"] = body.denoising_strength
+    if body.refiner_switch_at is not None:
+        params["refiner_switch_at"] = body.refiner_switch_at
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
