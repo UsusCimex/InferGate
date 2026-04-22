@@ -1,3 +1,7 @@
 # Active idiap-maintained fork. torch is provided by the GPU base image.
-coqui-tts>=0.27.0
+coqui-tts>=0.27.0,<0.28.0
+# coqui-tts 0.27.x imports transformers.pytorch_utils.isin_mps_friendly, which
+# was removed in transformers 5.x. Pin to the 4.x line until coqui-tts ships
+# an update that imports through torch.isin directly.
+transformers>=4.40.0,<5
 soundfile>=0.12.0
