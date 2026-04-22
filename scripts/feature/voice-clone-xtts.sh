@@ -129,13 +129,16 @@ else
 fi
 
 # ── (2) Cache MISS → HIT on identical request ───────────────────
+# Nonce makes this idempotent — re-running the script shouldn't hit
+# stale cache from a previous invocation.
+PROBE="Cache probe $(date +%s%N)"
 log "[2] cache MISS → HIT on identical request"
 http_post "$RESP_FILE" \
-    -F "reference_audio=@${REF_WAV}" -F "input=Cache probe line" \
+    -F "reference_audio=@${REF_WAV}" -F "input=${PROBE}" \
     -F "model=${MODEL_ID}" -F "response_format=wav"
 FIRST_CACHE=$(grep -i '^x-infergate-cache' "${RESP_FILE}.headers" | head -1 | tr -d '\r' | awk '{print $NF}')
 http_post "$RESP_FILE" \
-    -F "reference_audio=@${REF_WAV}" -F "input=Cache probe line" \
+    -F "reference_audio=@${REF_WAV}" -F "input=${PROBE}" \
     -F "model=${MODEL_ID}" -F "response_format=wav"
 SECOND_CACHE=$(grep -i '^x-infergate-cache' "${RESP_FILE}.headers" | head -1 | tr -d '\r' | awk '{print $NF}')
 if [[ "$FIRST_CACHE" == "MISS" && "$SECOND_CACHE" == "HIT" ]]; then
