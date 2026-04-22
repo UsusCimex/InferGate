@@ -49,7 +49,6 @@ async def metrics(
     except ImportError:
         pass
 
-    # Update Prometheus gauges if available
     from app.monitoring import GPU_VRAM_USED_MB, MODELS_LOADED, QUEUE_SIZE, is_prometheus_available
     if is_prometheus_available():
         MODELS_LOADED.set(len(manager.loaded_models()))

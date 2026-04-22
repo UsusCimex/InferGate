@@ -68,8 +68,6 @@ async def app_with_auth():
         yield ac
 
 
-# --- Access Log Middleware ---
-
 @pytest.mark.asyncio
 async def test_access_log_passes_through(app_with_access_log):
     resp = await app_with_access_log.get("/test")
@@ -82,8 +80,6 @@ async def test_access_log_skips_health(app_with_access_log):
     resp = await app_with_access_log.get("/health")
     assert resp.status_code == 200
 
-
-# --- Rate Limit Middleware ---
 
 @pytest.mark.asyncio
 async def test_rate_limit_allows_under_limit(app_with_rate_limit):
@@ -110,8 +106,6 @@ async def test_rate_limit_skips_health(app_with_rate_limit):
         resp = await app_with_rate_limit.get("/health")
         assert resp.status_code == 200
 
-
-# --- Auth Middleware ---
 
 @pytest.mark.asyncio
 async def test_auth_allows_valid_bearer(app_with_auth):

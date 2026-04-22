@@ -41,12 +41,10 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    # Suppress noisy warnings from third-party libraries
     warnings.filterwarnings("ignore", category=UserWarning)
     warnings.filterwarnings("ignore", category=FutureWarning)
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-    # Initialize services
     manager = ProviderManager(
         model_dir=server_cfg.models_dir,
         max_loaded=server_cfg.gpu.max_loaded_models,
@@ -74,10 +72,8 @@ async def lifespan(app: FastAPI):
     app.state.defaults = defaults
     app.state.start_time = time.time()
 
-    # Start background worker monitor for remote models
     manager.start_worker_monitor()
 
-    # Preload local models so first requests are fast
     preload_ids = list(dict.fromkeys([
         defaults.get("text"),
         defaults.get("tts"),
@@ -110,7 +106,6 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_cleanup_loop())
 
-    # Watches config/models/*.yaml → reload_model + scheduler concurrency update.
     async def _on_config_reload(new_cfg):
         await manager.reload_model(new_cfg)
         scheduler.update_concurrency(new_cfg.id, new_cfg.queue.max_concurrent)
@@ -118,9 +113,6 @@ async def lifespan(app: FastAPI):
     config_watcher = ConfigWatcher("config/models", _on_config_reload)
     config_watcher.start()
 
-    # Memory watchdog — polls /stats on every loaded worker and emergency-
-    # evicts LRU when live VRAM crosses the threshold. Disabled by default
-    # (interval=0); enable in server.yaml gpu.watchdog_interval_seconds.
     watchdog = MemoryWatchdog(
         manager=manager,
         interval_seconds=server_cfg.gpu.watchdog_interval_seconds,
@@ -138,7 +130,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     await watchdog.stop()
     await config_watcher.stop()
     cleanup_task.cancel()
@@ -157,12 +148,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Observability: request ID, Prometheus metrics, access logging
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
-    # CORS — applied before auth so preflight requests work
+    # CORS is added before auth so preflight requests pass without an API key.
     server_cfg = load_server_config()
     app.add_middleware(
         CORSMiddleware,
@@ -172,18 +162,15 @@ def create_app() -> FastAPI:
         allow_credentials=True,
     )
 
-    # Rate limiting
     if server_cfg.rate_limit.enabled:
         app.add_middleware(
             RateLimitMiddleware,
             requests_per_minute=server_cfg.rate_limit.requests_per_minute,
         )
 
-    # Auth
     if server_cfg.auth.enabled and server_cfg.auth.api_keys:
         app.add_middleware(ApiKeyMiddleware, api_keys=server_cfg.auth.api_keys)
 
-    # Exception handlers
     @app.exception_handler(ModelNotFoundError)
     async def model_not_found_handler(request, exc):
         return JSONResponse(
@@ -233,7 +220,6 @@ def create_app() -> FastAPI:
             body = {"error": {"message": resp.text or "Upstream error", "type": "upstream_error"}}
         return JSONResponse(body, status_code=resp.status_code)
 
-    # Routers
     app.include_router(chat.router)
     app.include_router(images.router)
     app.include_router(audio.router)

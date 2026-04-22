@@ -118,8 +118,6 @@ class FakeUpscaleProvider(ImageUpscaleProvider):
         )
 
 
-# --- Fixtures ---
-
 def _make_model_config(
     model_id: str,
     category: str,

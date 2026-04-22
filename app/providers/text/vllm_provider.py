@@ -50,7 +50,6 @@ class VllmTextProvider(TextProvider):
         )
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
 
-        # Get tokenizer (synchronous in vLLM v0.17+)
         try:
             self._tokenizer = self._engine.get_tokenizer()
         except Exception:

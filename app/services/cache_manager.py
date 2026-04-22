@@ -123,7 +123,6 @@ class CacheManager:
 
         file_path, ttl_expires = row
 
-        # Check TTL
         if ttl_expires and time.time() > ttl_expires:
             await self.invalidate_key(key)
             return None
@@ -133,7 +132,6 @@ class CacheManager:
             await self.invalidate_key(key)
             return None
 
-        # Update access time and hit count
         await self._db.execute(
             "UPDATE cache_entries SET last_accessed = ?, hit_count = hit_count + 1 WHERE key = ?",
             (time.time(), key),
