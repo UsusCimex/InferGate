@@ -273,7 +273,7 @@ curl http://localhost:8000/v1/images/generations \
 | **Janus-Pro 7B** | **Autoregressive** (nf4) | custom | 7 GB | 384 | MIT |
 | **Meissonic** | **Masked non-AR** | custom (vendored) | 10 GB | 1024 | Apache 2.0 |
 
-### Текст и озвучка
+### Текст, озвучка, распознавание, super-resolution
 
 | Модель | Категория | Провайдер | VRAM | Лицензия |
 |--------|-----------|-----------|------|----------|
@@ -281,10 +281,14 @@ curl http://localhost:8000/v1/images/generations \
 | **Qwen 3.5 9B** | Текст | vLLM | 8 GB | Apache 2.0 |
 | **Qwen 3 8B** | Текст | vLLM | 7 GB | Apache 2.0 |
 | **Llama 3.1 8B** | Текст | vLLM | 8 GB | Llama Community |
-| **Kokoro 82M** | Озвучка | kokoro | CPU | MIT |
-| **OpenAudio S1 Mini** | Озвучка | fish-speech | 4 GB | Apache 2.0 |
+| **Kokoro 82M** | TTS | kokoro | CPU | MIT |
+| **OpenAudio S1 Mini** | TTS (+ voice-clone¹) | fish-speech | 4 GB | Apache 2.0 |
+| **Whisper Base** | STT | faster-whisper (CT2) | CPU (int8, ~90 MB) | MIT |
+| **Real-ESRGAN 4×** | Upscale | spandrel | 1.5 GB (fp16) | BSD-3-Clause |
 
-**Три архитектурных семейства** в одном стеке: диффузия (SD/FLUX/Qwen/Hunyuan/Z-Image), autoregressive (Janus-Pro) и masked non-AR (Meissonic) — все под единым `ImageProvider` интерфейсом с OpenAI-совместимым API.
+¹ Voice-cloning endpoint `/v1/audio/speech/voice-clone` готов gateway-side, но worker-side временно заблокирован на несовместимости fish-speech upstream (см. раздел TODO).
+
+**Три архитектурных семейства изображений** в одном стеке: диффузия (SD/FLUX/Qwen/Hunyuan/Z-Image), autoregressive (Janus-Pro) и masked non-AR (Meissonic) — все под единым `ImageProvider` интерфейсом с OpenAI-совместимым API. STT/Upscale/TTS живут под собственными ABC-категориями (`SttProvider`, `ImageUpscaleProvider`, `TtsProvider`).
 
 Любая diffusers-совместимая модель добавляется одним YAML-файлом без написания кода. Для нестандартных архитектур (AR / Masked / другое) — добавляется новый класс-провайдер, автоматически регистрируемый через `@register_provider`.
 
@@ -301,18 +305,21 @@ curl http://localhost:8000/v1/images/generations \
 | `POST` | `/v1/chat/completions` | Генерация текста (+ streaming) |
 | `POST` | `/v1/images/generations` | Генерация изображений (+ img2img/inpaint через base64) |
 | `POST` | `/v1/images/edits` | img2img / inpaint (multipart, OpenAI-style) |
-| `POST` | `/v1/audio/speech` | Синтез речи |
-| `POST` | `/v1/audio/transcriptions` | Распознавание речи (multipart) |
+| `POST` | `/v1/audio/speech` | Синтез речи (JSON) |
+| `POST` | `/v1/audio/speech/voice-clone` | Voice-cloning (multipart, reference audio) |
+| `POST` | `/v1/audio/transcriptions` | Распознавание речи (multipart; `json`/`text`/`verbose_json`/`srt`/`vtt`) |
 | `POST` | `/v1/images/upscale` | Super-resolution изображений (multipart) |
 | `GET` | `/v1/models` | Список всех моделей |
 | `POST` | `/v1/models/{id}/load` | Загрузить модель в GPU |
 | `POST` | `/v1/models/{id}/unload` | Выгрузить модель |
 | `GET` | `/cache/stats` | Статистика кэша |
+| `GET` | `/cache/stats/{model_id}` | Статистика кэша одной модели |
 | `DELETE` | `/cache` | Очистить весь кэш |
 | `DELETE` | `/cache/{model_id}` | Очистить кэш модели |
 | `DELETE` | `/cache/entry/{key}` | Удалить запись кэша |
 | `GET` | `/health` | Проверка состояния |
-| `GET` | `/metrics` | Метрики системы |
+| `GET` | `/metrics` | Метрики системы (JSON snapshot) |
+| `GET` | `/metrics/prometheus` | Prometheus scrape endpoint (для Grafana) |
 
 ### Поля запроса для генерации изображений
 
@@ -564,49 +571,64 @@ infergate/
 │   ├── dependencies.py             # FastAPI Depends + app.state
 │   ├── routers/                    # API эндпоинты
 │   │   ├── chat.py                 # /v1/chat/completions (+ streaming)
-│   │   ├── images.py               # /v1/images/generations
-│   │   ├── audio.py                # /v1/audio/speech
+│   │   ├── images.py               # /v1/images/{generations,edits,upscale}
+│   │   ├── audio.py                # /v1/audio/{speech,speech/voice-clone,transcriptions}
 │   │   ├── models.py               # /v1/models
 │   │   ├── cache.py                # /cache/*
-│   │   └── health.py               # /health, /metrics
+│   │   └── health.py               # /health, /metrics, /metrics/prometheus
 │   ├── schemas/                    # Pydantic-модели с Field-валидацией
 │   ├── providers/
-│   │   ├── base.py                 # ABC: ImageProvider, TextProvider, TtsProvider
+│   │   ├── base.py                 # ABC: Image/Text/Tts/Stt/ImageUpscale Providers
 │   │   ├── registry.py             # @register_provider + авто-обнаружение
-│   │   ├── remote.py               # RemoteProvider для distributed-режима
+│   │   ├── remote.py               # RemoteProvider для distributed-режима (5 категорий)
 │   │   ├── image/
 │   │   │   ├── diffusers_provider.py  # Diffusion (SD, SDXL, FLUX, Hunyuan, Z-Image, Qwen)
-│   │   │   │                         # + LoRA / TI / compel / scheduler swap / HighresFix
+│   │   │   │                         # + LoRA / TI / compel / scheduler swap
+│   │   │   │                         # + HighresFix / img2img / inpaint
 │   │   │   ├── janus_provider.py     # Autoregressive (DeepSeek Janus-Pro 1B / 7B)
 │   │   │   └── meissonic_provider.py # Masked non-AR (vendored Meissonic pipeline)
 │   │   ├── text/
 │   │   │   └── vllm_provider.py    # + streaming + tokenizer chat templates
-│   │   └── tts/
-│   │       ├── kokoro.py
-│   │       └── fish_speech.py
-│   └── services/
-│       ├── provider_manager.py     # LRU (OrderedDict), per-model locks, shutdown timeout
-│       ├── gpu_scheduler.py        # asyncio.Lock-protected counters + semaphores
-│       └── cache_manager.py        # SQLite WAL, atomic writes, miss tracking
+│   │   ├── tts/
+│   │   │   ├── kokoro.py
+│   │   │   └── fish_speech.py      # OpenAudio S1 / Fish Speech + voice-clone stub
+│   │   ├── stt/
+│   │   │   └── whisper_provider.py # faster-whisper (CTranslate2)
+│   │   └── upscale/
+│   │       └── spandrel_provider.py # spandrel (ESRGAN / Real-ESRGAN / SwinIR / …)
+│   ├── services/
+│   │   ├── provider_manager.py     # LRU, per-model locks, reload_model, worker-monitor
+│   │   ├── gpu_scheduler.py        # per-model concurrency + priority queue
+│   │   ├── cache_manager.py        # SQLite WAL, atomic writes, miss tracking
+│   │   └── config_watcher.py       # polls config/models/*.yaml → hot-reload
+│   └── worker.py                   # Standalone FastAPI worker (один процесс = одна модель)
+│                                   # /generate, /synthesize, /transcribe, /upscale,
+│                                   # /voice-clone, /reload, /health, /load, /unload
 ├── config/
 │   ├── server.yaml
-│   └── models/                     # 1 YAML = 1 модель
+│   └── models/                     # 1 YAML = 1 модель (17 файлов)
 ├── deploy/
 │   ├── Dockerfile.gateway          #   Лёгкий gateway (~500MB)
 │   ├── Dockerfile.worker           #   Единый параметризованный Dockerfile для всех воркеров
-│   ├── docker-compose.yml          #   Compose с profiles (gateway + workers, YAML-якоря)
+│   ├── docker-compose.yml          #   Compose с profiles (gateway + 20 workers, YAML-якоря)
 │   ├── docker-bake.hcl             #   Матрица сборки (1 строка = 1 модель)
-│   ├── .env.example                #   Каталог env-тюнингов
-│   ├── docker-compose.server.example.yml  # Образец override для сервера
+│   ├── .env.example
+│   ├── docker-compose.server.example.yml
 │   ├── workers/                    #   Только requirements.txt per-model
 │   │   ├── qwen3.5-4b/requirements.txt
 │   │   ├── sd35-medium/requirements.txt
 │   │   ├── kokoro-82m/requirements.txt
-│   │   └── ...                     #   (11 моделей)
-│   └── monitoring/                 #   Prometheus + Grafana stack
+│   │   ├── whisper-base/requirements.txt
+│   │   ├── realesrgan-x4/requirements.txt
+│   │   └── …                       #   20 моделей
+│   └── monitoring/                 #   Prometheus + Grafana stack (auto-provisioning)
 │       ├── prometheus.yml
-│       └── docker-compose.monitoring.yml
-├── tests/                          # 98 тестов, 82% покрытия
+│       ├── docker-compose.monitoring.yml
+│       └── grafana/                #   datasource + dashboards provisioning
+├── scripts/
+│   ├── diagnose/                   #   Per-model smoke-scripts
+│   └── feature/                    #   End-to-end feature tests (на живых воркерах)
+├── tests/                          #   155 pytest-ов, 67% покрытия
 └── pyproject.toml
 ```
 
@@ -618,9 +640,11 @@ infergate/
 
 ```
 Client → Gateway (500MB, без GPU)
-           ├→ worker-qwen3-5-4b     (vLLM, GPU)
-           ├→ worker-sd35-medium    (diffusers, GPU)
-           ├→ worker-kokoro-82m     (kokoro, CPU)
+           ├→ worker-qwen3-5-4b       (vLLM, GPU)           — text
+           ├→ worker-sd35-medium      (diffusers, GPU)      — image
+           ├→ worker-kokoro-82m       (kokoro, CPU)         — TTS
+           ├→ worker-whisper-base     (faster-whisper, CPU) — STT
+           ├→ worker-realesrgan-x4    (spandrel, GPU)       — upscale
            └→ ...
 ```
 
@@ -701,7 +725,7 @@ Grafana поднимается с auto-provisioning: Prometheus datasource (`inf
 
 Сборка построена на принципе **одно описание — много вариантов**:
 
-- **Единый `deploy/Dockerfile.worker`** — параметризован build-args (`BASE_IMAGE`, `APT_PACKAGES`, `WORKER_REQUIREMENTS`, `POST_INSTALL`). Все 11 воркеров собираются из него — нет копипаста.
+- **Единый `deploy/Dockerfile.worker`** — параметризован build-args (`BASE_IMAGE`, `APT_PACKAGES`, `WORKER_REQUIREMENTS`, `POST_INSTALL`). Все 20 воркеров (image / text / tts / stt / upscale) собираются из него — нет копипаста.
 - **`deploy/docker-bake.hcl`** — матрица сборки (HCL), 1 модель = 1 строка. `docker buildx bake` собирает все параллельно, с общим кэшем слоёв и поддержкой registry push.
 - **`deploy/docker-compose.yml`** с YAML-якорями для общих блоков (environment, healthcheck, GPU reservations).
 - **uv** вместо pip — установка в 10–100x быстрее.
@@ -746,9 +770,11 @@ pip install pytest-cov
 pytest --cov=app --cov-branch
 ```
 
-**98 тестов**, **82% покрытия** (ветвевое). Покрытие исключает GPU-провайдеры, которые требуют физическое GPU для интеграционного тестирования.
+**155 pytest-ов**, **67% линейно-ветвевого покрытия** (исключая GPU-провайдеры — они проверяются e2e-скриптами против реальных воркеров, см. `scripts/feature/`).
 
-Тесты покрывают: роутеры, middleware (auth, rate-limit, access-log), мониторинг (Prometheus, request ID), cache manager, GPU scheduler, provider manager, конфигурацию, валидацию, worker, конкурентность, edge cases.
+Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, `cache`, `health`), middleware (auth, rate-limit, access-log), мониторинг (Prometheus-лейблы, request ID), `CacheManager`, `GpuScheduler`, `ProviderManager` (включая hot-reload `reload_model`), `ConfigWatcher`, воркер-эндпоинты (`/generate`, `/synthesize`, `/transcribe`, `/upscale`, `/reload`, `/voice-clone`), конфигурацию, валидацию схем, конкурентность, edge cases.
+
+**E2e feature-скрипты** (`scripts/feature/*.sh`) — прогоняются на живых Docker-контейнерах и закрывают то, что нельзя через моки: `sd35-lora.sh`, `img2img.sh`, `hot-reload-config.sh`, `worker-reload.sh`, `stt-whisper.sh`, `upscale.sh`, `grafana-provisioning.sh`, `lora-hot-load.sh`, `textual-inversion.sh`, `highres-fix.sh`, `scheduler-swap.sh`, `token-weighting.sh`, `per-request-tunables.sh`, `error-forwarding.sh`.
 
 ---
 
@@ -764,29 +790,23 @@ pytest --cov=app --cov-branch
 
 ## 14. TODO
 
-### Расширение t2i-возможностей на другие модели
+Закрытые пункты убираются из списка — их состояние отражено в актуальной документации выше (разделы 3 «Модели», 4 «API», 10 «Мониторинг»). Здесь только **то, что ещё предстоит сделать** или **заблокировано внешними причинами**.
 
-- [x] **LoRA/TI для SD 3.5 Medium** — `peft` + `compel` в requirements, LoRA-кэш настраивается через `SD35_MEDIUM_LORA_MAX_LOADED/MAX_PER_REQUEST`. TI работает через CLIP-L/CLIP-G энкодеры (при `drop_t5=true` SDXL-pivotal формат применим один-к-одному).
-- [ ] **Compel (A1111-style weighting) для SD 3.5 / FLUX** — не поддерживается архитектурно: SD3Pipeline ожидает `[B,154,4096]` (CLIP-L+CLIP-G+T5 padded до 4096 и конкатенированных по seq-dim), FLUX использует T5 вместо CLIP-G. Compel эмитит SDXL-shape `[B,77,2048]` — runtime shape-mismatch. Провайдер корректно пропускает init на этих классах. Поддержка требует fork'а compel с SD3/FLUX-aware энкодерами.
-- [ ] **LyCORIS (LoHa / LoKr / IA3 / DyLoRA)** — `pipe.load_lora_weights` в `diffusers≥0.37` **поддерживает LoRA и LoCon** (issue #3087 закрыт именно для этого). Расширенные LyCORIS-типы (LoHa/Hadamard, LoKr/Kronecker, IA3, DyLoRA) **всё ещё открыты** ([issue #5079](https://github.com/huggingface/diffusers/issues/5079), [discussion #6771](https://github.com/huggingface/diffusers/discussions/6771)). Полноценная поддержка требует либо нативного патча в `diffusers`, либо интеграции [`lycoris-lora`](https://github.com/KohakuBlueleaf/LyCORIS) с кастомным инжектором в UNet. `peft.LoKrConfig` **не решает** — он для обучения/загрузки PEFT-saved адаптеров, не для civitai `.safetensors` LyCORIS-checkpoints. Отложено до накопления реального спроса.
+Обозначения: `[ ]` — не начато, `[~]` — частично (gateway-слой есть, worker-слой заблокирован или наоборот), `⛔` — архитектурный блокер.
 
-### Мульти-стадийные и специализированные пайплайны
+### Пайплайны и модели
 
-- [ ] **SDXL Refiner** — base model → refiner model ensemble, передача latents между ними (`SDXLRefinerImageProvider`). Нужно держать два SDXL-образа одновременно в VRAM (~14 GB суммарно)
-- [x] **Upscaler как отдельная категория** — новая `ImageUpscaleProvider` ABC + `POST /v1/images/upscale` (multipart). `SpandrelUpscaleProvider` — универсальный wrapper на `spandrel` (поддерживает ESRGAN, Real-ESRGAN, SwinIR, DAT, HAT и др. через HF hub по `hub_id + filename`). Worker `realesrgan-x4` (ai-forever/Real-ESRGAN, float16 на cuda). Два response-формата: `b64_json` (OpenAI-envelope) и `png` (raw bytes). Профиль `--profile upscale`. Scale-factor читается из модели. Guard `max_input_side` против OOM (2048 default). Tiling для больших изображений — follow-up. E2e тест: `scripts/feature/upscale.sh`.
-- [x] **img2img / inpainting** — `image` + `mask` + `denoising_strength` в `ImageGenerationRequest` (base64 PNG/JPEG, `data:…` URI тоже принимается). Провайдер диспатчит `AutoPipelineForImage2Image.from_pipe` / `AutoPipelineForInpainting.from_pipe` (zero-VRAM share с базой). E2e тест: `scripts/feature/img2img.sh`.
-- [x] **OpenAI-style `/v1/images/edits` multipart endpoint** — `image` + optional `mask` как `UploadFile`, остальные поля как `Form`. Делегирует в тот же `generate_images` handler через собранный `ImageGenerationRequest` с base64-encoded inputs. Полная OpenAI-совместимость + тот же img2img/inpaint dispatch в провайдере.
+- [ ] **SDXL Refiner** — ensemble `base → refiner` с передачей latents. `SDXLRefinerImageProvider` должен держать две модели одновременно в VRAM (~14 GB суммарно); на 12 GB картах — sequential unload/load base→refiner или CPU offload обоих. Требует нового провайдера + новой категории или custom-логики в `DiffusersImageProvider`.
+- [ ] **Upscaler tiling** — follow-up к сделанному `/v1/images/upscale`. Сейчас вход ограничен `max_input_side=2048` (guard против OOM). Для upscale изображений большего размера нужно tile-разбиение с перекрытием + gradient blending в `SpandrelUpscaleProvider`.
+- [ ] ⛔ **Compel для SD 3.5 / FLUX** — архитектурный блокер: `StableDiffusion3Pipeline` ожидает `[B,154,4096]` (CLIP-L+CLIP-G+T5 padded до 4096 и конкатенированных по seq-dim), FLUX использует T5 вместо CLIP-G. Compel эмитит SDXL-shape `[B,77,2048]` — runtime shape-mismatch. Наш провайдер корректно пропускает compel-init на этих классах по имени. Полноценная поддержка требует fork'а compel с SD3/FLUX-aware энкодерами.
+- [ ] ⛔ **LyCORIS (LoHa / LoKr / IA3 / DyLoRA)** — `pipe.load_lora_weights` в `diffusers≥0.37` поддерживает **LoRA и LoCon** (именно это у нас и работает). Расширенные LyCORIS-типы (LoHa, LoKr, IA3, DyLoRA) **не загружаются нативно** ([diffusers#5079](https://github.com/huggingface/diffusers/issues/5079), [discussion #6771](https://github.com/huggingface/diffusers/discussions/6771)). Полноценная поддержка требует либо нативного патча в `diffusers`, либо интеграции [`lycoris-lora`](https://github.com/KohakuBlueleaf/LyCORIS) с кастомным инжектором в UNet. `peft.LoKrConfig` **не решает** — он для PEFT-saved адаптеров, не для civitai `.safetensors` LyCORIS-чекпоинтов. Отложено до реального спроса.
 
 ### Инфраструктура
 
-- [ ] **Web UI** — панель администрирования (gallery, prompt history, live metrics)
-- [~] **Voice cloning** — gateway-layer готов: `POST /v1/audio/speech/voice-clone` (multipart), `RemoteTtsProvider` ветвится на `/voice-clone` worker-endpoint когда передан `reference_audio`, `FishSpeechTtsProvider` пробрасывает `reference_audio`/`reference_text` в `TTS.synthesize`, cache keyed по SHA reference-bytes. **Blocked** worker-side: fish-speech upstream master имеет переработанный API (`TTSInferenceEngine` vs старые `fish_speech.tts.api`/`fish_speech.inference`), плюс `torchvision` circular-import conflict от несовместимых torch-версий. Требуется pin конкретной working fish-speech версии или migration на другой voice-clone backend (XTTS-v2, Coqui TTS). Код провайдера graceful: при absence API возвращает HTTP 400 с четким сообщением.
-- [x] **Speech-to-Text** — `POST /v1/audio/transcriptions` (OpenAI-compatible multipart). Новая категория провайдера `SttProvider` + `WhisperProvider` на faster-whisper (CTranslate2). Три формата ответа: `json` (строгая OpenAI-форма `{text}`), `text` (raw), `verbose_json` (text + language + duration + segments[]). Worker `whisper-base` (Systran/faster-whisper-base, ~90MB RAM на CPU int8). Профиль `--profile stt` / `--profile whisper-base`. E2e тест: `scripts/feature/stt-whisper.sh`.
-- [ ] **Multi-GPU** — распределение моделей по нескольким GPU (CUDA device_ids)
-- [x] **Hot-reload конфигов (gateway-side)** — `ConfigWatcher` polls `config/models/*.yaml` каждые 2с, при изменении вызывает `ProviderManager.reload_model()` (unload+re-register, с автоматическим `load()` если модель была в GPU) и `GpuScheduler.update_concurrency()`. Новые YAML регистрируют модель, `enabled: false` снимает её с registry, ошибки парсинга логируются без падения gateway. E2e тест: `scripts/feature/hot-reload-config.sh` (гоняется без worker'ов — проверяет именно gateway-side).
-- [x] **Hot-reload конфигов (worker-side)** — `POST /reload` endpoint в `app/worker.py`, gateway через `ProviderManager.reload_model()` → `RemoteProvider.reload()` отправляет new ModelConfig в worker. Worker классифицирует изменение: `metadata` (обновляется in-place) или `full_reload` (unload + rebuild + load). E2e тест: `scripts/feature/worker-reload.sh`. Serialises inflight requests через `reload_lock`.
-- [ ] **Kubernetes Helm chart** — для multi-node distributed-режима
-- [x] **Grafana дашборд** — `deploy/monitoring/grafana/dashboards/infergate.json` + provisioning (datasource + dashboards provider). Подключается автоматически при `docker compose up`.
+- [~] **Voice cloning (worker-side)** — gateway-слой готов: `POST /v1/audio/speech/voice-clone` (multipart), `RemoteTtsProvider` маршрутизирует на `/voice-clone` при наличии `reference_audio`, `FishSpeechTtsProvider` проксирует `reference_audio`/`reference_text` в `TTS.synthesize`, cache keyed по SHA reference-байт, **5 pytest-ов** через fake provider зелёные. Блокер на стороне worker-образа `openaudio-s1-mini`: fish-speech upstream master имеет переработанный API (`TTSInferenceEngine` вместо `fish_speech.tts.api`/`fish_speech.inference`) + `torchvision` circular-import от несовместимых torch-версий в pinned install. Нужно либо pin конкретной working fish-speech версии, либо переезд на XTTS-v2 / Coqui TTS. Провайдер graceful: возвращает HTTP 400 с понятным сообщением когда API не найден.
+- [ ] **Multi-GPU** — per-worker `CUDA_VISIBLE_DEVICES`-routing и distributed-LRU в `ProviderManager`. Нужно для multi-GPU машин, где сейчас все воркеры по умолчанию борются за первый GPU.
+- [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
+- [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
 
 ---
 
