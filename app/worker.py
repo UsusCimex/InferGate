@@ -96,19 +96,45 @@ async def stats(request: Request):
     provider: BaseProvider = request.app.state.provider
     config = request.app.state.config
 
+    # VRAM reading precedence:
+    #   1) NVML (pynvml / nvidia-ml-py) — device-wide usage across ALL
+    #      processes on this GPU. Essential for shared-GPU / multi-tenant
+    #      deploys where this worker isn't the only torch process.
+    #   2) torch.cuda.mem_get_info — per-process caching-allocator view.
+    #      Accurate for our own usage but blind to co-tenants.
+    # Fall through both ways on ImportError so worker images without
+    # nvidia-ml-py still report what they can via torch.
     vram_used_mb = 0
     vram_total_mb = 0
     vram_free_mb = 0
+    vram_source = "none"
     try:
-        import torch
-        if torch.cuda.is_available():
-            # mem_get_info is a cheap driver call (µs); torch_allocated is
-            # what OUR process pinned, free is what the device still has.
-            free_b, total_b = torch.cuda.mem_get_info(0)
-            vram_free_mb = free_b // (1024 * 1024)
-            vram_total_mb = total_b // (1024 * 1024)
-            vram_used_mb = vram_total_mb - vram_free_mb
-    except Exception:  # noqa: BLE001 — stats never raise
+        import pynvml  # nvidia-ml-py ships this name
+        pynvml.nvmlInit()
+        try:
+            h = pynvml.nvmlDeviceGetHandleByIndex(0)
+            info = pynvml.nvmlDeviceGetMemoryInfo(h)
+            vram_total_mb = info.total // (1024 * 1024)
+            vram_used_mb = info.used // (1024 * 1024)
+            vram_free_mb = info.free // (1024 * 1024)
+            vram_source = "nvml"
+        finally:
+            pynvml.nvmlShutdown()
+    except ImportError:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                free_b, total_b = torch.cuda.mem_get_info(0)
+                vram_free_mb = free_b // (1024 * 1024)
+                vram_total_mb = total_b // (1024 * 1024)
+                vram_used_mb = vram_total_mb - vram_free_mb
+                vram_source = "torch.cuda.mem_get_info"
+        except Exception:  # noqa: BLE001 — stats never raise
+            pass
+    except Exception:  # noqa: BLE001
+        # NVML initialised but a later call failed — leave vram_* at 0
+        # rather than falling back to torch (NVML failures usually mean
+        # driver issues that torch won't work around).
         pass
 
     ram_used_mb = 0
@@ -129,6 +155,7 @@ async def stats(request: Request):
         "vram_used_mb": vram_used_mb,
         "vram_free_mb": vram_free_mb,
         "vram_total_mb": vram_total_mb,
+        "vram_source": vram_source,
         "ram_used_mb": ram_used_mb,
         "ram_total_mb": ram_total_mb,
         "declared_vram_mb": config.model.get("vram_mb", 0),

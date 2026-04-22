@@ -206,15 +206,43 @@ async def test_stats_returns_usage_snapshot(text_worker):
     resp = await text_worker.get("/stats")
     assert resp.status_code == 200
     body = resp.json()
-    # Required keys even when CUDA/psutil unavailable:
+    # Required keys even when CUDA/psutil/NVML unavailable:
     for key in ("model", "loaded", "vram_used_mb", "vram_free_mb",
-                "vram_total_mb", "ram_used_mb", "ram_total_mb",
-                "declared_vram_mb"):
+                "vram_total_mb", "vram_source", "ram_used_mb",
+                "ram_total_mb", "declared_vram_mb"):
         assert key in body, f"missing key: {key}"
     assert body["model"] == "test-text"
     assert body["loaded"] is True
     # _make_config in this file doesn't set model.vram_mb, so declared = 0.
     assert body["declared_vram_mb"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stats_prefers_nvml_over_torch(text_worker, monkeypatch):
+    """When pynvml is importable, /stats reports device-wide numbers
+    and marks vram_source='nvml' — catches the shared-GPU case torch
+    can't see."""
+    import sys
+    import types
+
+    class _FakeInfo:
+        total = 12 * 1024 * 1024 * 1024   # 12 GB
+        used = 9 * 1024 * 1024 * 1024     # 9 GB — includes a co-tenant process
+        free = 3 * 1024 * 1024 * 1024
+
+    fake_pynvml = types.ModuleType("pynvml")
+    fake_pynvml.nvmlInit = lambda: None
+    fake_pynvml.nvmlShutdown = lambda: None
+    fake_pynvml.nvmlDeviceGetHandleByIndex = lambda idx: object()
+    fake_pynvml.nvmlDeviceGetMemoryInfo = lambda h: _FakeInfo()
+    monkeypatch.setitem(sys.modules, "pynvml", fake_pynvml)
+
+    resp = await text_worker.get("/stats")
+    body = resp.json()
+    assert body["vram_source"] == "nvml"
+    assert body["vram_total_mb"] == 12 * 1024
+    assert body["vram_used_mb"] == 9 * 1024
+    assert body["vram_free_mb"] == 3 * 1024
 
 
 @pytest.mark.asyncio

@@ -11,3 +11,9 @@ httpx>=0.27.0
 prometheus-client>=0.20.0  # /metrics/prometheus for shipped Grafana stack
 python-multipart>=0.0.20  # FastAPI File()/Form() parsing (STT transcription uploads)
 psutil>=5.9.0             # host RAM monitoring for watchdog + /stats
+# nvidia-ml-py gives device-wide VRAM usage (ALL processes on the GPU),
+# vs torch.cuda.mem_get_info which only reports our caching allocator.
+# Essential for shared-GPU deploys. Pure-python ctypes bindings — safe
+# to install on CPU-only workers (import succeeds, nvmlInit() raises
+# when no driver, which /stats catches).
+nvidia-ml-py>=12.0.0
