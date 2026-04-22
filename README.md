@@ -147,6 +147,12 @@ curl http://localhost:8000/v1/audio/transcriptions \
 curl http://localhost:8000/v1/images/upscale \
   -F "file=@small.png" -F "model=realesrgan-x4" -F "response_format=png" \
   -o upscaled.png
+
+# img2img / inpaint через multipart (OpenAI-style /v1/images/edits)
+curl http://localhost:8000/v1/images/edits \
+  -F "image=@base.png" -F "mask=@mask.png" \
+  -F "prompt=replace with a red balloon" -F "model=sdxl-base" \
+  -F "denoising_strength=0.8"
 ```
 
 ### Продвинутые примеры генерации изображений
@@ -288,7 +294,8 @@ curl http://localhost:8000/v1/images/generations \
 | Метод | Путь | Описание |
 |-------|------|----------|
 | `POST` | `/v1/chat/completions` | Генерация текста (+ streaming) |
-| `POST` | `/v1/images/generations` | Генерация изображений |
+| `POST` | `/v1/images/generations` | Генерация изображений (+ img2img/inpaint через base64) |
+| `POST` | `/v1/images/edits` | img2img / inpaint (multipart, OpenAI-style) |
 | `POST` | `/v1/audio/speech` | Синтез речи |
 | `POST` | `/v1/audio/transcriptions` | Распознавание речи (multipart) |
 | `POST` | `/v1/images/upscale` | Super-resolution изображений (multipart) |
@@ -763,7 +770,7 @@ pytest --cov=app --cov-branch
 - [ ] **SDXL Refiner** — base model → refiner model ensemble, передача latents между ними (`SDXLRefinerImageProvider`). Нужно держать два SDXL-образа одновременно в VRAM (~14 GB суммарно)
 - [x] **Upscaler как отдельная категория** — новая `ImageUpscaleProvider` ABC + `POST /v1/images/upscale` (multipart). `SpandrelUpscaleProvider` — универсальный wrapper на `spandrel` (поддерживает ESRGAN, Real-ESRGAN, SwinIR, DAT, HAT и др. через HF hub по `hub_id + filename`). Worker `realesrgan-x4` (ai-forever/Real-ESRGAN, float16 на cuda). Два response-формата: `b64_json` (OpenAI-envelope) и `png` (raw bytes). Профиль `--profile upscale`. Scale-factor читается из модели. Guard `max_input_side` против OOM (2048 default). Tiling для больших изображений — follow-up. E2e тест: `scripts/feature/upscale.sh`.
 - [x] **img2img / inpainting** — `image` + `mask` + `denoising_strength` в `ImageGenerationRequest` (base64 PNG/JPEG, `data:…` URI тоже принимается). Провайдер диспатчит `AutoPipelineForImage2Image.from_pipe` / `AutoPipelineForInpainting.from_pipe` (zero-VRAM share с базой). E2e тест: `scripts/feature/img2img.sh`.
-- [ ] **OpenAI-style `/v1/images/edits` multipart endpoint** — текущий путь использует base64 в JSON (гибкий, но не 100% OpenAI-совместимый). Отдельный multipart-endpoint примет `image`/`mask` как `UploadFile` + `prompt`/`n`/`size` как `Form()`, делегирует в тот же провайдерский dispatch. Follow-up к img2img.
+- [x] **OpenAI-style `/v1/images/edits` multipart endpoint** — `image` + optional `mask` как `UploadFile`, остальные поля как `Form`. Делегирует в тот же `generate_images` handler через собранный `ImageGenerationRequest` с base64-encoded inputs. Полная OpenAI-совместимость + тот же img2img/inpaint dispatch в провайдере.
 
 ### Инфраструктура
 
