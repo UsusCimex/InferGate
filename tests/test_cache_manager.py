@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 
-from app.services.cache_manager import CacheManager, CacheStrategy
+from app.services.cache_manager import CacheManager
 
 
 @pytest_asyncio.fixture

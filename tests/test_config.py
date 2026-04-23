@@ -1,15 +1,11 @@
 """Tests for configuration loading."""
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from app.config import (
-    ServerConfig,
     ModelConfig,
-    load_server_config,
+    ServerConfig,
     load_model_configs,
+    load_server_config,
     load_single_model_config,
 )
 

@@ -8,7 +8,6 @@ import pytest
 
 from app.services.config_watcher import ConfigWatcher
 
-
 _YAML_TEMPLATE = """\
 id: {id}
 display_name: {display_name}

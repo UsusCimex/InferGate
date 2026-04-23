@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest_asyncio.fixture

@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest_asyncio.fixture
 async def monitored_app():
     """App with RequestIdMiddleware and PrometheusMiddleware."""
-    from app.monitoring import RequestIdMiddleware, PrometheusMiddleware
+    from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
 
     inner_app = FastAPI()
 

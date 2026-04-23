@@ -33,7 +33,7 @@ class _StubProvider:
 class _StubManager:
     def __init__(self, loaded: dict[str, _StubProvider], pinned: set | None = None):
         self._registry = dict(loaded)
-        self._loaded_order = {k: None for k in loaded}
+        self._loaded_order = dict.fromkeys(loaded)
         self._pinned = pinned or set()
 
     def loaded_models(self) -> list[str]:

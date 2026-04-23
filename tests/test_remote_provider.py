@@ -1,9 +1,7 @@
 """Tests for remote provider + provider_manager integration."""
 from __future__ import annotations
 
-import pytest
-
-from app.config import ModelConfig, ModelCacheConfig, ModelQueueConfig, ModelMetadata
+from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
 from app.services.provider_manager import ProviderManager
 
 

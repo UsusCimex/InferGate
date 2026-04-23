@@ -135,12 +135,13 @@ async def test_cache_missing_file(services):
     assert await cache_mgr.get("file-key") == b"some data"
 
     # Delete the file manually (simulate corruption)
+    import asyncio
     from pathlib import Path
     async with cache_mgr._db.execute(
         "SELECT file_path FROM cache_entries WHERE key = ?", ("file-key",)
     ) as cursor:
         row = await cursor.fetchone()
-    Path(row[0]).unlink()
+    await asyncio.to_thread(Path(row[0]).unlink)
 
     # Cache should return None and auto-clean the entry
     assert await cache_mgr.get("file-key") is None

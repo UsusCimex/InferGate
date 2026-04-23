@@ -3,11 +3,10 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.config import ModelConfig, ModelCacheConfig, ModelQueueConfig, ModelMetadata
+from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
 from app.providers.base import (
     ImageProvider,
     ImageUpscaleProvider,
@@ -19,7 +18,6 @@ from app.providers.registry import register_provider
 from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler
 from app.services.provider_manager import ProviderManager
-
 
 # Fake providers — @register_provider lets reload_model() resolve them by class name.
 
@@ -91,7 +89,7 @@ class FakeSttProvider(SttProvider):
         # Deterministic echo so tests can assert shape + param propagation.
         lang = params.get("language", "en")
         return {
-            "text": "hello world" if params.get("response_format") != "verbose_json" else "hello world",
+            "text": "hello world",
             "language": lang,
             "duration": 1.0,
             "segments": [{"id": 0, "start": 0.0, "end": 1.0, "text": "hello world"}],
@@ -190,9 +188,10 @@ async def client(services):
     """Async test client for the FastAPI app (without lifespan, deps already set)."""
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
-    from app.routers import admin, chat, images, audio, models, cache, health
+
+    from app.routers import admin, audio, cache, chat, health, images, models
+    from app.services.gpu_scheduler import QueueFullError, RequestTimeoutError
     from app.services.provider_manager import ModelNotFoundError
-    from app.services.gpu_scheduler import RequestTimeoutError, QueueFullError
 
     app = FastAPI()
 

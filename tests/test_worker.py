@@ -2,16 +2,13 @@
 from __future__ import annotations
 
 import asyncio
-import time
-from typing import Any
-from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from app.config import ModelConfig, ModelCacheConfig, ModelQueueConfig, ModelMetadata
-from tests.conftest import FakeTextProvider, FakeImageProvider, FakeTtsProvider
+from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
+from tests.conftest import FakeImageProvider, FakeTextProvider
 
 
 def _make_config(category: str, provider_class: str) -> ModelConfig:
@@ -31,8 +28,7 @@ def _make_config(category: str, provider_class: str) -> ModelConfig:
 @pytest_asyncio.fixture
 async def text_worker():
     """Worker app serving a fake text model."""
-    from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse
+    from fastapi import FastAPI
 
     app = FastAPI()
 
@@ -45,7 +41,7 @@ async def text_worker():
     app.state.reload_lock = asyncio.Lock()
 
     # Import worker routes
-    from app.worker import health, load, unload, generate, synthesize, reload_config, stats
+    from app.worker import generate, health, load, reload_config, stats, synthesize, unload
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/load", load, methods=["POST"])
     app.add_api_route("/unload", unload, methods=["POST"])
@@ -73,7 +69,7 @@ async def image_worker():
     app.state.config = config
     app.state.reload_lock = asyncio.Lock()
 
-    from app.worker import health, load, generate, reload_config
+    from app.worker import generate, health, load, reload_config
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/load", load, methods=["POST"])
     app.add_api_route("/generate", generate, methods=["POST"])
