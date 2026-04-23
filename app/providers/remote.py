@@ -47,7 +47,14 @@ class BaseRemoteMixin:
         self._worker_url: str = config.worker_url
 
     async def load(self, model_dir: str) -> None:
-        """Connect to worker — single attempt, fail fast."""
+        """Connect to worker, then POST /load to make it load the model.
+
+        Fails if either step errors: connection refused → RuntimeError
+        "not reachable"; /load returning non-2xx (e.g. vLLM OOM on KV
+        cache) → RuntimeError with the worker's error body surfaced up
+        so ensure_loaded doesn't flip `_loaded` to True on a broken
+        worker.
+        """
         self._client = httpx.AsyncClient(base_url=self._worker_url, timeout=_TIMEOUT)
 
         httpx_logger = logging.getLogger("httpx")
@@ -67,8 +74,23 @@ class BaseRemoteMixin:
                     f"Worker at {self._worker_url} is not reachable"
                 ) from e
 
-            with contextlib.suppress(httpx.HTTPError):
-                await self._client.post("/load")
+            try:
+                load_resp = await self._client.post("/load")
+                load_resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                body = e.response.text[:500] if e.response is not None else ""
+                await self._client.aclose()
+                self._client = None
+                raise RuntimeError(
+                    f"Worker {self._worker_url} rejected /load "
+                    f"(status {e.response.status_code}): {body}"
+                ) from e
+            except httpx.HTTPError as e:
+                await self._client.aclose()
+                self._client = None
+                raise RuntimeError(
+                    f"Worker {self._worker_url} /load call failed: {e}"
+                ) from e
         finally:
             httpx_logger.setLevel(prev_level)
 

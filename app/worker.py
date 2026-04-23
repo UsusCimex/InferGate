@@ -168,12 +168,26 @@ async def stats(request: Request):
 
 @app.post("/load")
 async def load(request: Request):
-    """Explicit load signal from gateway. Reloads model if it was previously unloaded."""
+    """Explicit load signal from gateway. Loads model if not loaded.
+
+    Returns 503 with a structured body when the underlying provider.load
+    fails — a generic FastAPI 500 with a traceback would be swallowed by
+    remote.py's error handler without surfacing the cause.
+    """
     provider: BaseProvider = request.app.state.provider
-    if not provider.is_loaded():
-        models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
+    if provider.is_loaded():
+        return {"status": "ok", "model": request.app.state.config.id}
+
+    models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
+    try:
         await provider.load(models_dir)
-        logger.info("Reloaded %s via /load", request.app.state.config.id)
+    except Exception as e:
+        logger.error("Load failed for %s: %s", request.app.state.config.id, e)
+        return JSONResponse(
+            {"error": {"message": str(e), "type": "load_failed"}},
+            status_code=503,
+        )
+    logger.info("Loaded %s via /load", request.app.state.config.id)
     return {"status": "ok", "model": request.app.state.config.id}
 
 
