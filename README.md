@@ -850,11 +850,7 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 
 ### Рефакторинг и code-hygiene
 
-6. [x] **Разбить `diffusers_provider.py`** на подмодули: `_compel.py`, `_lora.py`, `_textual_inversion.py`, `_highres_fix.py`, `_schedulers.py`. Провайдер остался фасадом (load/unload/generate), каждая вертикаль изолирована в своём модуле.
-7. [x] **Общий `BaseRemoteMixin` для `RemoteProvider`**. Транспорт (`load/unload/check_health/reload/get_stats`) вынесен в миксин; подклассы (`RemoteText/Image/Tts/Stt/Upscale`) оставили только per-категорию сериализацию.
-8. [x] **Prometheus-гейджи** — инициализация и публикация через `update_runtime_gauges()` в `app/monitoring/metrics.py`. Роутер `/metrics` только вычисляет значения и делегирует.
-9. [x] **Логгеры централизованы на `logging.getLogger(__name__)`** во всех модулях `app/` (убраны именованные `"infergate"`, `"infergate.worker"`, `"infergate.access"`).
-10. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый (было 26 ошибок импорт-ордера / unused — все исправлены), осталось завести CI-конфиг (`.github/workflows/ci.yml` или аналог).
+6. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый; в `app/` остаются ~38 срабатываний на новых правилах (RUF002/003 ambiguous Unicode, устаревшие `# noqa: BLE001` под более свежий ruff) — пройтись автофиксом и завести CI-конфиг (`.github/workflows/ci.yml`).
 
 ---
 
