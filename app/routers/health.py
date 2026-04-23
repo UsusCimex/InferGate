@@ -49,11 +49,12 @@ async def metrics(
     except ImportError:
         pass
 
-    from app.monitoring import GPU_VRAM_USED_MB, MODELS_LOADED, QUEUE_SIZE, is_prometheus_available
-    if is_prometheus_available():
-        MODELS_LOADED.set(len(manager.loaded_models()))
-        GPU_VRAM_USED_MB.set(gpu_vram_used)
-        QUEUE_SIZE.set(queue_info["queue_size"])
+    from app.monitoring import update_runtime_gauges
+    update_runtime_gauges(
+        models_loaded=len(manager.loaded_models()),
+        gpu_vram_used_mb=gpu_vram_used,
+        queue_size=queue_info["queue_size"],
+    )
 
     return {
         "queue_size": queue_info["queue_size"],

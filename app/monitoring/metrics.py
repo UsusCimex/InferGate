@@ -62,3 +62,20 @@ except ImportError:
 
 def is_prometheus_available() -> bool:
     return _PROMETHEUS_AVAILABLE
+
+
+def update_runtime_gauges(
+    models_loaded: int,
+    gpu_vram_used_mb: int,
+    queue_size: int,
+) -> None:
+    """Publish latest runtime readings into the Prometheus gauges.
+
+    No-op when prometheus-client is not installed — keeps call-site
+    ergonomics simple (routers don't need to re-check availability).
+    """
+    if not _PROMETHEUS_AVAILABLE:
+        return
+    MODELS_LOADED.set(models_loaded)
+    GPU_VRAM_USED_MB.set(gpu_vram_used_mb)
+    QUEUE_SIZE.set(queue_size)

@@ -11,6 +11,7 @@ from app.monitoring.metrics import (
     REQUESTS_TOTAL,
     generate_latest,
     is_prometheus_available,
+    update_runtime_gauges,
 )
 from app.monitoring.middleware import (
     PrometheusMiddleware,
@@ -33,4 +34,5 @@ __all__ = [
     "_normalize_path",
     "generate_latest",
     "is_prometheus_available",
+    "update_runtime_gauges",
 ]
