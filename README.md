@@ -850,11 +850,11 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 
 ### Рефакторинг и code-hygiene
 
-6. [ ] **Разбить `diffusers_provider.py`** (897 строк) на подмодули: `_compel.py` (token weighting), `_lora.py` (LRU-кэш адаптеров), `_textual_inversion.py` (single/multi-token registration), `_highres_fix.py`, `_schedulers.py`. Текущий файл — самый крупный в кодовой базе и смешивает 5 независимых вертикалей. Цель: один модуль ≤ 250 строк, провайдер остаётся фасадом.
-7. [ ] **Общий `BaseRemoteMixin` для `RemoteProvider`**. Сейчас в `app/providers/remote.py` 5 категорий (image/text/tts/stt/upscale) дублируют boilerplate `_call_worker`, ретраи и обработку `httpx.HTTPStatusError`. Вынести общий транспорт в миксин, оставить в подклассах только сериализацию запроса/ответа.
-8. [ ] **Вынести инициализацию Prometheus-гейджей** из `app/routers/health.py:/metrics` в `app/monitoring/metrics.py` (рядом с их декларацией). Роутер должен только читать готовые значения — у него нет ответственности за регистрацию.
-9. [ ] **Централизовать логгеры**. Сейчас в половине модулей `logging.getLogger(__name__)`, в половине — именованный `logging.getLogger("infergate")` или `logger = ...` на уровне модуля с разными именами. Выбрать один шаблон (рекомендую `__name__`) и пройтись rename'ом.
-10. [ ] **Единый code-style по CLAUDE.md**. Пройтись `ruff check --fix tests/` — в тестах 60+ ошибок импорт-ордера и unused-импортов, которых в `app/` уже нет. После — включить ruff в CI как блокирующую проверку.
+6. [x] **Разбить `diffusers_provider.py`** на подмодули: `_compel.py`, `_lora.py`, `_textual_inversion.py`, `_highres_fix.py`, `_schedulers.py`. Провайдер остался фасадом (load/unload/generate), каждая вертикаль изолирована в своём модуле.
+7. [x] **Общий `BaseRemoteMixin` для `RemoteProvider`**. Транспорт (`load/unload/check_health/reload/get_stats`) вынесен в миксин; подклассы (`RemoteText/Image/Tts/Stt/Upscale`) оставили только per-категорию сериализацию.
+8. [x] **Prometheus-гейджи** — инициализация и публикация через `update_runtime_gauges()` в `app/monitoring/metrics.py`. Роутер `/metrics` только вычисляет значения и делегирует.
+9. [x] **Логгеры централизованы на `logging.getLogger(__name__)`** во всех модулях `app/` (убраны именованные `"infergate"`, `"infergate.worker"`, `"infergate.access"`).
+10. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый (было 26 ошибок импорт-ордера / unused — все исправлены), осталось завести CI-конфиг (`.github/workflows/ci.yml` или аналог).
 
 ---
 
