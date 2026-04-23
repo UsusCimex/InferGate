@@ -5,7 +5,7 @@ import time
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-logger = logging.getLogger("infergate.access")
+logger = logging.getLogger(__name__)
 
 _SKIP_PATHS = frozenset({"/health", "/openapi.json"})
 

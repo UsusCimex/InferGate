@@ -27,7 +27,7 @@ from app.services.provider_manager import (
     WorkerNotReadyError,
 )
 
-logger = logging.getLogger("infergate")
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager

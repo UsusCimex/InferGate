@@ -20,7 +20,7 @@ from app.config import ModelConfig, load_single_model_config
 from app.providers.base import BaseProvider
 from app.providers.registry import get_provider_class
 
-logger = logging.getLogger("infergate.worker")
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
