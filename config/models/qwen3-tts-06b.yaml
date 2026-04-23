@@ -2,9 +2,7 @@ id: qwen3-tts-06b
 display_name: "Qwen3-TTS 0.6B (Voice Clone, 10 languages)"
 category: tts
 provider_class: Qwen3TtsProvider
-# Disabled by default — Qwen3-TTS needs ~2GB VRAM; flip
-# QWEN3_TTS_06B_ENABLED=true in deploy/.env to turn it on.
-enabled: ${oc.decode:${oc.env:QWEN3_TTS_06B_ENABLED,false}}
+enabled: ${oc.decode:${oc.env:QWEN3_TTS_06B_ENABLED,true}}
 
 model:
   hub_id: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"

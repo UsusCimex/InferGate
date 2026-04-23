@@ -217,7 +217,7 @@ services:
   # ─── Image workers (diffusers) ───────────────────────────────────────
   worker-sd35-medium:
     <<: *gpu
-    profiles: ["image", "sd35-medium"]
+    profiles: ["sd35-medium"]
     build:
       <<: *build
       args:
@@ -232,7 +232,7 @@ services:
 
   worker-sdxl-base:
     <<: *gpu
-    profiles: ["sdxl-base"]
+    profiles: ["image", "sdxl-base"]
     build:
       <<: *build
       args:
@@ -390,7 +390,7 @@ services:
   # ─── TTS workers ─────────────────────────────────────────────────────
   worker-kokoro-82m:
     <<: *cpu-worker
-    profiles: ["tts", "kokoro-82m"]
+    profiles: ["kokoro-82m"]
     build:
       <<: *build
       args:
@@ -440,7 +440,7 @@ services:
 
   worker-qwen3-tts-06b:
     <<: *gpu
-    profiles: ["voice-clone", "qwen3-tts-06b"]
+    profiles: ["tts", "voice-clone", "qwen3-tts-06b"]
     build:
       <<: *build
       args:

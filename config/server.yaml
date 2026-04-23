@@ -11,7 +11,7 @@ gpu:
   # Backstop count-based LRU (when vram_mb budget is disabled or model
   # doesn't declare a size).
   max_loaded_models: ${oc.decode:${oc.env:GPU_MAX_LOADED_MODELS,3}}
-  pinned_models: ["sd35-medium"]
+  pinned_models: []
   device: "cuda:0"
   # Byte-budget LRU — primary safety net. When the sum of declared
   # `vram_mb` across loaded models would exceed this, LRU evicts until
@@ -31,7 +31,7 @@ gpu:
   # loaded worker and emergency-evicts LRU when live VRAM crosses
   # threshold (catches leaks + underdeclared vram_mb that the static
   # budget can't see). 0 = disabled (default); 10-30s recommended.
-  watchdog_interval_seconds: ${oc.decode:${oc.env:GPU_WATCHDOG_INTERVAL_SECONDS,0}}
+  watchdog_interval_seconds: ${oc.decode:${oc.env:GPU_WATCHDOG_INTERVAL_SECONDS,15}}
   watchdog_vram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_VRAM_THRESHOLD,0.92}}
   watchdog_ram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_RAM_THRESHOLD,0.90}}
   # Soft per-category floor — LRU won't drop a category below the
@@ -57,12 +57,12 @@ cors:
 models_dir: "./models"
 
 defaults:
-  image: sd35-medium
+  image: sdxl-base
   text: qwen3.5-4b
-  tts: kokoro-82m
+  tts: qwen3-tts-06b
 
-# Порядок предзагрузки: sd35-medium (pinned, всегда в GPU),
-# остальные загружаются по первому запросу и выгружаются LRU при нехватке VRAM.
+# Предзагрузка по первому обращению, LRU + VRAM-watchdog следят, чтобы
+# все три дефолта уживались на 12 GB карте (RTX 5070 и подобных).
 
 rate_limit:
   enabled: false
