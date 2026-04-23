@@ -27,17 +27,26 @@ _READ_TIMEOUT = float(os.environ.get("GATEWAY_REMOTE_READ_TIMEOUT", "1800"))
 _TIMEOUT = httpx.Timeout(connect=5.0, read=_READ_TIMEOUT, write=10.0, pool=10.0)
 
 
-class _RemoteMixin:
-    """Shared HTTP client logic for remote providers. Used via composition."""
+class BaseRemoteMixin:
+    """Shared HTTP transport for remote providers.
+
+    Subclasses inherit the full lifecycle (`load`, `unload`, `check_health`,
+    `reload`, `get_stats`) and only implement the category-specific
+    request/response serialisation (e.g. `generate`, `synthesize`).
+
+    Mixin contract: subclasses must also inherit from a provider base
+    (e.g. `TextProvider`) that provides `self.config.worker_url`,
+    `self.model_id`, and the `self._loaded` flag.
+    """
 
     _client: httpx.AsyncClient | None
-    _worker_url: str
 
-    def _init_remote(self) -> None:
+    def __init__(self, config: Any) -> None:
+        super().__init__(config)  # type: ignore[misc]
         self._client = None
-        self._worker_url = self.config.worker_url  # type: ignore[attr-defined]
+        self._worker_url: str = config.worker_url
 
-    async def _remote_load(self) -> None:
+    async def load(self, model_dir: str) -> None:
         """Connect to worker — single attempt, fail fast."""
         self._client = httpx.AsyncClient(base_url=self._worker_url, timeout=_TIMEOUT)
 
@@ -48,7 +57,9 @@ class _RemoteMixin:
             try:
                 resp = await self._client.get("/health")
                 if resp.status_code != 200:
-                    raise RuntimeError(f"Worker {self._worker_url} returned status {resp.status_code}")
+                    raise RuntimeError(
+                        f"Worker {self._worker_url} returned status {resp.status_code}"
+                    )
             except httpx.HTTPError as e:
                 await self._client.aclose()
                 self._client = None
@@ -62,9 +73,12 @@ class _RemoteMixin:
             httpx_logger.setLevel(prev_level)
 
         self._loaded = True  # type: ignore[attr-defined]
-        logger.info("Connected to worker %s for %s", self._worker_url, self.model_id)  # type: ignore[attr-defined]
+        logger.info(
+            "Connected to worker %s for %s",
+            self._worker_url, self.model_id,  # type: ignore[attr-defined]
+        )
 
-    async def _remote_unload(self) -> None:
+    async def unload(self) -> None:
         """Disconnect from worker."""
         if self._client:
             with contextlib.suppress(httpx.HTTPError):
@@ -74,7 +88,7 @@ class _RemoteMixin:
         self._loaded = False  # type: ignore[attr-defined]
         logger.info("Disconnected from worker %s", self._worker_url)
 
-    async def _check_health(self) -> bool:
+    async def check_health(self) -> bool:
         """Single health probe — used by background monitor."""
         httpx_logger = logging.getLogger("httpx")
         prev_level = httpx_logger.level
@@ -91,7 +105,7 @@ class _RemoteMixin:
         finally:
             httpx_logger.setLevel(prev_level)
 
-    async def _remote_reload(self, new_config: Any) -> str:
+    async def reload(self, new_config: Any) -> str:
         """POST new config to worker /reload; returns action ("noop"|"metadata"|"full_reload")."""
         if self._client is None:
             raise RuntimeError(
@@ -101,10 +115,12 @@ class _RemoteMixin:
         resp.raise_for_status()
         return resp.json().get("action", "unknown")
 
-    async def _remote_stats(self) -> dict:
-        """GET /stats from worker — cheap poll for watchdog. Returns
-        empty dict if worker unreachable so caller can reason about
-        "no data" distinctly from "0 used"."""
+    async def get_stats(self) -> dict:
+        """GET /stats from worker — cheap poll for watchdog.
+
+        Returns empty dict if worker unreachable so caller can reason about
+        "no data" distinctly from "0 used".
+        """
         if self._client is None:
             return {}
         try:
@@ -115,27 +131,8 @@ class _RemoteMixin:
             return {}
 
 
-class RemoteTextProvider(TextProvider):
+class RemoteTextProvider(BaseRemoteMixin, TextProvider):
     """Proxies text generation requests to a remote worker."""
-
-    def __init__(self, config: Any) -> None:
-        super().__init__(config)
-        _RemoteMixin._init_remote(self)
-
-    async def load(self, model_dir: str) -> None:
-        await _RemoteMixin._remote_load(self)
-
-    async def unload(self) -> None:
-        await _RemoteMixin._remote_unload(self)
-
-    async def check_health(self) -> bool:
-        return await _RemoteMixin._check_health(self)
-
-    async def reload(self, new_config: Any) -> str:
-        return await _RemoteMixin._remote_reload(self, new_config)
-
-    async def get_stats(self) -> dict:
-        return await _RemoteMixin._remote_stats(self)
 
     async def generate(self, messages: list[dict], **params: Any) -> dict:
         resp = await self._client.post("/generate", json={"messages": messages, **params})
@@ -152,27 +149,8 @@ class RemoteTextProvider(TextProvider):
                     yield line + "\n"
 
 
-class RemoteImageProvider(ImageProvider):
+class RemoteImageProvider(BaseRemoteMixin, ImageProvider):
     """Proxies image generation requests to a remote worker."""
-
-    def __init__(self, config: Any) -> None:
-        super().__init__(config)
-        _RemoteMixin._init_remote(self)
-
-    async def load(self, model_dir: str) -> None:
-        await _RemoteMixin._remote_load(self)
-
-    async def unload(self) -> None:
-        await _RemoteMixin._remote_unload(self)
-
-    async def check_health(self) -> bool:
-        return await _RemoteMixin._check_health(self)
-
-    async def reload(self, new_config: Any) -> str:
-        return await _RemoteMixin._remote_reload(self, new_config)
-
-    async def get_stats(self) -> dict:
-        return await _RemoteMixin._remote_stats(self)
 
     async def generate(self, prompt: str, **params: Any) -> bytes:
         resp = await self._client.post("/generate", json={"prompt": prompt, **params})
@@ -180,27 +158,8 @@ class RemoteImageProvider(ImageProvider):
         return resp.content
 
 
-class RemoteTtsProvider(TtsProvider):
+class RemoteTtsProvider(BaseRemoteMixin, TtsProvider):
     """Proxies TTS requests to a remote worker."""
-
-    def __init__(self, config: Any) -> None:
-        super().__init__(config)
-        _RemoteMixin._init_remote(self)
-
-    async def load(self, model_dir: str) -> None:
-        await _RemoteMixin._remote_load(self)
-
-    async def unload(self) -> None:
-        await _RemoteMixin._remote_unload(self)
-
-    async def check_health(self) -> bool:
-        return await _RemoteMixin._check_health(self)
-
-    async def reload(self, new_config: Any) -> str:
-        return await _RemoteMixin._remote_reload(self, new_config)
-
-    async def get_stats(self) -> dict:
-        return await _RemoteMixin._remote_stats(self)
 
     async def synthesize(self, text: str, **params: Any) -> bytes:
         # Voice-cloning branch: reference_audio bytes → multipart to
@@ -220,7 +179,7 @@ class RemoteTtsProvider(TtsProvider):
         return resp.content
 
 
-class RemoteSttProvider(SttProvider):
+class RemoteSttProvider(BaseRemoteMixin, SttProvider):
     """Proxies speech-to-text requests to a remote worker.
 
     Unlike the other remote providers that ship JSON params, STT also
@@ -228,28 +187,8 @@ class RemoteSttProvider(SttProvider):
     worker can use the same decoding path as a direct client upload.
     """
 
-    def __init__(self, config: Any) -> None:
-        super().__init__(config)
-        _RemoteMixin._init_remote(self)
-
-    async def load(self, model_dir: str) -> None:
-        await _RemoteMixin._remote_load(self)
-
-    async def unload(self) -> None:
-        await _RemoteMixin._remote_unload(self)
-
-    async def check_health(self) -> bool:
-        return await _RemoteMixin._check_health(self)
-
-    async def reload(self, new_config: Any) -> str:
-        return await _RemoteMixin._remote_reload(self, new_config)
-
-    async def get_stats(self) -> dict:
-        return await _RemoteMixin._remote_stats(self)
-
     async def transcribe(self, audio: bytes, **params: Any) -> dict:
         filename = str(params.pop("filename", "audio.wav"))
-        # Form fields must be strings; skip None and coerce numbers.
         form: dict[str, str] = {
             k: str(v) for k, v in params.items() if v is not None
         }
@@ -259,27 +198,8 @@ class RemoteSttProvider(SttProvider):
         return resp.json()
 
 
-class RemoteUpscaleProvider(ImageUpscaleProvider):
+class RemoteUpscaleProvider(BaseRemoteMixin, ImageUpscaleProvider):
     """Proxies super-resolution requests to a remote worker via multipart."""
-
-    def __init__(self, config: Any) -> None:
-        super().__init__(config)
-        _RemoteMixin._init_remote(self)
-
-    async def load(self, model_dir: str) -> None:
-        await _RemoteMixin._remote_load(self)
-
-    async def unload(self) -> None:
-        await _RemoteMixin._remote_unload(self)
-
-    async def check_health(self) -> bool:
-        return await _RemoteMixin._check_health(self)
-
-    async def reload(self, new_config: Any) -> str:
-        return await _RemoteMixin._remote_reload(self, new_config)
-
-    async def get_stats(self) -> dict:
-        return await _RemoteMixin._remote_stats(self)
 
     async def upscale(self, image: bytes, **params: Any) -> bytes:
         files = {"file": ("image.png", image, "image/png")}
