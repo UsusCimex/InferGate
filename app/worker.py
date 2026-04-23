@@ -57,19 +57,23 @@ async def lifespan(app: FastAPI):
 
     provider_cls = get_provider_class(config.provider_class)
     provider = provider_cls(config)
-    await provider.load(models_dir)
 
     app.state.provider = provider
     app.state.config = config
+    app.state.models_dir = models_dir
     # Serialises /reload vs /generate+/synthesize. Brief sequentialisation
     # during reload for max_concurrent>1 models — rare, acceptable.
     app.state.reload_lock = asyncio.Lock()
 
-    logger.info("Worker ready: %s", config.id)
+    # Lazy model load: the gateway calls POST /load on first real request,
+    # after its LRU/VRAM-budget planner has made room. Starting "cold" keeps
+    # all workers from fighting for VRAM simultaneously on boot.
+    logger.info("Worker started (model unloaded): %s — awaiting /load", config.id)
     yield
 
     logger.info("Worker shutting down: %s", config.id)
-    await provider.unload()
+    if provider.is_loaded():
+        await provider.unload()
 
 
 app = FastAPI(title="InferGate Worker", lifespan=lifespan)

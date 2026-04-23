@@ -184,16 +184,18 @@ class ProviderManager:
             self._monitor_task.cancel()
 
     async def _monitor_workers(self) -> None:
-        """Periodically probe remote workers and connect when ready.
+        """Track remote worker reachability without auto-loading models.
 
-        Each worker gets an exponential-backoff retry schedule after
-        consecutive failures, capped at _WORKER_MAX_BACKOFF seconds.
-        Registry is re-read each iteration so reload_model-recreated
-        provider instances are picked up without restarting the monitor.
+        Models load lazily via `ensure_loaded` on first real request so the
+        VRAM-budget planner can evict LRU before each load. The monitor only
+        probes `/health` to keep `is_loaded` in sync with reality: if a
+        loaded worker becomes unreachable, clear the `_loaded` flag and
+        drop the model from LRU so eviction planning stays honest.
         """
         next_probe: dict[str, float] = {}
         fail_counts: dict[str, int] = {}
         announced: set[str] = set()
+        reachable: set[str] = set()
 
         while True:
             now = asyncio.get_running_loop().time()
@@ -212,70 +214,65 @@ class ProviderManager:
                     next_probe.pop(mid, None)
                     fail_counts.pop(mid, None)
                     announced.discard(mid)
+                    reachable.discard(mid)
 
             for model_id, provider in remote_models.items():
-                if provider.is_loaded():
-                    # Verify still healthy
-                    if hasattr(provider, "check_health"):
-                        healthy = await provider.check_health()
-                        if not healthy:
-                            logger.warning(
-                                "Worker disconnected: %s (%s) — marking unavailable",
-                                model_id, provider.config.worker_url,
-                            )
-                            provider._loaded = False
-                            async with self._state_lock:
-                                self._loaded_order.pop(model_id, None)
-                            fail_counts[model_id] = 0
-                            next_probe[model_id] = now
-                    continue
-
                 if now < next_probe[model_id]:
                     continue
 
-                # Try to connect
+                healthy = False
                 try:
-                    await provider.load(self._model_dir)
-                    async with self._state_lock:
-                        self._loaded_order[model_id] = None
-                    logger.info(
-                        "Worker ready: %s (%s) — model is now available",
-                        model_id, provider.config.worker_url,
-                    )
+                    if hasattr(provider, "check_health"):
+                        healthy = await provider.check_health()
+                except Exception:  # noqa: BLE001 — probe must never raise
+                    healthy = False
+
+                if healthy:
+                    if model_id not in reachable:
+                        logger.info(
+                            "Worker reachable: %s (%s) — model loads on demand",
+                            model_id, provider.config.worker_url,
+                        )
+                        reachable.add(model_id)
                     fail_counts[model_id] = 0
-                    next_probe[model_id] = now
-                except Exception as e:
+                    next_probe[model_id] = now + _WORKER_MONITOR_INTERVAL
+                else:
+                    # Worker unreachable — if it was considered loaded, drop
+                    # the state so the planner doesn't count its VRAM budget.
+                    if provider.is_loaded():
+                        logger.warning(
+                            "Worker disconnected: %s (%s) — marking unavailable",
+                            model_id, provider.config.worker_url,
+                        )
+                        provider._loaded = False
+                        async with self._state_lock:
+                            self._loaded_order.pop(model_id, None)
+                    reachable.discard(model_id)
                     fail_counts[model_id] += 1
                     delay = min(
                         _WORKER_MONITOR_INTERVAL * (2 ** (fail_counts[model_id] - 1)),
                         _WORKER_MAX_BACKOFF,
                     )
                     next_probe[model_id] = now + delay
-                    logger.debug(
-                        "Worker %s (%s) not ready (fail #%d, retry in %ds): %s",
-                        model_id, provider.config.worker_url,
-                        fail_counts[model_id], int(delay), e,
-                    )
 
             await asyncio.sleep(_WORKER_MONITOR_INTERVAL)
 
     # ── Model loading ─────────────────────────────────────────────────
 
     async def ensure_loaded(self, model_id: str) -> BaseProvider:
-        """Load model if not loaded. LRU swap if no slots available."""
+        """Load model if not loaded. LRU swap if no slots available.
+
+        Uniform path for local and remote models: `_make_room` evicts LRU
+        to fit `provider.vram_mb` within the configured byte budget, then
+        `provider.load()` is called. For remote providers this POSTs /load
+        to the worker container, which may block 10–90 s on first load.
+        """
         # Fast path: already loaded — just touch LRU
         async with self._state_lock:
             provider = self.get(model_id)
             if provider.is_loaded():
                 self._touch_lru(model_id)
                 return provider
-
-        # Remote models: fail fast — background monitor handles connection
-        if self._is_remote(model_id):
-            raise WorkerNotReadyError(
-                f"Worker for model '{model_id}' is not available yet. "
-                f"It may still be starting up — try again in a few seconds."
-            )
 
         # Slow path: per-model lock so only one load at a time per model,
         # but other models remain accessible
@@ -290,7 +287,15 @@ class ProviderManager:
                 if self._is_gpu_model(model_id):
                     await self._make_room(incoming_vram_mb=provider.vram_mb)
 
-            await provider.load(self._model_dir)
+            try:
+                await provider.load(self._model_dir)
+            except RuntimeError as e:
+                if self._is_remote(model_id) and "not reachable" in str(e):
+                    raise WorkerNotReadyError(
+                        f"Worker for model '{model_id}' is not reachable. "
+                        f"Check its container is running."
+                    ) from e
+                raise
 
             async with self._state_lock:
                 self._loaded_order[model_id] = None
