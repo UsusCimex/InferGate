@@ -1,10 +1,3 @@
-"""Speech-to-text provider backed by faster-whisper (CTranslate2).
-
-Chosen over openai-whisper because CTranslate2 is 2-4x faster at the
-same accuracy and supports int8 quantisation for CPU-only deployments.
-Accepts any CT2-converted Whisper checkpoint from HuggingFace hub via
-`model.hub_id` in the YAML config.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -22,8 +15,7 @@ logger = logging.getLogger(__name__)
 
 @register_provider
 class WhisperProvider(SttProvider):
-    """faster-whisper wrapper — supports language hints, segment timestamps,
-    and YAML-driven defaults (beam_size, vad_filter, compute_type)."""
+    """faster-whisper ASR provider."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -37,7 +29,7 @@ class WhisperProvider(SttProvider):
         hub_id = self.config.model["hub_id"]
         device = self.config.model.get("device", "cuda")
         compute_type = self.config.model.get("compute_type", "float16")
-        cpu_threads = int(self.config.model.get("cpu_threads", 0))  # 0 = auto
+        cpu_threads = int(self.config.model.get("cpu_threads", 0))
 
         logger.info(
             "Loading %s from %s (device=%s, compute_type=%s)",
@@ -86,9 +78,7 @@ class WhisperProvider(SttProvider):
         vad_filter = bool(defaults.get("vad_filter", False))
         response_format = str(defaults.get("response_format", "json"))
 
-        # faster-whisper reads from disk — pay a ~1ms tempfile copy to keep
-        # the API bytes-in / dict-out for consistency with the SttProvider
-        # ABC (audio bytes, not filesystem paths, cross worker boundary).
+        # faster-whisper reads from disk; the ABC contract is bytes-in.
         tmp = tempfile.NamedTemporaryFile(
             suffix="." + str(defaults.get("filename", "audio.wav")).rsplit(".", 1)[-1],
             delete=False,
@@ -105,7 +95,7 @@ class WhisperProvider(SttProvider):
                 beam_size=beam_size,
                 vad_filter=vad_filter,
             )
-            # Generator is lazy — fully materialise so we can free the tmp file.
+            # Materialise the lazy generator before we unlink the tmp file.
             return list(segments_iter), info
 
         try:

@@ -1,4 +1,3 @@
-"""Remote providers that proxy requests to worker containers via HTTP."""
 from __future__ import annotations
 
 import contextlib
@@ -19,25 +18,13 @@ from app.providers.base import (
 
 logger = logging.getLogger(__name__)
 
-# Read timeout — long by default because image generation with
-# sequential_cpu_offload on consumer GPUs can legitimately take 5-15 minutes
-# for the first request (kernel JIT) and 1-3 min thereafter. Tune via
-# GATEWAY_REMOTE_READ_TIMEOUT env var if needed.
+# First-load JITs on consumer GPUs can run 5–15 min; tune via GATEWAY_REMOTE_READ_TIMEOUT.
 _READ_TIMEOUT = float(os.environ.get("GATEWAY_REMOTE_READ_TIMEOUT", "1800"))
 _TIMEOUT = httpx.Timeout(connect=5.0, read=_READ_TIMEOUT, write=10.0, pool=10.0)
 
 
 class BaseRemoteMixin:
-    """Shared HTTP transport for remote providers.
-
-    Subclasses inherit the full lifecycle (`load`, `unload`, `check_health`,
-    `reload`, `get_stats`) and only implement the category-specific
-    request/response serialisation (e.g. `generate`, `synthesize`).
-
-    Mixin contract: subclasses must also inherit from a provider base
-    (e.g. `TextProvider`) that provides `self.config.worker_url`,
-    `self.model_id`, and the `self._loaded` flag.
-    """
+    """Shared HTTP lifecycle for providers that proxy to a worker container."""
 
     _client: httpx.AsyncClient | None
 
@@ -47,14 +34,7 @@ class BaseRemoteMixin:
         self._worker_url: str = config.worker_url
 
     async def load(self, model_dir: str) -> None:
-        """Connect to worker, then POST /load to make it load the model.
-
-        Fails if either step errors: connection refused → RuntimeError
-        "not reachable"; /load returning non-2xx (e.g. vLLM OOM on KV
-        cache) → RuntimeError with the worker's error body surfaced up
-        so ensure_loaded doesn't flip `_loaded` to True on a broken
-        worker.
-        """
+        """Connect to the worker and POST /load; raises on either failure."""
         self._client = httpx.AsyncClient(base_url=self._worker_url, timeout=_TIMEOUT)
 
         httpx_logger = logging.getLogger("httpx")
@@ -101,7 +81,7 @@ class BaseRemoteMixin:
         )
 
     async def unload(self) -> None:
-        """Disconnect from worker."""
+        """Best-effort /unload + close the HTTP client."""
         if self._client:
             with contextlib.suppress(httpx.HTTPError):
                 await self._client.post("/unload")
@@ -111,7 +91,7 @@ class BaseRemoteMixin:
         logger.info("Disconnected from worker %s", self._worker_url)
 
     async def check_health(self) -> bool:
-        """Single health probe — used by background monitor."""
+        """One-shot /health probe used by the background monitor."""
         httpx_logger = logging.getLogger("httpx")
         prev_level = httpx_logger.level
         httpx_logger.setLevel(logging.WARNING)
@@ -128,7 +108,7 @@ class BaseRemoteMixin:
             httpx_logger.setLevel(prev_level)
 
     async def reload(self, new_config: Any) -> str:
-        """POST new config to worker /reload; returns action ("noop"|"metadata"|"full_reload")."""
+        """POST a new config to the worker's /reload; returns its action string."""
         if self._client is None:
             raise RuntimeError(
                 f"Worker {self._worker_url} not connected — /reload cannot be delivered"
@@ -138,11 +118,7 @@ class BaseRemoteMixin:
         return resp.json().get("action", "unknown")
 
     async def get_stats(self) -> dict:
-        """GET /stats from worker — cheap poll for watchdog.
-
-        Returns empty dict if worker unreachable so caller can reason about
-        "no data" distinctly from "0 used".
-        """
+        """GET /stats from the worker; returns {} when the worker is unreachable."""
         if self._client is None:
             return {}
         try:
@@ -154,7 +130,7 @@ class BaseRemoteMixin:
 
 
 class RemoteTextProvider(BaseRemoteMixin, TextProvider):
-    """Proxies text generation requests to a remote worker."""
+    """Text-generation provider that proxies to a remote worker."""
 
     async def generate(self, messages: list[dict], **params: Any) -> dict:
         resp = await self._client.post("/generate", json={"messages": messages, **params})
@@ -172,7 +148,7 @@ class RemoteTextProvider(BaseRemoteMixin, TextProvider):
 
 
 class RemoteImageProvider(BaseRemoteMixin, ImageProvider):
-    """Proxies image generation requests to a remote worker."""
+    """Image-generation provider that proxies to a remote worker."""
 
     async def generate(self, prompt: str, **params: Any) -> bytes:
         resp = await self._client.post("/generate", json={"prompt": prompt, **params})
@@ -181,11 +157,10 @@ class RemoteImageProvider(BaseRemoteMixin, ImageProvider):
 
 
 class RemoteTtsProvider(BaseRemoteMixin, TtsProvider):
-    """Proxies TTS requests to a remote worker."""
+    """TTS provider that proxies to a remote worker (JSON or multipart depending on params)."""
 
     async def synthesize(self, text: str, **params: Any) -> bytes:
-        # Voice-cloning branch: reference_audio bytes → multipart to
-        # /voice-clone; everything else uses the JSON /synthesize path.
+        # reference_audio bytes → multipart to /voice-clone; otherwise JSON /synthesize.
         ref = params.pop("reference_audio", None)
         if ref is not None:
             filename = str(params.pop("reference_filename", "ref.wav"))
@@ -202,12 +177,7 @@ class RemoteTtsProvider(BaseRemoteMixin, TtsProvider):
 
 
 class RemoteSttProvider(BaseRemoteMixin, SttProvider):
-    """Proxies speech-to-text requests to a remote worker.
-
-    Unlike the other remote providers that ship JSON params, STT also
-    streams audio bytes — we send them as a multipart/form-data so the
-    worker can use the same decoding path as a direct client upload.
-    """
+    """STT provider that proxies to a remote worker via multipart /transcribe."""
 
     async def transcribe(self, audio: bytes, **params: Any) -> dict:
         filename = str(params.pop("filename", "audio.wav"))
@@ -221,7 +191,7 @@ class RemoteSttProvider(BaseRemoteMixin, SttProvider):
 
 
 class RemoteUpscaleProvider(BaseRemoteMixin, ImageUpscaleProvider):
-    """Proxies super-resolution requests to a remote worker via multipart."""
+    """Upscale provider that proxies to a remote worker via multipart /upscale."""
 
     async def upscale(self, image: bytes, **params: Any) -> bytes:
         files = {"file": ("image.png", image, "image/png")}

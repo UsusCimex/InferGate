@@ -1,12 +1,3 @@
-"""Super-resolution provider via spandrel — a unified loader covering
-ESRGAN, Real-ESRGAN, SwinIR, DAT, HAT, CodeFormer, and friends.
-
-Chosen over single-architecture packages (realesrgan, basicsr) because
-spandrel parses the checkpoint's architecture metadata automatically —
-one provider class serves any SR model whose .pth lands on HuggingFace.
-YAML selects the model via `hub_id` + `filename`; scale factor is read
-off the loaded model, not hard-coded.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @register_provider
 class SpandrelUpscaleProvider(ImageUpscaleProvider):
-    """Generic super-resolution wrapper around spandrel.ModelLoader."""
+    """Super-resolution provider that loads any spandrel-supported checkpoint."""
 
     def __init__(self, config):
         super().__init__(config)

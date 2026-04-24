@@ -1,8 +1,3 @@
-"""Abstract base classes defining the provider interface for each modality.
-
-All concrete providers (local or remote) inherit from one of these ABCs.
-The gateway interacts with providers only through these interfaces.
-"""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -13,11 +8,7 @@ if TYPE_CHECKING:
 
 
 class BaseProvider(ABC):
-    """Base class for all model providers.
-
-    Manages lifecycle (load/unload) and exposes model metadata.
-    Subclasses must implement load() and unload() for resource management.
-    """
+    """Lifecycle + metadata base for every model provider."""
 
     def __init__(self, config: ModelConfig):
         self.config = config
@@ -29,12 +20,12 @@ class BaseProvider(ABC):
 
     @property
     def vram_mb(self) -> int:
-        """GPU VRAM required by this model in megabytes. 0 means CPU-only."""
+        """GPU VRAM required by this model in megabytes (0 means CPU-only)."""
         return self.config.model.get("vram_mb", 0)
 
     @abstractmethod
     async def load(self, model_dir: str) -> None:
-        """Load model weights into GPU/RAM. Called by ProviderManager."""
+        """Load model weights into GPU/RAM."""
 
     @abstractmethod
     async def unload(self) -> None:
@@ -44,10 +35,7 @@ class BaseProvider(ABC):
         return self._loaded
 
     async def get_stats(self) -> dict:
-        """Return live resource-usage snapshot. Default implementation
-        reports declared-only numbers; remote providers override with
-        live readings from the worker. Watchdog polls this to decide
-        whether to evict."""
+        """Return a live resource-usage snapshot used by the memory watchdog."""
         return {
             "model": self.model_id,
             "loaded": self.is_loaded(),
@@ -57,51 +45,44 @@ class BaseProvider(ABC):
 
 
 class ImageProvider(BaseProvider):
-    """Interface for image generation models (diffusers, etc.)."""
+    """Interface for text-to-image models."""
 
     @abstractmethod
     async def generate(self, prompt: str, **params: Any) -> bytes:
-        """Generate image from text prompt. Returns PNG bytes."""
+        """Generate an image from `prompt`. Returns PNG bytes."""
 
 
 class TextProvider(BaseProvider):
-    """Interface for text/chat generation models (vLLM, etc.)."""
+    """Interface for text/chat generation models."""
 
     @abstractmethod
     async def generate(self, messages: list[dict], **params: Any) -> dict:
-        """Run chat completion. Returns OpenAI-format response dict."""
+        """Run chat completion. Returns an OpenAI-format response dict."""
 
     async def generate_stream(self, messages: list[dict], **params: Any):
-        """Stream chat completion. Yields OpenAI SSE chunks.
-
-        Optional — override in providers that support streaming.
-        """
+        """Stream chat completion as OpenAI SSE chunks. Optional — override to enable."""
         raise NotImplementedError("Streaming not supported by this provider")
 
 
 class TtsProvider(BaseProvider):
-    """Interface for text-to-speech models (Kokoro, Fish Speech, etc.)."""
+    """Interface for text-to-speech models."""
 
     @abstractmethod
     async def synthesize(self, text: str, **params: Any) -> bytes:
-        """Synthesize speech from text. Returns audio bytes."""
+        """Synthesize speech from `text`. Returns audio bytes."""
 
 
 class SttProvider(BaseProvider):
-    """Interface for speech-to-text / automatic-speech-recognition models."""
+    """Interface for speech-to-text / ASR models."""
 
     @abstractmethod
     async def transcribe(self, audio: bytes, **params: Any) -> dict:
-        """Transcribe audio bytes to text. Returns OpenAI-format dict:
-        at minimum `{"text": str}`; verbose_json adds `language`, `duration`,
-        `segments`."""
+        """Transcribe `audio` to `{"text": str, ...}` (optionally language/duration/segments)."""
 
 
 class ImageUpscaleProvider(BaseProvider):
-    """Interface for super-resolution / upscaling image models (Real-ESRGAN, SwinIR, etc.)."""
+    """Interface for super-resolution / upscaling models."""
 
     @abstractmethod
     async def upscale(self, image: bytes, **params: Any) -> bytes:
-        """Upscale an input image. Returns PNG bytes at the upscaled
-        resolution. Scale factor (2, 3, 4) is provider-specific and set
-        at model load time from YAML."""
+        """Upscale `image` by the provider's configured factor. Returns PNG bytes."""

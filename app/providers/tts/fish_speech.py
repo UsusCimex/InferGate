@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @register_provider
 class FishSpeechTtsProvider(TtsProvider):
-    """Provider for Fish Speech / OpenAudio TTS models."""
+    """Fish Speech / OpenAudio TTS provider."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -33,7 +33,6 @@ class FishSpeechTtsProvider(TtsProvider):
                 return TTS(llama_path=hub_id)
             except ImportError:
                 try:
-                    # Fallback for older fish-speech versions
                     from fish_speech.inference import TTSInference
 
                     return TTSInference(model_path=hub_id, device="cuda")
@@ -80,9 +79,6 @@ class FishSpeechTtsProvider(TtsProvider):
         defaults.pop("voice", None)
         defaults.pop("speed", None)
 
-        # Voice-cloning payload: write reference to a temp file so we can
-        # pass it as a path to TTS.synthesize — most Fish-Speech versions
-        # expect a filesystem path rather than raw bytes.
         ref_audio = defaults.pop("reference_audio", None)
         ref_filename = str(defaults.pop("reference_filename", "ref.wav"))
         ref_text = defaults.pop("reference_text", None)
@@ -90,6 +86,7 @@ class FishSpeechTtsProvider(TtsProvider):
         import os
         import tempfile
 
+        # Fish-Speech expects a filesystem path, not raw bytes — stage to temp.
         ref_path: str | None = None
         if ref_audio is not None:
             suffix = "." + ref_filename.rsplit(".", 1)[-1]
@@ -115,7 +112,6 @@ class FishSpeechTtsProvider(TtsProvider):
                             f"kwargs (reference_audio/reference_text): {e}"
                         ) from e
                     return self._model.synthesize(text)
-            # Callable-style fallback; can't carry cloning kwargs.
             if kwargs:
                 raise ValueError(
                     "fish-speech model is call-style and cannot receive "

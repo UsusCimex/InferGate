@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @register_provider
 class VllmTextProvider(TextProvider):
-    """Universal provider for LLMs via vLLM engine."""
+    """vLLM-backed LLM provider with streaming and optional thinking mode."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -94,7 +94,7 @@ class VllmTextProvider(TextProvider):
         response_format = defaults.pop("response_format", None)
         thinking = defaults.pop("thinking", True)
 
-        # With thinking enabled, model needs more tokens for <think> block
+        # Thinking mode needs headroom for the <think> block.
         if thinking and max_tokens < 4096:
             max_tokens = 4096
 
@@ -104,7 +104,6 @@ class VllmTextProvider(TextProvider):
             top_p=top_p,
         )
 
-        # JSON mode: add instruction to system prompt
         messages = list(messages)
         if response_format == "json_object":
             if messages and messages[0].get("role") == "system":
@@ -205,11 +204,10 @@ class VllmTextProvider(TextProvider):
                         }
                         yield f"data: {json.dumps(chunk)}\n\n"
         except (asyncio.CancelledError, GeneratorExit):
-            # Client disconnected — abort generation to free GPU immediately
+            # Client disconnected — abort so the GPU frees immediately.
             await self._abort_request(request_id)
             raise
 
-        # Final chunk with finish_reason
         final_chunk = {
             "id": completion_id,
             "object": "chat.completion.chunk",
@@ -239,9 +237,7 @@ class VllmTextProvider(TextProvider):
             logger.debug("Failed to abort vLLM request %s: %s", request_id, e)
 
     def _build_prompt(self, messages: list[dict], thinking: bool = True):
-        """Build a TokensPrompt from chat messages for vLLM v0.17+.
-        Uses the model's native chat template when available, falls back to ChatML.
-        """
+        """Build a vLLM TokensPrompt from chat messages (native template or ChatML fallback)."""
         from vllm import TokensPrompt
 
         if self._tokenizer and hasattr(self._tokenizer, "apply_chat_template"):
@@ -249,21 +245,20 @@ class VllmTextProvider(TextProvider):
             if token_ids is not None:
                 return TokensPrompt(prompt_token_ids=token_ids)
 
-        # Fallback: manual ChatML → tokenize
         text = self._format_chatml(messages, thinking)
         if self._tokenizer:
             return TokensPrompt(prompt_token_ids=self._tokenizer.encode(text))
         return text
 
     def _apply_template(self, messages: list[dict], thinking: bool) -> list[int] | None:
-        """Try applying the model's chat template. Returns token IDs or None."""
+        """Apply the tokenizer's chat template; returns None if it can't be applied."""
         kwargs: dict[str, Any] = {"tokenize": True, "add_generation_prompt": True}
         if not thinking:
             kwargs["enable_thinking"] = False
         try:
             return self._tokenizer.apply_chat_template(messages, **kwargs)
         except TypeError:
-            # enable_thinking not supported by this template — retry without
+            # Retry without enable_thinking for templates that don't accept it.
             kwargs.pop("enable_thinking", None)
             try:
                 return self._tokenizer.apply_chat_template(messages, **kwargs)
@@ -274,7 +269,7 @@ class VllmTextProvider(TextProvider):
 
     @staticmethod
     def _format_chatml(messages: list[dict], thinking: bool) -> str:
-        """Manual ChatML format for models without a chat template."""
+        """Format messages as raw ChatML for models without a chat template."""
         parts = []
         for msg in messages:
             role = msg.get("role", "user")

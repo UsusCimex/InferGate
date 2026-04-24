@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @register_provider
 class KokoroTtsProvider(TtsProvider):
-    """Provider for Kokoro TTS models."""
+    """Kokoro TTS provider (lightweight, CPU-capable)."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -65,17 +65,14 @@ class KokoroTtsProvider(TtsProvider):
         output_format = defaults.pop("output_format", "mp3")
 
         loop = asyncio.get_running_loop()
-
-        # Kokoro generates audio samples
         samples_list = await loop.run_in_executor(
             None,
             lambda: list(self._pipeline(text, voice=voice, speed=speed)),
         )
 
-        # Concatenate all audio chunks
         import numpy as np
 
-        # Pipeline yields (graphemes, phonemes, audio) tuples
+        # Kokoro yields (graphemes, phonemes, audio) tuples.
         all_audio = np.concatenate([gs[2] for gs in samples_list])
 
         buf = io.BytesIO()
@@ -84,7 +81,6 @@ class KokoroTtsProvider(TtsProvider):
         return buf.getvalue()
 
 
-# Map OpenAI voice names and common aliases to Kokoro voices
 _VOICE_MAP = {
     "default": "af_heart",
     "alloy": "af_alloy",
@@ -97,7 +93,7 @@ _VOICE_MAP = {
 
 
 def _resolve_voice(voice: str) -> str:
-    """Resolve OpenAI/alias voice names to Kokoro voice IDs."""
+    """Map OpenAI voice aliases onto Kokoro voice IDs."""
     return _VOICE_MAP.get(voice, voice)
 
 

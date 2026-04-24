@@ -1,14 +1,3 @@
-"""Voice-cloning TTS provider via Coqui XTTS-v2.
-
-Chosen over fish-speech because the idiap-maintained `coqui-tts` pypi
-fork has a stable, documented API (`TTS.api.TTS`) and voice cloning
-needs only a 6-second reference clip. 17 languages. Model ID
-`tts_models/multilingual/multi-dataset/xtts_v2` is resolved from the
-Coqui Model Zoo on first load and cached under model_dir.
-
-XTTS-v2 *requires* a reference audio — there's no "default voice"
-synthesis path. For non-cloning TTS use Kokoro instead.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -27,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @register_provider
 class XttsTtsProvider(TtsProvider):
-    """Coqui XTTS-v2 voice-cloning TTS."""
+    """Coqui XTTS-v2 voice-cloning TTS provider (requires reference_audio)."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -41,11 +30,8 @@ class XttsTtsProvider(TtsProvider):
         default_device = "cuda" if torch.cuda.is_available() else "cpu"
         device = self.config.model.get("device", default_device)
 
-        # TTS_HOME routes Model Zoo cache into our shared models/ volume so
-        # the bulky 1.8GB checkpoint survives worker restarts.
         os.environ["TTS_HOME"] = model_dir
-        # XTTS-v2 is under the Coqui Public Model License — coqui-tts
-        # prompts interactively at load time unless this is set.
+        # Required to skip the interactive Coqui Public Model License prompt at load.
         os.environ["COQUI_TOS_AGREED"] = "1"
 
         logger.info("Loading %s from %s (device=%s)", self.model_id, hub_id, device)
@@ -88,15 +74,11 @@ class XttsTtsProvider(TtsProvider):
 
         ref_audio = defaults.pop("reference_audio", None)
         ref_filename = str(defaults.pop("reference_filename", "ref.wav"))
-        # XTTS-v2 does not use reference_text (speaker conditioning comes
-        # from the audio alone); drop it silently instead of erroring.
-        defaults.pop("reference_text", None)
         language = str(defaults.pop("language", "en"))
         output_format = str(defaults.pop("output_format", "wav"))
-        # `speed` / `voice` are accepted by the schema but not by XTTS-v2
-        # — drop silently for the same reason as reference_text.
-        defaults.pop("speed", None)
-        defaults.pop("voice", None)
+        # XTTS-v2 doesn't use reference_text / speed / voice — drop silently.
+        for k in ("reference_text", "speed", "voice"):
+            defaults.pop(k, None)
 
         if ref_audio is None:
             raise ValueError(
