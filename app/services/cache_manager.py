@@ -16,14 +16,12 @@ from app.config import CacheStrategy
 
 logger = logging.getLogger(__name__)
 
-# Bump this whenever the cache entry format or response schema changes so that
-# entries produced by older code versions are ignored instead of returned to
-# clients that expect the new shape.
+# Bump to invalidate entries produced by older code when the cache format changes.
 CACHE_KEY_VERSION = "v1"
 
 
 class CacheManager:
-    """Manages caching with per-model settings. Uses filesystem + SQLite metadata."""
+    """Per-model response cache backed by the filesystem and an SQLite metadata DB."""
 
     def __init__(self, global_config: dict[str, Any]):
         self._base_dir = Path(global_config.get("directory", "./cache"))
@@ -34,12 +32,11 @@ class CacheManager:
         self._db: aiosqlite.Connection | None = None
 
     async def initialize(self) -> None:
-        """Create cache directory and initialize SQLite metadata DB."""
+        """Create the cache directory and open the metadata DB."""
         await asyncio.to_thread(self._base_dir.mkdir, parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self._db_path))
         await self._db.execute("PRAGMA journal_mode=WAL")
-        # Trigger automatic checkpoint every ~1000 pages (~4 MB) to keep the
-        # -wal file bounded; without this it can grow to gigabytes on busy caches.
+        # Bound the -wal file on busy caches (checkpoint every ~4 MB of pages).
         await self._db.execute("PRAGMA wal_autocheckpoint=1000")
         await self._db.execute("PRAGMA synchronous=NORMAL")
         await self._db.execute("PRAGMA busy_timeout=5000")
@@ -58,7 +55,6 @@ class CacheManager:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_model ON cache_entries(model_id)"
         )
-        # Track cache misses separately for accurate hit rate
         await self._db.execute("""
             CREATE TABLE IF NOT EXISTS cache_stats (
                 model_id TEXT PRIMARY KEY,
@@ -73,11 +69,10 @@ class CacheManager:
             self._db = None
 
     def is_initialized(self) -> bool:
-        """True when the metadata DB connection is open and ready."""
         return self._db is not None
 
     async def record_miss(self, model_id: str) -> None:
-        """Record a cache miss for accurate hit rate tracking."""
+        """Increment the miss counter for `model_id` (for hit-rate stats)."""
         if not self._db:
             return
         await self._db.execute(
@@ -88,7 +83,7 @@ class CacheManager:
         await self._db.commit()
 
     def should_cache(self, cache_config: dict, request_params: dict) -> bool:
-        """Determine whether to cache based on model's cache strategy."""
+        """Decide whether the response for `request_params` should be cached."""
         if not self._enabled:
             return False
         if not cache_config.get("enabled", False):
@@ -103,7 +98,7 @@ class CacheManager:
         return False
 
     def make_key(self, model_id: str, request_params: dict) -> str:
-        """Create deterministic cache key from model + params."""
+        """Build a deterministic cache key from `model_id` + `request_params`."""
         canonical = json.dumps(
             {"v": CACHE_KEY_VERSION, "model": model_id, **request_params},
             sort_keys=True,
@@ -111,7 +106,7 @@ class CacheManager:
         return hashlib.sha256(canonical.encode()).hexdigest()
 
     async def get(self, key: str) -> bytes | None:
-        """Get from cache. Updates LRU stats on hit."""
+        """Return cached bytes for `key` (updating LRU stats) or None on miss/expiry."""
         if not self._db:
             return None
         async with self._db.execute(
@@ -143,7 +138,7 @@ class CacheManager:
     async def put(
         self, key: str, data: bytes, model_id: str, cache_config: dict
     ) -> None:
-        """Store in cache. Respects per-model and global limits."""
+        """Store `data` under `key`, evicting to fit per-model and global byte limits."""
         if not self._db:
             return
 
@@ -151,13 +146,11 @@ class CacheManager:
         shard_dir = model_dir / key[:2]
         await asyncio.to_thread(shard_dir.mkdir, parents=True, exist_ok=True)
 
-        # Determine file extension from data
         ext = _guess_extension(data)
         file_path = shard_dir / f"{key}{ext}"
 
         size_bytes = len(data)
 
-        # Evict if needed
         max_model_bytes = int(cache_config.get("max_size_mb", 0)) * 1024 * 1024
         if max_model_bytes > 0:
             await self._evict_for_model(model_id, max_model_bytes, size_bytes)
@@ -166,7 +159,7 @@ class CacheManager:
         ttl_hours = cache_config.get("ttl_hours")
         ttl_expires = time.time() + ttl_hours * 3600 if ttl_hours is not None else None
 
-        # Write to temp file first, then commit DB, then atomic rename
+        # Write to .tmp → commit DB → atomic rename: crash-safe ordering.
         tmp_path = file_path.with_suffix(".tmp")
         try:
             async with aiofiles.open(tmp_path, "wb") as f:
@@ -231,8 +224,9 @@ class CacheManager:
 
     def _cleanup_cache_tree(self) -> None:
         for child in self._base_dir.iterdir():
+            # Skip _meta.db, _meta.db-wal, _meta.db-shm.
             if child.name.startswith("_meta.db"):
-                continue  # skip _meta.db, _meta.db-wal, _meta.db-shm
+                continue
             if child.is_dir():
                 shutil.rmtree(child, ignore_errors=True)
             elif child.is_file():
@@ -256,21 +250,19 @@ class CacheManager:
         return len(rows)
 
     async def stats(self, model_id: str | None = None) -> dict:
-        """Cache statistics (global or per-model)."""
+        """Return cache statistics — per-model when `model_id` is set, else global + per-model."""
         if not self._db:
             return {}
 
         if model_id:
             return await self._model_stats(model_id)
 
-        # Global stats
         async with self._db.execute(
             "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM cache_entries"
         ) as cursor:
             row = await cursor.fetchone()
             total_entries, total_bytes = row if row else (0, 0)
 
-        # Per-model stats
         per_model = {}
         async with self._db.execute(
             "SELECT DISTINCT model_id FROM cache_entries"
@@ -318,7 +310,7 @@ class CacheManager:
         }
 
     async def _evict_for_model(self, model_id: str, max_bytes: int, needed: int) -> None:
-        """Evict LRU entries for a specific model to fit within its limit."""
+        """Evict LRU entries for `model_id` until `needed` bytes fit under `max_bytes`."""
         async with self._db.execute(
             "SELECT COALESCE(SUM(size_bytes), 0) FROM cache_entries WHERE model_id = ?",
             (model_id,),
@@ -336,8 +328,7 @@ class CacheManager:
             if row is None:
                 break
             key, file_path, size = row
-            # Delete from DB first so a crash cannot leave orphan rows pointing
-            # at files we've already removed.
+            # DB-first delete: a crash cannot leave orphan rows pointing at removed files.
             await self._db.execute("DELETE FROM cache_entries WHERE key = ?", (key,))
             to_delete.append(file_path)
             current -= size
@@ -345,7 +336,7 @@ class CacheManager:
         await asyncio.to_thread(_unlink_many, to_delete)
 
     async def _evict_global(self, needed: int) -> None:
-        """Evict LRU entries globally to fit within total limit."""
+        """Evict LRU entries across all models until `needed` bytes fit under the total limit."""
         async with self._db.execute(
             "SELECT COALESCE(SUM(size_bytes), 0) FROM cache_entries"
         ) as cursor:
@@ -369,13 +360,12 @@ class CacheManager:
 
 
 def _unlink_many(paths: list[str]) -> None:
-    """Best-effort bulk unlink executed in a worker thread."""
     for p in paths:
         Path(p).unlink(missing_ok=True)
 
 
 def _guess_extension(data: bytes) -> str:
-    """Guess file extension from magic bytes."""
+    """Return a file extension guessed from `data`'s magic bytes."""
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return ".png"
     if data[:3] == b"ID3" or data[:2] == b"\xff\xfb":

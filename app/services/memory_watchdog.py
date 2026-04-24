@@ -1,16 +1,3 @@
-"""Background watchdog that polls per-worker VRAM + host RAM; emergency-evicts
-LRU when usage overshoots declared budgets.
-
-Last line of defence behind the static byte-budget LRU (`ProviderManager`).
-The static LRU trusts each model's `vram_mb` declaration; the watchdog
-uses *live* `torch.cuda.mem_get_info` + `psutil.virtual_memory` — catches
-cases where a model leaked, an img2img request allocated an unexpected
-activation buffer, or a user pinned two workers that technically fit on
-paper but spiked together.
-
-Poll interval and thresholds live in `server.yaml:gpu.watchdog_*`; set
-`watchdog_interval_seconds=0` (default) to disable entirely.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -25,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryWatchdog:
+    """Background probe that evicts LRU models when live VRAM exceeds a threshold."""
+
     def __init__(
         self,
         manager: ProviderManager,
@@ -37,9 +26,6 @@ class MemoryWatchdog:
         self._vram_threshold = vram_threshold
         self._ram_threshold = ram_threshold
         self._task: asyncio.Task | None = None
-        # Tracks the last eviction to avoid thrashing: if usage stays hot
-        # across consecutive ticks we still want to evict again, but not
-        # faster than the polling cadence.
         self._last_evict_tick = 0
 
     def start(self) -> None:
@@ -77,9 +63,7 @@ class MemoryWatchdog:
             raise
 
     async def scan_once(self) -> dict:
-        """Single sweep. Returns a summary dict for telemetry/tests so
-        the caller can drive each cycle deterministically without racing
-        the sleep loop."""
+        """Run one sweep; return a summary so tests can drive cycles deterministically."""
         summary: dict = {
             "vram_used_mb": 0,
             "vram_total_mb": 0,
@@ -90,10 +74,6 @@ class MemoryWatchdog:
             "evicted": None,
         }
 
-        # Collect worker-reported VRAM across loaded remote providers.
-        # Non-remote providers report declared-only numbers via their
-        # default BaseProvider.get_stats — included so local and remote
-        # modes share one decision path.
         loaded = list(self._manager.loaded_models())
         agg_used = 0
         agg_total = 0
@@ -111,27 +91,17 @@ class MemoryWatchdog:
             if not stats:
                 continue
             worker_stats[model_id] = stats
-            # Workers on the same host share the same physical GPU — the
-            # largest reported total across workers is a reasonable
-            # "physical device" value. Used sums can double-count across
-            # workers that happen to share CUDA context, but for our
-            # single-GPU default they come from one torch process at a
-            # time, so summing is not a real issue.
+            # Workers on one host share a GPU — max of reported totals is the physical total.
             agg_used = max(agg_used, stats.get("vram_used_mb", 0))
             agg_total = max(agg_total, stats.get("vram_total_mb", 0))
 
         summary["vram_used_mb"] = agg_used
         summary["vram_total_mb"] = agg_total
 
-        # Host RAM — psutil reading from the gateway process itself (the
-        # gateway container sees host memory when run with default
-        # Docker Desktop bind; in hardened deploys set
-        # HOST_RAM_MONITORING=false via env if this is misleading).
         ram_used, ram_total = self._host_ram_snapshot()
         summary["ram_used_mb"] = ram_used
         summary["ram_total_mb"] = ram_total
 
-        # Act on VRAM overshoot — evict LRU.
         if agg_total > 0 and agg_used >= agg_total * self._vram_threshold:
             summary["vram_over_threshold"] = True
             logger.warning(
@@ -152,7 +122,7 @@ class MemoryWatchdog:
                     "MemoryWatchdog: VRAM over threshold but all loaded models are pinned"
                 )
 
-        # Host RAM is advisory only — we don't own host processes.
+        # Host RAM is advisory — the watchdog owns no host processes.
         if ram_total > 0 and ram_used >= ram_total * self._ram_threshold:
             summary["ram_over_threshold"] = True
             logger.warning(
@@ -166,7 +136,7 @@ class MemoryWatchdog:
 
     @staticmethod
     def _host_ram_snapshot() -> tuple[int, int]:
-        """(used_mb, total_mb). Best-effort — 0/0 when psutil absent."""
+        """Return (used_mb, total_mb) for host RAM; (0, 0) when psutil is absent."""
         try:
             import psutil
 

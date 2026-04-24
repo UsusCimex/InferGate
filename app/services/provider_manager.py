@@ -14,8 +14,8 @@ from app.providers.registry import get_provider_class
 
 logger = logging.getLogger(__name__)
 
-_WORKER_MONITOR_INTERVAL = 10  # base seconds between health checks
-_WORKER_MAX_BACKOFF = 300  # cap probing interval at 5 minutes
+_WORKER_MONITOR_INTERVAL = 10
+_WORKER_MAX_BACKOFF = 300
 
 
 class ModelNotFoundError(Exception):
@@ -24,31 +24,18 @@ class ModelNotFoundError(Exception):
 
 class WorkerNotReadyError(Exception):
     """Raised when a remote worker is not yet available."""
-    pass
 
 
 class ConfigError(ValueError):
     """Raised when the model/server configuration is internally inconsistent."""
-    pass
 
 
 class InsufficientResourcesError(Exception):
-    """Raised when ensure_loaded cannot free enough VRAM for a new model —
-    the byte-budget LRU tried to evict but every remaining loaded model
-    is pinned, and the incoming model doesn't fit in the leftover budget.
-    Router maps this to HTTP 503 with actionable copy."""
+    """Raised when VRAM budget is exhausted and no evictable model is left."""
 
 
 class ProviderManager:
-    """Registry of providers. Loads configs, manages model lifecycle with LRU swapping.
-
-    LRU uses two complementary caps:
-    - `max_vram_budget_mb` (byte-budget): evicts until sum of declared
-      vram_mb of loaded non-pinned models + new model's vram_mb
-      ≤ budget. Disabled when set to 0.
-    - `max_loaded_models` (counter): back-stop for models that didn't
-      declare vram_mb or when budget is disabled.
-    """
+    """Registry of model providers with VRAM-budget LRU swapping."""
 
     def __init__(
         self,
@@ -70,16 +57,11 @@ class ProviderManager:
         self._state_lock = asyncio.Lock()
         self._model_locks: dict[str, asyncio.Lock] = {}
         self._monitor_task: asyncio.Task | None = None
-        # LRU + watchdog skip models with active > 0 to avoid yanking
-        # weights out from under an in-flight forward pass.
+        # Models with active_count > 0 must never be evicted mid-request.
         self._active_counts: dict[str, int] = {}
 
     def validate_config(self) -> None:
-        """Validate pinned models fit within the configured capacities.
-
-        Raises ConfigError when pinned GPU models exceed either the count
-        ceiling or the byte budget, which would leave no room for LRU swaps.
-        """
+        """Raise ConfigError if pinned models don't leave room for LRU swaps."""
         gpu_pinned = [m for m in self._pinned if self._is_gpu_model(m)]
         if len(gpu_pinned) >= self._max_loaded:
             raise ConfigError(
@@ -107,7 +89,6 @@ class ProviderManager:
                 logger.info("Skipping disabled model: %s", config.id)
                 continue
 
-            # Resolve worker URL from env var (e.g. WORKER_URL_QWEN3_5_4B)
             if not config.worker_url:
                 env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", config.id.upper())
                 env_url = os.environ.get(env_key)
@@ -128,7 +109,7 @@ class ProviderManager:
 
     @staticmethod
     def _create_remote_provider(config: ModelConfig) -> BaseProvider:
-        """Create a remote provider based on model category."""
+        """Build the RemoteProvider subclass matching `config.category`."""
         from app.providers.remote import (
             RemoteImageProvider,
             RemoteSttProvider,
@@ -150,7 +131,7 @@ class ProviderManager:
         return cls(config)
 
     def get(self, model_id: str) -> BaseProvider:
-        """Get provider by ID."""
+        """Return the provider registered for `model_id`."""
         if model_id not in self._registry:
             raise ModelNotFoundError(f"Model '{model_id}' not found")
         return self._registry[model_id]
@@ -159,12 +140,10 @@ class ProviderManager:
         return self.get(model_id).config
 
     def _is_gpu_model(self, model_id: str) -> bool:
-        """Check if model uses GPU (vram_mb > 0)."""
         provider = self._registry.get(model_id)
         return provider is not None and provider.vram_mb > 0
 
     def _is_remote(self, model_id: str) -> bool:
-        """Check if model is served by a remote worker."""
         provider = self._registry.get(model_id)
         return provider is not None and bool(provider.config.worker_url)
 
@@ -173,10 +152,8 @@ class ProviderManager:
             self._model_locks[model_id] = asyncio.Lock()
         return self._model_locks[model_id]
 
-    # ── Worker monitor ────────────────────────────────────────────────
-
     def start_worker_monitor(self) -> None:
-        """Start background task that connects to remote workers."""
+        """Start the background task that tracks remote worker reachability."""
         self._monitor_task = asyncio.create_task(self._monitor_workers())
 
     def stop_worker_monitor(self) -> None:
@@ -184,14 +161,7 @@ class ProviderManager:
             self._monitor_task.cancel()
 
     async def _monitor_workers(self) -> None:
-        """Track remote worker reachability without auto-loading models.
-
-        Models load lazily via `ensure_loaded` on first real request so the
-        VRAM-budget planner can evict LRU before each load. The monitor only
-        probes `/health` to keep `is_loaded` in sync with reality: if a
-        loaded worker becomes unreachable, clear the `_loaded` flag and
-        drop the model from LRU so eviction planning stays honest.
-        """
+        """Poll remote workers /health, updating loaded-state on disconnect."""
         next_probe: dict[str, float] = {}
         fail_counts: dict[str, int] = {}
         announced: set[str] = set()
@@ -237,8 +207,7 @@ class ProviderManager:
                     fail_counts[model_id] = 0
                     next_probe[model_id] = now + _WORKER_MONITOR_INTERVAL
                 else:
-                    # Worker unreachable — if it was considered loaded, drop
-                    # the state so the planner doesn't count its VRAM budget.
+                    # Drop loaded-state on disconnect so the planner doesn't reserve its VRAM.
                     if provider.is_loaded():
                         logger.warning(
                             "Worker disconnected: %s (%s) — marking unavailable",
@@ -257,27 +226,16 @@ class ProviderManager:
 
             await asyncio.sleep(_WORKER_MONITOR_INTERVAL)
 
-    # ── Model loading ─────────────────────────────────────────────────
-
     async def ensure_loaded(self, model_id: str) -> BaseProvider:
-        """Load model if not loaded. LRU swap if no slots available.
-
-        Uniform path for local and remote models: `_make_room` evicts LRU
-        to fit `provider.vram_mb` within the configured byte budget, then
-        `provider.load()` is called. For remote providers this POSTs /load
-        to the worker container, which may block 10–90 s on first load.
-        """
-        # Fast path: already loaded — just touch LRU
+        """Load `model_id` if not loaded (evicting LRU as needed) and return the provider."""
         async with self._state_lock:
             provider = self.get(model_id)
             if provider.is_loaded():
                 self._touch_lru(model_id)
                 return provider
 
-        # Slow path: per-model lock so only one load at a time per model,
-        # but other models remain accessible
+        # Per-model lock — one concurrent load per model, but other models still accessible.
         async with self._get_model_lock(model_id):
-            # Re-check after acquiring lock (another request may have loaded it)
             if provider.is_loaded():
                 async with self._state_lock:
                     self._touch_lru(model_id)
@@ -302,11 +260,9 @@ class ProviderManager:
             return provider
 
     async def load_model(self, model_id: str) -> None:
-        """Explicitly load a model."""
         await self.ensure_loaded(model_id)
 
     async def unload_model(self, model_id: str) -> None:
-        """Explicitly unload a model."""
         async with self._get_model_lock(model_id):
             provider = self.get(model_id)
             if not provider.is_loaded():
@@ -316,12 +272,7 @@ class ProviderManager:
                 self._loaded_order.pop(model_id, None)
 
     async def reload_model(self, config: ModelConfig) -> bool:
-        """Re-register a model with a new config (hot-reload entry point).
-
-        Returns True if a change was applied. Remote providers route through
-        existing.reload() (POST /reload to worker) when worker_url is
-        unchanged and the provider is connected; otherwise we rebuild.
-        """
+        """Re-register a model with a new config; returns True when something changed."""
         model_id = config.id
         existing = self._registry.get(model_id)
 
@@ -338,18 +289,16 @@ class ProviderManager:
             return True
 
         if existing is not None and existing.config.model_dump() == config.model_dump():
-            return False  # Identical save (editor touch, no content diff)
+            # Editor touch with no content diff — no-op.
+            return False
 
-        # Resolve worker URL (same rule as discover_models) — in case the
-        # YAML was edited and WORKER_URL_* env override still applies.
         if not config.worker_url:
             env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", model_id.upper())
             env_url = os.environ.get(env_key)
             if env_url:
                 config.worker_url = env_url
 
-        # Remote hot-path: keep provider instance + httpx pool, push new
-        # config to worker via /reload. Avoids disconnected-state flicker.
+        # Remote hot-path: keep the httpx pool, push the new config via the worker's /reload.
         if (
             existing is not None
             and existing.config.worker_url
@@ -361,9 +310,7 @@ class ProviderManager:
                 try:
                     action = await existing.reload(config)  # type: ignore[attr-defined]
                 except Exception as e:
-                    # Worker reload failed — log and fall through to the
-                    # recreate path, which at minimum updates gateway-side
-                    # metadata so /v1/models reflects the new YAML.
+                    # Fall through to recreate so gateway-side metadata still updates.
                     logger.warning(
                         "Worker /reload for %s failed (%s) — falling back to local re-register",
                         model_id, e,
@@ -397,8 +344,7 @@ class ProviderManager:
                     provider_cls = get_provider_class(config.provider_class)
                     new_provider = provider_cls(config)
             except ValueError as e:
-                # Bad YAML (e.g. unknown provider_class) — keep the old
-                # provider so a typo doesn't drop the model from registry.
+                # Keep the old provider on bad config so a typo doesn't drop the model.
                 logger.error("reload_model(%s) rejected new config: %s", model_id, e)
                 if existing is not None:
                     self._registry[model_id] = existing
@@ -406,9 +352,7 @@ class ProviderManager:
 
             self._registry[model_id] = new_provider
 
-            # Local providers: reload into GPU if previously loaded so the
-            # user doesn't need to re-request. Remote ones reconnect via
-            # worker_monitor.
+            # Local reload only: remote reconnect goes through worker_monitor.
             if was_loaded and not config.worker_url:
                 await new_provider.load(self._model_dir)
                 async with self._state_lock:
@@ -423,7 +367,6 @@ class ProviderManager:
         return True
 
     def _loaded_vram_mb(self) -> int:
-        """Sum of declared vram_mb over currently-loaded GPU models."""
         return sum(
             self._registry[m].vram_mb
             for m in self._loaded_order
@@ -431,9 +374,7 @@ class ProviderManager:
         )
 
     async def _make_room(self, incoming_vram_mb: int = 0) -> None:
-        """Plan eviction up-front, then execute. Fast-fails with
-        InsufficientResourcesError when no combination of evictions
-        can fit the incoming model."""
+        """Evict models to fit `incoming_vram_mb` in the VRAM budget."""
         plan = self._plan_eviction(incoming_vram_mb)
         if plan is None:
             effective_budget = self._effective_budget()
@@ -457,15 +398,12 @@ class ProviderManager:
             del self._loaded_order[victim]
 
     def _effective_budget(self) -> int:
-        """Byte-budget minus headroom; 0 when byte-budget disabled."""
         if self._max_vram_budget_mb <= 0:
             return 0
         return self._max_vram_budget_mb - self._vram_headroom_mb
 
     def _plan_eviction(self, incoming_vram_mb: int) -> list[str] | None:
-        """Simulate LRU walk and return the ordered list of models to
-        evict to fit `incoming_vram_mb`. [] = already fits, None =
-        infeasible even after evicting everything evictable."""
+        """Return the ordered LRU eviction plan, [] if it already fits, None if infeasible."""
         effective_budget = self._effective_budget()
         excluded: set[str] = set()
         plan: list[str] = []
@@ -495,12 +433,7 @@ class ProviderManager:
                 return plan
 
     def _find_lru_victim(self, excluded: set[str] | None = None) -> str | None:
-        """Least-recently-used model eligible for eviction.
-
-        Two passes: first honour category reservations, then fall back
-        to violating them if the byte budget leaves no choice. Pinned
-        and in-flight models are never touched. `excluded` lets a
-        planner hide models already chosen in an earlier pass."""
+        """Return the LRU evictable model, first honouring reservations, then ignoring them."""
         excluded = excluded or set()
         for model_id in self._loaded_order:
             if model_id in excluded:
@@ -525,10 +458,7 @@ class ProviderManager:
     def _would_violate_reservation(
         self, model_id: str, excluded: set[str] | None = None
     ) -> bool:
-        """True if unloading `model_id` drops its category below the
-        reserved floor. `excluded` is the set of models already counted
-        as evicted in a simulated plan, so planning iterations see the
-        correct post-eviction category counts."""
+        """True if unloading `model_id` would drop its category below the reserved floor."""
         provider = self._registry.get(model_id)
         if provider is None:
             return False
@@ -548,14 +478,7 @@ class ProviderManager:
 
     @contextlib.asynccontextmanager
     async def active_request(self, model_id: str):
-        """Context manager that increments the active-request counter
-        for `model_id` on enter and decrements on exit. Routers wrap
-        `scheduler.submit(...)` with this so LRU eviction won't pick
-        a model while it's serving a request.
-
-        Count is updated under `_state_lock` so the watchdog + LRU
-        observe a consistent view.
-        """
+        """Bump the in-flight counter so LRU eviction skips this model during the request."""
         async with self._state_lock:
             self._active_counts[model_id] = self._active_counts.get(model_id, 0) + 1
         try:
@@ -569,15 +492,11 @@ class ProviderManager:
                     self._active_counts[model_id] = current - 1
 
     def active_request_count(self, model_id: str) -> int:
-        """Number of currently in-flight requests for this model. Safe
-        to read without the state lock — dirty-read is fine for
-        observability; eviction decisions always re-read under the lock."""
+        """Number of in-flight requests for this model (dirty-read, observability only)."""
         return self._active_counts.get(model_id, 0)
 
-    # ── Operator introspection ────────────────────────────────────────
-
     def status_snapshot(self) -> dict[str, Any]:
-        """Smart-distribution state for operator dashboards."""
+        """Return a snapshot of LRU + budget state for operator dashboards."""
         loaded = [
             {
                 "id": model_id,
@@ -600,8 +519,7 @@ class ProviderManager:
         }
 
     def preview_load(self, model_id: str) -> dict[str, Any]:
-        """Dry-run the planner — report what ensure_loaded(model_id)
-        would evict without mutating state. Raises ModelNotFoundError."""
+        """Dry-run `ensure_loaded(model_id)` — return the eviction plan without mutating state."""
         provider = self.get(model_id)
         incoming_mb = provider.vram_mb
         base: dict[str, Any] = {
@@ -623,12 +541,11 @@ class ProviderManager:
         return {**base, "feasible": True, "plan": plan, "freed_mb": freed}
 
     def _touch_lru(self, model_id: str) -> None:
-        """Move model to end of LRU (most recently used). O(1) with OrderedDict."""
         if model_id in self._loaded_order:
             self._loaded_order.move_to_end(model_id)
 
     def list_models(self) -> list[dict[str, Any]]:
-        """List all models with their status."""
+        """Return all registered models with lifecycle + metadata."""
         result = []
         for provider in self._registry.values():
             cfg = provider.config
@@ -651,13 +568,10 @@ class ProviderManager:
         return result
 
     def loaded_models(self) -> list[str]:
-        """Return list of currently loaded model IDs."""
         return list(self._loaded_order)
 
     async def shutdown(self, timeout_per_model: float = 30.0) -> None:
-        """Unload all models on shutdown with per-model timeout.
-        Remote workers are skipped — they manage their own lifecycle.
-        """
+        """Unload every local model with a per-model timeout (remote workers manage their own)."""
         self.stop_worker_monitor()
         for model_id in list(self._loaded_order):
             if self._is_remote(model_id):

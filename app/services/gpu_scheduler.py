@@ -17,13 +17,12 @@ class QueueFullError(Exception):
     pass
 
 
-# Lower number = higher priority (heap is min-heap).
+# Heap is a min-heap, so lower value = higher priority.
 _PRIORITY_VALUES = {"high": 0, "medium": 1, "low": 2}
 _DEFAULT_PRIORITY = _PRIORITY_VALUES["medium"]
 
 
 def _priority_value(priority: Any) -> int:
-    """Normalise a string/enum priority into an integer sort key."""
     if priority is None:
         return _DEFAULT_PRIORITY
     value = priority.value if hasattr(priority, "value") else priority
@@ -38,14 +37,13 @@ class _ModelQueue:
     def __init__(self, max_concurrent: int) -> None:
         self.max_concurrent = max_concurrent
         self.active = 0
-        # Heap of (priority_value, seq, future). Lower priority value runs first;
-        # seq breaks ties so equal-priority requests are FIFO.
+        # (priority_value, seq, future); seq breaks ties so equal priority is FIFO.
         self.waiters: list[tuple[int, int, asyncio.Future]] = []
         self.lock = asyncio.Lock()
 
 
 class GpuScheduler:
-    """GPU task queue with per-model priorities and concurrency control."""
+    """Global GPU task queue with per-model priorities and concurrency caps."""
 
     def __init__(self, max_queue_size: int = 50):
         self._max_queue_size = max_queue_size
@@ -58,11 +56,11 @@ class GpuScheduler:
         self._seq = 0
 
     def register_model(self, model_id: str, max_concurrent: int) -> None:
-        """Create a queue slot for a model (from YAML queue.max_concurrent)."""
+        """Register a queue slot for `model_id` with `max_concurrent` parallelism."""
         self._queues[model_id] = _ModelQueue(max_concurrent)
 
     def update_concurrency(self, model_id: str, max_concurrent: int) -> None:
-        """Update per-model concurrency limit. New limit applies at next slot acquire."""
+        """Change `model_id`'s concurrency cap; applies at next slot acquire."""
         queue = self._queues.get(model_id)
         if queue is None:
             self.register_model(model_id, max_concurrent)
@@ -76,7 +74,7 @@ class GpuScheduler:
         coro: Awaitable[Any],
         timeout: float,  # noqa: ASYNC109 — SLO-level deadline, not a cancel token
     ) -> Any:
-        """Submit task to the scheduler. Higher priority requests jump the line."""
+        """Enqueue `coro` for `model_id` with `priority`; higher priority jumps ahead."""
         async with self._lock:
             if self._active_tasks >= self._max_queue_size:
                 raise QueueFullError(
@@ -128,15 +126,13 @@ class GpuScheduler:
         try:
             await fut
         except asyncio.CancelledError:
-            # Two cases: we were still waiting, or we were already granted a slot.
             async with queue.lock:
                 for i, (_p, _s, f) in enumerate(queue.waiters):
                     if f is fut:
                         queue.waiters.pop(i)
                         heapq.heapify(queue.waiters)
                         raise
-                # Waiter was granted a slot concurrently with cancellation —
-                # hand it off to the next waiter so it is not wasted.
+                # Slot was granted concurrently with cancellation — pass it on.
                 self._handoff_locked(queue)
             raise
 
@@ -146,7 +142,7 @@ class GpuScheduler:
 
     @staticmethod
     def _handoff_locked(queue: _ModelQueue) -> None:
-        """Either wake the highest-priority waiter or decrement active count."""
+        """Wake the top-priority waiter or decrement `queue.active` when none remain."""
         while queue.waiters:
             _, _, fut = heapq.heappop(queue.waiters)
             if not fut.done():
@@ -156,11 +152,10 @@ class GpuScheduler:
 
     @property
     def last_position(self) -> int:
-        """Queue position of the last submitted task."""
         return self._last_position
 
     def queue_info(self) -> dict:
-        """Current queue state for /metrics."""
+        """Return the current queue state (used by /metrics)."""
         return {
             "queue_size": self._active_tasks,
             "max_queue_size": self._max_queue_size,

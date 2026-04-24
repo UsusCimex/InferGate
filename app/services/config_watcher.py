@@ -1,4 +1,3 @@
-"""Poll-based watcher for `config/models/*.yaml` that drives hot-reload."""
 from __future__ import annotations
 
 import asyncio
@@ -63,7 +62,7 @@ class ConfigWatcher:
             raise
 
     async def scan_once(self) -> list[Path]:
-        """Single scan pass — exposed so tests don't race the sleep loop."""
+        """Run one scan pass and fire the callback for each changed file."""
         if not self._models_dir.exists():
             return []
         current: dict[Path, float] = {}
@@ -92,8 +91,7 @@ class ConfigWatcher:
                 missing.name,
             )
 
-        # Commit new mtimes even if a callback raises — otherwise we'd
-        # retry the same broken file every interval.
+        # Commit mtimes even on callback failure so a broken file isn't retried every tick.
         self._mtimes = current
 
         for path in changed:

@@ -1,9 +1,3 @@
-"""Standalone FastAPI worker that loads and serves a single model.
-
-Usage:
-    WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml \
-    uvicorn app.worker:app --host 0.0.0.0 --port 8001
-"""
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +32,6 @@ async def lifespan(app: FastAPI):
     config = load_single_model_config(config_path)
     logger.info("Worker starting for model: %s (%s)", config.id, config.provider_class)
 
-    # GPU compatibility check
     vram_mb = config.model.get("vram_mb", 0)
     if vram_mb > 0:
         try:
@@ -61,13 +54,10 @@ async def lifespan(app: FastAPI):
     app.state.provider = provider
     app.state.config = config
     app.state.models_dir = models_dir
-    # Serialises /reload vs /generate+/synthesize. Brief sequentialisation
-    # during reload for max_concurrent>1 models — rare, acceptable.
+    # Serialises /reload vs /generate+/synthesize.
     app.state.reload_lock = asyncio.Lock()
 
-    # Lazy model load: the gateway calls POST /load on first real request,
-    # after its LRU/VRAM-budget planner has made room. Starting "cold" keeps
-    # all workers from fighting for VRAM simultaneously on boot.
+    # Start unloaded — gateway's VRAM planner calls /load when it's made room.
     logger.info("Worker started (model unloaded): %s — awaiting /load", config.id)
     yield
 
@@ -81,6 +71,7 @@ app = FastAPI(title="InferGate Worker", lifespan=lifespan)
 
 @app.get("/health")
 async def health(request: Request):
+    """Return liveness + model/category metadata."""
     provider: BaseProvider = request.app.state.provider
     config = request.app.state.config
     return {
@@ -92,28 +83,17 @@ async def health(request: Request):
 
 @app.get("/stats")
 async def stats(request: Request):
-    """Live resource usage — polled by the gateway's VRAM watchdog every
-    few seconds. Keep cheap: no synchronize(), no per-model introspection.
-    All fields best-effort — missing tools (no CUDA / no psutil / no
-    nvidia-ml-py) give 0/null instead of erroring so the gateway side
-    can still reason about whatever is present."""
+    """Return live VRAM + host-RAM usage for the watchdog."""
     provider: BaseProvider = request.app.state.provider
     config = request.app.state.config
 
-    # VRAM reading precedence:
-    #   1) NVML (pynvml / nvidia-ml-py) — device-wide usage across ALL
-    #      processes on this GPU. Essential for shared-GPU / multi-tenant
-    #      deploys where this worker isn't the only torch process.
-    #   2) torch.cuda.mem_get_info — per-process caching-allocator view.
-    #      Accurate for our own usage but blind to co-tenants.
-    # Fall through both ways on ImportError so worker images without
-    # nvidia-ml-py still report what they can via torch.
+    # VRAM source priority: NVML (device-wide, sees co-tenants) → torch (per-process).
     vram_used_mb = 0
     vram_total_mb = 0
     vram_free_mb = 0
     vram_source = "none"
     try:
-        import pynvml  # nvidia-ml-py ships this name
+        import pynvml
         pynvml.nvmlInit()
         try:
             h = pynvml.nvmlDeviceGetHandleByIndex(0)
@@ -136,9 +116,7 @@ async def stats(request: Request):
         except Exception:
             pass
     except Exception:
-        # NVML initialised but a later call failed — leave vram_* at 0
-        # rather than falling back to torch (NVML failures usually mean
-        # driver issues that torch won't work around).
+        # NVML post-init failure usually means driver issues that torch won't recover from.
         pass
 
     ram_used_mb = 0
@@ -168,12 +146,7 @@ async def stats(request: Request):
 
 @app.post("/load")
 async def load(request: Request):
-    """Explicit load signal from gateway. Loads model if not loaded.
-
-    Returns 503 with a structured body when the underlying provider.load
-    fails — a generic FastAPI 500 with a traceback would be swallowed by
-    remote.py's error handler without surfacing the cause.
-    """
+    """Load the configured model; returns structured 503 on provider.load failure."""
     provider: BaseProvider = request.app.state.provider
     if provider.is_loaded():
         return {"status": "ok", "model": request.app.state.config.id}
@@ -193,6 +166,7 @@ async def load(request: Request):
 
 @app.post("/unload")
 async def unload(request: Request):
+    """Unload the current model."""
     provider: BaseProvider = request.app.state.provider
     await provider.unload()
     return {"status": "ok"}
@@ -200,13 +174,7 @@ async def unload(request: Request):
 
 @app.post("/reload")
 async def reload_config(request: Request):
-    """Hot-swap the provider from a new ModelConfig posted by the gateway.
-
-    Returns action=noop|metadata|full_reload. Holds reload_lock, which
-    also gates /generate and /synthesize, so inflight requests finish
-    before the swap. Errors: 400 on bad config / unknown provider_class,
-    500 if new provider's load() raises (old provider kept alive).
-    """
+    """Hot-swap the provider from a new ModelConfig (returns action=noop|metadata|full_reload)."""
     body = await request.json()
     try:
         new_config = ModelConfig(**body)
@@ -220,23 +188,14 @@ async def reload_config(request: Request):
         old_provider: BaseProvider = request.app.state.provider
         old_config: ModelConfig = request.app.state.config
 
-        # Normalise both configs through JSON-mode model_dump so any
-        # pydantic/type-coercion differences (int vs float, list vs tuple
-        # for tags, omegaconf ListConfig vs list) collapse to the same
-        # representation on both sides. Raw `old_config.model != new.model`
-        # failed here because one side had values parsed from YAML via
-        # omegaconf while the other came off the wire through pydantic
-        # JSON — structurally equal, representationally different.
+        # Compare via JSON-mode dumps so omegaconf vs pydantic representations collapse.
         old_dump = old_config.model_dump(mode="json")
         new_dump = new_config.model_dump(mode="json")
 
         if old_dump == new_dump:
             return {"status": "ok", "action": "noop", "model": new_config.id}
 
-        # Worker-observable fields only: `worker_url` is gateway-scope
-        # (worker doesn't know its own URL, gateway resolves it from env
-        # and ships it in the reload body) so comparing it would spurious-
-        # trigger a full reload on every metadata edit.
+        # worker_url is gateway-scope and must be excluded from the diff.
         full_reload_needed = (
             old_dump.get("provider_class") != new_dump.get("provider_class")
             or old_dump.get("model") != new_dump.get("model")
@@ -264,14 +223,11 @@ async def reload_config(request: Request):
 
         if not full_reload_needed:
             request.app.state.config = new_config
-            # Point the existing provider at the new config so the next
-            # /generate sees the updated default_params, cache strategy, etc.
             old_provider.config = new_config
             logger.info("Reloaded %s (metadata only)", new_config.id)
             return {"status": "ok", "action": "metadata", "model": new_config.id}
 
-        # Full reload: load new before touching old so the worker stays
-        # serviceable if the new config is bad (e.g. bogus hub_id).
+        # Load new before touching old so worker stays serviceable on bad config.
         models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
         try:
             provider_cls = get_provider_class(new_config.provider_class)
@@ -292,8 +248,6 @@ async def reload_config(request: Request):
                 status_code=500,
             )
 
-        # Swap + unload old. Everything waits on reload_lock, so no
-        # inflight /generate is using old_provider at this point.
         request.app.state.provider = new_provider
         request.app.state.config = new_config
         try:
@@ -307,7 +261,7 @@ async def reload_config(request: Request):
 
 @app.post("/generate")
 async def generate(request: Request):
-    """Generate text or image. ValueError → HTTP 400 with structured body."""
+    """Generate text or image; ValueError from the provider maps to HTTP 400."""
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         config = request.app.state.config
@@ -346,7 +300,7 @@ async def generate(request: Request):
 
 @app.post("/synthesize")
 async def synthesize(request: Request):
-    """Synthesize speech."""
+    """Synthesise speech from a JSON text payload."""
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         body = await request.json()
@@ -371,7 +325,7 @@ async def voice_clone(
     speed: float = Form(1.0),
     output_format: str = Form("mp3"),
 ):
-    """Voice-cloning TTS — multipart because reference is a raw clip."""
+    """Synthesise speech in the voice of `reference_audio` (multipart upload)."""
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         ref = await reference_audio.read()
@@ -402,7 +356,7 @@ async def transcribe(
     response_format: str = Form("json"),
     temperature: float = Form(0.0),
 ):
-    """Transcribe audio → text. Multipart form-data to mirror /v1/audio/transcriptions."""
+    """Transcribe audio to text."""
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         audio = await file.read()
@@ -426,7 +380,7 @@ async def transcribe(
 
 @app.post("/upscale")
 async def upscale(request: Request, file: UploadFile = File(...)):
-    """Super-resolution endpoint. Image in, image out (raw PNG bytes)."""
+    """Super-resolve an uploaded image; returns raw PNG bytes."""
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         image = await file.read()
