@@ -17,7 +17,7 @@ model:
     max_tokens: ${oc.decode:${oc.env:QWEN3_5_4B_MAX_TOKENS,4096}}
     temperature: ${oc.decode:${oc.env:QWEN3_5_4B_TEMPERATURE,0.7}}
     top_p: ${oc.decode:${oc.env:QWEN3_5_4B_TOP_P,0.9}}
-    thinking: ${oc.decode:${oc.env:QWEN3_5_4B_THINKING,false}}
+    thinking: ${oc.decode:${oc.env:QWEN3_5_4B_THINKING,true}}
 
 cache:
   enabled: false
