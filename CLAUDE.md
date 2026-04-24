@@ -110,11 +110,41 @@ Single canonical style — do not diverge.
 
 ## Comment Policy
 
-Keep comments rare, short, and load-bearing. Three rules — everything else is noise.
+Comments exist to help a future reader understand a class, method, or inline gotcha without diving into the implementation — nothing more. Minimal information, informative, rare. These rules are strict.
 
-1. **No comment by default.** Identifier names and types are already documentation.
-2. **Comments explain WHY, never WHAT.** Only legitimate reasons to add one: a non-obvious invariant, a workaround with its cause, a parameter-priority subtlety, an ordering that exists for crash-safety, or behaviour that would surprise a reader. A comment that restates the line below it (`# Check TTL` above `if ttl_expires and ...`) must be deleted. No `# --- Section ---` dividers. No references to past fixes, incidents, or PRs — that belongs in `git log`.
-3. **Docstrings only on public contracts** — classes, router endpoints, provider ABCs, public service methods. One-liner when it is enough; multi-line with Returns/Raises/Notes only when the contract genuinely needs it. No decorative docstrings on trivial helpers.
+### Docstrings
+
+- **Classes / DTOs / Pydantic schemas**: one-line docstring stating the purpose. No multi-paragraph blurbs, no field-by-field lists, no "chosen over X because…" rationale. If a field is non-obvious, rename it.
+- **Public methods and functions** (router endpoints, provider ABCs, public service entry points): one-line docstring stating what it does (and, when not obvious from the signature, what it returns or raises). Never restate parameter names.
+- **Private / trivial helpers** (`_foo`, short getters, wrappers): no docstring. The name and type hints are the documentation.
+- **Modules**: no module-level docstring. The filename + first class/function is enough.
+
+### Inline `#` comments
+
+Only legitimate reasons to keep one:
+
+1. A **WHY** for a non-obvious invariant (e.g. ordering that exists for crash-safety, parameter-priority subtlety).
+2. A **workaround** with its root cause (e.g. `# snapshot_download first — HF AutoModel skips speech_tokenizer/`).
+3. A **footgun warning** where removing the line below would silently break something.
+4. A `# noqa: XYZ` with a one-phrase reason.
+
+Everything else is deleted. Specifically forbidden:
+- Restating WHAT the next line does.
+- Section dividers (`# ── Section ──`).
+- References to past bugs, PRs, incidents, dates — that belongs in `git log`.
+- "Chosen over X because Y" in docstrings (marketing, not contract).
+- Release-date / license / provenance prose in docstrings.
+- Comments on YAML configs and `pyproject.toml`. Those files are read by operators who understand their keys; a comment is noise.
+
+### Antipatterns from this repo (do not reintroduce)
+
+- `# Drop T5 text encoder for SD 3.5 to save ~9.5 GB VRAM` above `kwargs["text_encoder_3"] = None` → the key name and YAML flag already say this.
+- `# Cache check` above a cache-check block → obvious from the code.
+- `"""Provider for Fish Speech / OpenAudio TTS models."""` followed by 8 more lines about licenses and performance → one line.
+- Module docstrings like `"""YAML configuration loaders with OmegaConf env-var interpolation."""` that introduce the file before any code → delete.
+- Comments in `config/models/*.yaml` describing env vars and model quirks → delete; the keys are self-documenting.
+
+If a would-be comment can't fit in one dense line that a reader genuinely needs, the code probably needs a better name or a more obvious structure instead.
 
 ## Testing
 
