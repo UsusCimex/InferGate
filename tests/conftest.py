@@ -187,6 +187,8 @@ async def services(tmp_path):
 async def client(services):
     """Async test client for the FastAPI app (without lifespan, deps already set)."""
     from fastapi import FastAPI
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
 
     from app.routers import admin, audio, cache, chat, health, images, models
@@ -218,6 +220,29 @@ async def client(services):
     async def queue_full_handler(request, exc):
         return JSONResponse(
             {"error": {"message": str(exc), "type": "queue_full"}}, status_code=503
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request, exc: RequestValidationError):
+        errors = exc.errors()
+        first = errors[0] if errors else {}
+        err_type = first.get("type", "validation_error")
+        loc = [str(x) for x in first.get("loc", []) if x != "body"]
+        field = ".".join(loc) if loc else "(root)"
+        if err_type == "extra_forbidden":
+            message = f"unknown field '{field}' (this API rejects unrecognised fields to catch typos)"
+        else:
+            message = f"invalid value for '{field}': {first.get('msg', 'validation error')}"
+        return JSONResponse(
+            {
+                "error": {
+                    "message": message,
+                    "type": "invalid_request",
+                    "param": field,
+                    "details": jsonable_encoder(errors),
+                }
+            },
+            status_code=422,
         )
 
     app.include_router(chat.router)

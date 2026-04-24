@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -200,6 +202,37 @@ def create_app() -> FastAPI:
     async def queue_full_handler(request, exc):
         return JSONResponse(
             {"error": {"message": str(exc), "type": "queue_full"}}, status_code=503
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request, exc: RequestValidationError):
+        """OpenAI-style 422 envelope with a single human-readable first error.
+
+        Pydantic `extra='forbid'` surfaces as `type=extra_forbidden`; remap
+        that to a message that actually names the offending field so clients
+        catch typos like `"langauge"` instead of seeing a generic error.
+        """
+        errors = exc.errors()
+        first = errors[0] if errors else {}
+        err_type = first.get("type", "validation_error")
+        loc = [str(x) for x in first.get("loc", []) if x != "body"]
+        field = ".".join(loc) if loc else "(root)"
+
+        if err_type == "extra_forbidden":
+            message = f"unknown field '{field}' (this API rejects unrecognised fields to catch typos)"
+        else:
+            message = f"invalid value for '{field}': {first.get('msg', 'validation error')}"
+
+        return JSONResponse(
+            {
+                "error": {
+                    "message": message,
+                    "type": "invalid_request",
+                    "param": field,
+                    "details": jsonable_encoder(errors),
+                }
+            },
+            status_code=422,
         )
 
     @app.exception_handler(httpx.HTTPStatusError)

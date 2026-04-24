@@ -1,18 +1,24 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     role: str
     content: str
 
 
 class ResponseFormat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: str = "text"
 
 
 class ChatCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
     model: str | None = None
     messages: list[ChatMessage] = Field(..., min_length=1, max_length=500)
     temperature: float | None = Field(None, ge=0.0, le=2.0)

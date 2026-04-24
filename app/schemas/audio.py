@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AudioSpeechRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
     model: str | None = None
     input: str = Field(..., min_length=1, max_length=100000)
     voice: str = "default"

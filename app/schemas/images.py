@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class HighresFixSpec(BaseModel):
@@ -14,6 +14,8 @@ class HighresFixSpec(BaseModel):
       2. PIL-resize to (w*scale, h*scale) using `upscaler` resampling
       3. Img2img pass with `denoising_strength` (0.0=no change, 1.0=redraw)
     """
+    model_config = ConfigDict(extra="forbid")
+
     scale: float = Field(2.0, gt=1.0, le=4.0)
     denoising_strength: float = Field(0.5, ge=0.0, le=1.0)
     steps: int | None = Field(None, ge=1, le=150)  # override for pass 2
@@ -34,6 +36,8 @@ class TextualInversionSpec(BaseModel):
     TIs have no `weight` parameter — emphasis is applied via the prompt
     itself (`<token>`, or compel syntax `(<token>:1.5)`).
     """
+    model_config = ConfigDict(extra="forbid")
+
     id: str = Field(..., pattern=r"^[\w.-]+/[\w.-]+$", max_length=200)
     token: str | list[str] | None = None
     weight_file: str | None = Field(None, max_length=200)
@@ -53,6 +57,8 @@ class LoraSpec(BaseModel):
       pipeline. Auto-assigned if omitted; supply a value if you want to
       pin a specific slot across requests.
     """
+    model_config = ConfigDict(extra="forbid")
+
     id: str = Field(..., pattern=r"^[\w.-]+/[\w.-]+$", max_length=200)
     weight: float = Field(1.0, ge=-3.0, le=3.0)
     weight_file: str | None = Field(None, max_length=200)
@@ -60,6 +66,8 @@ class LoraSpec(BaseModel):
 
 
 class ImageGenerationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
     model: str | None = None
     prompt: str = Field(..., min_length=1, max_length=10000)
     n: int = Field(1, ge=1, le=10)

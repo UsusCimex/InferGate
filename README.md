@@ -870,11 +870,10 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 ### UX / контракт API
 
 6. [ ] **Default-speaker fallback для voice-clone-only моделей**. `qwen3-tts-06b` и `xtts-v2` требуют `reference_audio` в провайдере; запрос к плоскому `/v1/audio/speech` без файла сейчас падает 500 (`ValueError`) вместо внятного ответа. Варианты: (а) поставлять built-in reference-clip для «default»-голоса каждой модели, чтобы плоский endpoint работал без загрузки; (б) возвращать структурированный 400 с подсказкой клиенту переключиться на `/v1/audio/speech/voice-clone`. Сейчас клиент (Comput) держит эти модели в списке плоского TTS — любой выбор даёт 500.
-7. [ ] **Воспитать `extra='forbid'` на Pydantic-схемах**. Сейчас неизвестные поля тихо дропаются (`extra='ignore'` по умолчанию), и опечатка типа `"langauge"` не вернёт 400. Для API, который хочет быть контрактным, лучше `ConfigDict(extra='forbid')` + `422` — пользователь увидит реальную ошибку вместо молчаливого игнорирования.
 
 ### Рефакторинг и code-hygiene
 
-8. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый; в `app/` остаются ~40 срабатываний на новых правилах (RUF002/003 ambiguous Unicode, устаревшие `# noqa: BLE001` под более свежий ruff, `RUF046` double-int-cast в `_srt_timestamp`) — пройтись автофиксом и завести CI-конфиг (`.github/workflows/ci.yml`).
+7. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый; в `app/` остаются ~40 срабатываний на новых правилах (RUF002/003 ambiguous Unicode, устаревшие `# noqa: BLE001` под более свежий ruff, `RUF046` double-int-cast в `_srt_timestamp`) — пройтись автофиксом и завести CI-конфиг (`.github/workflows/ci.yml`).
 
 ---
 
