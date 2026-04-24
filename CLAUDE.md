@@ -152,4 +152,30 @@ Tests use fake providers (`FakeImageProvider`, `FakeTextProvider`, `FakeTtsProvi
 
 ## Git Conventions
 
-- Do NOT add `Co-Authored-By` lines to commit messages. Keep commits clean — only the commit title and optional body describing what was done.
+- Do NOT add `Co-Authored-By` lines to commit messages.
+
+### Commit Messages
+
+Every commit starts with one tag:
+
+- `[*]` — fix, logic change, feature behaviour
+- `[+]` — addition (new module, file, endpoint, dependency, test)
+- `[-]` — removal (deleted code, dropped feature)
+- `[r]` — refactor (rename, move, restructure; no behaviour change)
+
+Format:
+
+- **Title**: `[tag] <one short sentence>`. End with `:` only if a body follows.
+- **Body** (optional): dashed bullet list (`- ...`), one brief point per bullet.
+- **Atomicity**: one commit = one focused change. Split, don't pad the message.
+
+Example:
+
+    [*] Lazy-load models on first request:
+    - drop eager provider.load() from worker lifespan
+    - /health used only for probe
+    - remote and local share the same _make_room() path
+
+    [-] Legacy FishSpeech provider
+
+    [r] Move schedulers/compel/lora into submodules
