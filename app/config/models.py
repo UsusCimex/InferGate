@@ -31,6 +31,14 @@ class ModelMetadata(BaseModel):
     tags: list[str] = []
 
 
+class ModelCapabilities(BaseModel):
+    # TTS providers that refuse to synthesise without a `reference_audio`
+    # clip (XTTS-v2, Qwen3-TTS). The gateway fails fast with a 400 on the
+    # flat /v1/audio/speech endpoint and steers callers to /voice-clone
+    # instead of paying a round-trip to the worker just to get a 400 back.
+    voice_clone_only: bool = False
+
+
 class ModelConfig(BaseModel):
     id: str = Field(pattern=_MODEL_ID_PATTERN, max_length=128)
     display_name: str
@@ -42,3 +50,4 @@ class ModelConfig(BaseModel):
     cache: ModelCacheConfig = ModelCacheConfig()
     queue: ModelQueueConfig = ModelQueueConfig()
     metadata: ModelMetadata = ModelMetadata()
+    capabilities: ModelCapabilities = ModelCapabilities()

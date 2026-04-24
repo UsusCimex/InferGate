@@ -34,3 +34,6 @@ metadata:
   license: "Apache-2.0"
   description: "Qwen3-TTS 0.6B-Base — zero-shot voice cloning across 10 languages (EN, ZH, JA, KO, DE, FR, RU, PT, ES, IT)"
   tags: ["qwen3-tts", "voice-clone", "multilingual", "alibaba"]
+
+capabilities:
+  voice_clone_only: true

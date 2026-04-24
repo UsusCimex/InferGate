@@ -38,9 +38,24 @@ async def create_speech(
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)
 
+    config = manager.get_config(model_id)
+    if config.capabilities.voice_clone_only:
+        return JSONResponse(
+            {
+                "error": {
+                    "message": (
+                        f"model '{model_id}' is voice-clone-only and requires a reference_audio "
+                        f"clip — call POST /v1/audio/speech/voice-clone (multipart) instead"
+                    ),
+                    "type": "voice_clone_required",
+                    "endpoint": "/v1/audio/speech/voice-clone",
+                }
+            },
+            status_code=400,
+        )
+
     start = time.monotonic()
     provider = await manager.ensure_loaded(model_id)
-    config = manager.get_config(model_id)
 
     params = {
         "voice": body.voice,

@@ -31,3 +31,6 @@ metadata:
   license: "Coqui Public Model License (CPML, non-commercial)"
   description: "XTTS v2 — voice cloning from a 6-second reference clip, 17 languages"
   tags: ["xtts", "voice-clone", "multilingual", "coqui"]
+
+capabilities:
+  voice_clone_only: true

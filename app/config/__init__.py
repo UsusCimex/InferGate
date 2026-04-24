@@ -1,7 +1,13 @@
 """Configuration package: server settings, model configs, enums, loaders."""
 from app.config.enums import CacheStrategy, EvictionPolicy, LogLevel, Priority
 from app.config.loader import load_model_configs, load_server_config, load_single_model_config
-from app.config.models import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
+from app.config.models import (
+    ModelCacheConfig,
+    ModelCapabilities,
+    ModelConfig,
+    ModelMetadata,
+    ModelQueueConfig,
+)
 from app.config.server import (
     AuthConfig,
     CacheConfig,
@@ -23,6 +29,7 @@ __all__ = [
     "GpuConfig",
     "LogLevel",
     "ModelCacheConfig",
+    "ModelCapabilities",
     "ModelConfig",
     "ModelMetadata",
     "ModelQueueConfig",
