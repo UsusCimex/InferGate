@@ -49,10 +49,12 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "httpx>=0.28.0",
     "ruff>=0.9.0",
-    # Pillow is used by tests/test_images.py for asserting output image
-    # dimensions; locally it arrives transitively via [gpu]/diffusers, but
-    # CI installs only [dev] so it must be declared here explicitly.
-    "pillow>=10.0",
+    # Test-only runtime deps that are optional in production (lazy-imported
+    # inside watchdog / monitoring paths), but several test modules import
+    # them at the top level and fail collection without them in CI.
+    "pillow>=10.0",         # tests/test_images.py: PIL.Image dimension asserts
+    "psutil>=5.9",          # tests/test_memory_watchdog.py: host-RAM probing
+    "prometheus-client>=0.20.0",  # tests/test_monitoring.py: /metrics/prometheus
 ]
 all = ["infergate[gpu,tts,monitoring,quant,dev]"]
 
