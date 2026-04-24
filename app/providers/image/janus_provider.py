@@ -49,7 +49,7 @@ class JanusImageProvider(ImageProvider):
 
     async def load(self, model_dir: str) -> None:
         import torch
-        from janus.models import VLChatProcessor  # noqa: F401 — validates install
+        from janus.models import VLChatProcessor
         from transformers import AutoModelForCausalLM
 
         hub_id = self.config.model["hub_id"]

@@ -19,6 +19,7 @@ toolchain, Blackwell, etc.).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import logging
 import os
@@ -141,10 +142,8 @@ class Qwen3TtsProvider(TtsProvider):
             loop = asyncio.get_running_loop()
             wav_array, sample_rate = await loop.run_in_executor(None, _run)
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp.name)
-            except OSError:
-                pass
 
         import soundfile as sf
 

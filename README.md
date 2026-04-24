@@ -867,10 +867,6 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 4. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
 5. [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
 
-### Рефакторинг и code-hygiene
-
-6. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый; в `app/` остаются ~40 срабатываний на новых правилах (RUF002/003 ambiguous Unicode, устаревшие `# noqa: BLE001` под более свежий ruff, `RUF046` double-int-cast в `_srt_timestamp`) — пройтись автофиксом и завести CI-конфиг (`.github/workflows/ci.yml`).
-
 ---
 
 ## 15. Лицензия

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -45,10 +46,8 @@ class ConfigWatcher:
         if self._task is None:
             return
         self._task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await self._task
-        except asyncio.CancelledError:
-            pass
         self._task = None
 
     async def _run(self) -> None:
@@ -56,7 +55,7 @@ class ConfigWatcher:
             while True:
                 try:
                     await self.scan_once()
-                except Exception as e:  # noqa: BLE001 — watcher loop must survive
+                except Exception as e:
                     logger.exception("Config watcher scan failed: %s", e)
                 await asyncio.sleep(self._interval)
         except asyncio.CancelledError:
@@ -100,12 +99,12 @@ class ConfigWatcher:
         for path in changed:
             try:
                 config = load_single_model_config(path)
-            except Exception as e:  # noqa: BLE001 — surface YAML errors to operator
+            except Exception as e:
                 logger.error("Failed to parse %s: %s", path.name, e)
                 continue
             try:
                 await self._callback(config)
-            except Exception as e:  # noqa: BLE001 — one bad reload shouldn't starve others
+            except Exception as e:
                 logger.error("Reload callback for %s raised: %s", path.name, e)
 
         return changed

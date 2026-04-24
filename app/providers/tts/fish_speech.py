@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import logging
 from typing import Any
@@ -128,10 +129,8 @@ class FishSpeechTtsProvider(TtsProvider):
             audio_data = await loop.run_in_executor(None, _run)
         finally:
             if ref_path is not None:
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(ref_path)
-                except OSError:
-                    pass
 
         import soundfile as sf
 

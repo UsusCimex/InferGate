@@ -133,9 +133,9 @@ async def stats(request: Request):
                 vram_total_mb = total_b // (1024 * 1024)
                 vram_used_mb = vram_total_mb - vram_free_mb
                 vram_source = "torch.cuda.mem_get_info"
-        except Exception:  # noqa: BLE001 — stats never raise
+        except Exception:
             pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         # NVML initialised but a later call failed — leave vram_* at 0
         # rather than falling back to torch (NVML failures usually mean
         # driver issues that torch won't work around).
@@ -150,7 +150,7 @@ async def stats(request: Request):
         ram_used_mb = (vm.total - vm.available) // (1024 * 1024)
     except ImportError:
         pass
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     return {
@@ -210,7 +210,7 @@ async def reload_config(request: Request):
     body = await request.json()
     try:
         new_config = ModelConfig(**body)
-    except Exception as e:  # noqa: BLE001 — pydantic + value errors both → 400
+    except Exception as e:
         return JSONResponse(
             {"error": {"message": f"invalid config: {e}", "type": "invalid_request"}},
             status_code=400,
@@ -285,7 +285,7 @@ async def reload_config(request: Request):
         logger.info("Reloading %s (full): loading new provider …", new_config.id)
         try:
             await new_provider.load(models_dir)
-        except Exception as e:  # noqa: BLE001 — surface as 500, keep worker alive
+        except Exception as e:
             logger.error("Failed to load new provider during reload: %s", e)
             return JSONResponse(
                 {"error": {"message": f"load failed: {e}", "type": "load_failed"}},
@@ -298,7 +298,7 @@ async def reload_config(request: Request):
         request.app.state.config = new_config
         try:
             await old_provider.unload()
-        except Exception as e:  # noqa: BLE001 — best-effort cleanup
+        except Exception as e:
             logger.warning("Error unloading old provider (non-fatal): %s", e)
 
         logger.info("Reloaded %s (full reload complete)", new_config.id)

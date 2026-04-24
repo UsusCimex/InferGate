@@ -8,6 +8,7 @@ Accepts any CT2-converted Whisper checkpoint from HuggingFace hub via
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import tempfile
@@ -111,10 +112,8 @@ class WhisperProvider(SttProvider):
             loop = asyncio.get_running_loop()
             segments, info = await loop.run_in_executor(None, _run)
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp.name)
-            except OSError:
-                pass
 
         text = "".join(s.text for s in segments).strip()
         result: dict[str, Any] = {"text": text}

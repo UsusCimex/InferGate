@@ -14,6 +14,7 @@ Poll interval and thresholds live in `server.yaml:gpu.watchdog_*`; set
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 class MemoryWatchdog:
     def __init__(
         self,
-        manager: "ProviderManager",
+        manager: ProviderManager,
         interval_seconds: int,
         vram_threshold: float,
         ram_threshold: float,
@@ -59,10 +60,8 @@ class MemoryWatchdog:
         if self._task is None:
             return
         self._task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await self._task
-        except asyncio.CancelledError:
-            pass
         self._task = None
 
     async def _run(self) -> None:
@@ -70,7 +69,7 @@ class MemoryWatchdog:
             while True:
                 try:
                     await self.scan_once()
-                except Exception as e:  # noqa: BLE001 — watchdog loop must survive
+                except Exception as e:
                     logger.exception("MemoryWatchdog scan failed: %s", e)
                 await asyncio.sleep(self._interval)
         except asyncio.CancelledError:
@@ -102,11 +101,11 @@ class MemoryWatchdog:
         for model_id in loaded:
             try:
                 provider = self._manager.get(model_id)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
             try:
                 stats = await provider.get_stats()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.debug("get_stats(%s) failed: %s", model_id, e)
                 continue
             if not stats:
@@ -140,13 +139,13 @@ class MemoryWatchdog:
                 agg_used, agg_total, 100 * agg_used / agg_total,
                 100 * self._vram_threshold,
             )
-            victim = self._manager._find_lru_victim()  # noqa: SLF001
+            victim = self._manager._find_lru_victim()
             if victim is not None:
                 try:
                     await self._manager.unload_model(victim)
                     summary["evicted"] = victim
                     logger.info("MemoryWatchdog: evicted %s under VRAM pressure", victim)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     logger.error("MemoryWatchdog: eviction of %s failed: %s", victim, e)
             else:
                 logger.warning(
@@ -178,5 +177,5 @@ class MemoryWatchdog:
             )
         except ImportError:
             return 0, 0
-        except Exception:  # noqa: BLE001
+        except Exception:
             return 0, 0

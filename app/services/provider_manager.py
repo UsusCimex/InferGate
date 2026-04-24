@@ -224,7 +224,7 @@ class ProviderManager:
                 try:
                     if hasattr(provider, "check_health"):
                         healthy = await provider.check_health()
-                except Exception:  # noqa: BLE001 — probe must never raise
+                except Exception:
                     healthy = False
 
                 if healthy:
@@ -520,9 +520,7 @@ class ProviderManager:
     def _evictable(self, model_id: str) -> bool:
         if model_id in self._pinned:
             return False
-        if self._active_counts.get(model_id, 0) > 0:
-            return False
-        return True
+        return self._active_counts.get(model_id, 0) == 0
 
     def _would_violate_reservation(
         self, model_id: str, excluded: set[str] | None = None
