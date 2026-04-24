@@ -9,15 +9,10 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:SDXL_BASE_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:SDXL_BASE_VRAM_MB,7000}}
-  # Fits 12GB without offload at fp16.
   cpu_offload: ${oc.decode:${oc.env:SDXL_BASE_CPU_OFFLOAD,false}}
   sequential_cpu_offload: ${oc.decode:${oc.env:SDXL_BASE_SEQUENTIAL_OFFLOAD,false}}
   warmup: ${oc.decode:${oc.env:SDXL_BASE_WARMUP,false}}
   variant: ${oc.env:SDXL_BASE_VARIANT,fp16}
-  # SDXL Refiner ensemble — opt-in, empty by default. Enable with
-  # SDXL_BASE_REFINER_HUB_ID=stabilityai/stable-diffusion-xl-refiner-1.0
-  # Base + refiner together use ~13 GB VRAM at fp16; on 12 GB cards
-  # set SDXL_BASE_SEQUENTIAL_OFFLOAD=true to fit.
   refiner_hub_id: ${oc.env:SDXL_BASE_REFINER_HUB_ID,}
   refiner_variant: ${oc.env:SDXL_BASE_REFINER_VARIANT,fp16}
   default_params:
@@ -25,7 +20,6 @@ model:
     guidance_scale: ${oc.decode:${oc.env:SDXL_BASE_CFG,7.0}}
     width: 1024
     height: 1024
-  # LoRA hot-load caps (0-valued max_loaded disables caching entirely).
   lora:
     max_loaded: ${oc.decode:${oc.env:SDXL_BASE_LORA_MAX_LOADED,8}}
     max_per_request: ${oc.decode:${oc.env:SDXL_BASE_LORA_MAX_PER_REQUEST,5}}

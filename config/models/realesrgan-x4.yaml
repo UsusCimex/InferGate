@@ -5,17 +5,11 @@ provider_class: SpandrelUpscaleProvider
 enabled: ${oc.decode:${oc.env:REALESRGAN_X4_ENABLED,true}}
 
 model:
-  # ai-forever mirrors the original Real-ESRGAN x2/x4/x8 weights; spandrel
-  # parses them from .pth automatically. Swap to any SR checkpoint
-  # (SwinIR, DAT, 4x-ClearRealityV1, …) by changing hub_id + filename —
-  # the provider doesn't care about the architecture.
   hub_id: "ai-forever/Real-ESRGAN"
   filename: "RealESRGAN_x4.pth"
   device: ${oc.env:REALESRGAN_X4_DEVICE,cuda}
   torch_dtype: ${oc.env:REALESRGAN_X4_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:REALESRGAN_X4_VRAM_MB,1500}}
-  # Guardrail against OOM at 4× on 8GB cards. Tiling support is a
-  # follow-up that will let this go to arbitrary sizes.
   max_input_side: ${oc.decode:${oc.env:REALESRGAN_X4_MAX_INPUT_SIDE,2048}}
 
 cache:

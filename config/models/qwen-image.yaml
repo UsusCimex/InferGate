@@ -9,9 +9,6 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:QWEN_IMAGE_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:QWEN_IMAGE_VRAM_MB,11000}}
-  # 20B DiT — does not fit in 12GB at bf16. Pair 4-bit NF4 on the transformer
-  # with model-level CPU offload to keep it under ~11GB while preserving quality.
-  # On bigger cards: QWEN_IMAGE_QUANTIZATION=null QWEN_IMAGE_CPU_OFFLOAD=false
   quantization: ${oc.decode:${oc.env:QWEN_IMAGE_QUANTIZATION,nf4}}
   quantize_components: ["transformer", "text_encoder"]
   cpu_offload: ${oc.decode:${oc.env:QWEN_IMAGE_CPU_OFFLOAD,false}}

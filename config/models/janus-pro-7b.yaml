@@ -9,8 +9,6 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:JANUS_PRO_7B_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:JANUS_PRO_7B_VRAM_MB,8000}}
-  # 7B at bf16 is ~14GB — NF4 brings it to ~5GB weights + VQ decoder + KV
-  # cache → ~8GB peak. Override to null on ≥24GB cards for bf16 quality.
   quantization: ${oc.env:JANUS_PRO_7B_QUANTIZATION,nf4}
   default_params:
     cfg_weight: ${oc.decode:${oc.env:JANUS_PRO_7B_CFG_WEIGHT,5.0}}

@@ -9,9 +9,6 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:FLUX1_DEV_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:FLUX1_DEV_VRAM_MB,11000}}
-  # 12B transformer + 5B T5 encoder cannot co-reside in 12GB at FP16. Model CPU
-  # offload streams weights GPU↔RAM per-stage (~1.5-2× slower than no-offload).
-  # On a big card: FLUX1_DEV_CPU_OFFLOAD=false.
   cpu_offload: ${oc.decode:${oc.env:FLUX1_DEV_CPU_OFFLOAD,false}}
   sequential_cpu_offload: ${oc.decode:${oc.env:FLUX1_DEV_SEQUENTIAL_OFFLOAD,true}}
   warmup: ${oc.decode:${oc.env:FLUX1_DEV_WARMUP,true}}

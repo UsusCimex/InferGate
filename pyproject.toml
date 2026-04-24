@@ -15,9 +15,6 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "aiofiles>=24.0",
     "httpx>=0.28.0",
-    # Required by any router using UploadFile/File/Form — FastAPI asserts
-    # the import at route-registration time, so this is a hard runtime
-    # dep (not test-only), even though it arrives transitively in many setups.
     "python-multipart>=0.0.12",
 ]
 
@@ -32,9 +29,7 @@ gpu = [
     "vllm>=0.19.0",
 ]
 quant = [
-    # NF4 / int4 weight quantization via diffusers PipelineQuantizationConfig
     "bitsandbytes>=0.43.0",
-    # FP8 weight quantization via optimum-quanto backend
     "optimum-quanto>=0.2.5",
 ]
 tts = [
@@ -49,12 +44,9 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "httpx>=0.28.0",
     "ruff>=0.9.0",
-    # Test-only runtime deps that are optional in production (lazy-imported
-    # inside watchdog / monitoring paths), but several test modules import
-    # them at the top level and fail collection without them in CI.
-    "pillow>=10.0",         # tests/test_images.py: PIL.Image dimension asserts
-    "psutil>=5.9",          # tests/test_memory_watchdog.py: host-RAM probing
-    "prometheus-client>=0.20.0",  # tests/test_monitoring.py: /metrics/prometheus
+    "pillow>=10.0",
+    "psutil>=5.9",
+    "prometheus-client>=0.20.0",
 ]
 all = ["infergate[gpu,tts,monitoring,quant,dev]"]
 
@@ -75,33 +67,16 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = [
-    "E",     # pycodestyle errors
-    "W",     # pycodestyle warnings
-    "F",     # pyflakes
-    "I",     # isort
-    "UP",    # pyupgrade (modernize syntax)
-    "B",     # flake8-bugbear (common bugs)
-    "SIM",   # flake8-simplify
-    "ASYNC", # flake8-async (async pitfalls)
-    "C4",    # flake8-comprehensions
-    "T20",   # flake8-print (no print in production)
-    "RUF",   # ruff-specific rules
+    "E", "W", "F", "I", "UP", "B", "SIM", "ASYNC", "C4", "T20", "RUF",
 ]
 ignore = [
-    "E501",    # line length — handled by formatter
-    # Unicode typography (×, –, −) is used deliberately in Russian/technical
-    # prose across docstrings and comments; flagging it is pure noise.
+    "E501",
     "RUF002",
     "RUF003",
-    # NamedTemporaryFile(delete=False) + manual unlink in finally is the
-    # correct idiom when passing a temp path to an external library (TTS
-    # engines, whisper) — SIM115 has no way to distinguish it from a leak.
     "SIM115",
 ]
 
 [tool.ruff.lint.flake8-bugbear]
-# Depends/Query/Body/Header/Cookie/File/Form are FastAPI idioms that must
-# appear in default arguments — they are not real side-effects at import time.
 extend-immutable-calls = [
     "fastapi.Depends",
     "fastapi.Query",

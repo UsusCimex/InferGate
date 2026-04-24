@@ -9,13 +9,8 @@ model:
   device: ${oc.env:QWEN3_TTS_06B_DEVICE,cuda:0}
   vram_mb: ${oc.decode:${oc.env:QWEN3_TTS_06B_VRAM_MB,2500}}
   torch_dtype: ${oc.env:QWEN3_TTS_06B_TORCH_DTYPE,bfloat16}
-  # flash_attention_2 cuts VRAM but needs flash-attn installed in the
-  # worker image. Default is "eager" so the container boots everywhere;
-  # set QWEN3_TTS_06B_ATTN=flash_attention_2 after installing flash-attn.
   attn_implementation: ${oc.env:QWEN3_TTS_06B_ATTN,eager}
   default_params:
-    # Supported: Chinese, English, Japanese, Korean, German, French,
-    # Russian, Portuguese, Spanish, Italian.
     language: ${oc.env:QWEN3_TTS_06B_LANGUAGE,English}
     output_format: ${oc.env:QWEN3_TTS_06B_OUTPUT_FORMAT,wav}
 

@@ -8,35 +8,14 @@ auth:
   api_keys: []
 
 gpu:
-  # Backstop count-based LRU (when vram_mb budget is disabled or model
-  # doesn't declare a size).
   max_loaded_models: ${oc.decode:${oc.env:GPU_MAX_LOADED_MODELS,3}}
   pinned_models: []
   device: "cuda:0"
-  # Byte-budget LRU — primary safety net. When the sum of declared
-  # `vram_mb` across loaded models would exceed this, LRU evicts until
-  # it fits. 0 = disabled.
-  #
-  # Recommended values:
-  #   12 GB card (RTX 3060 / 4070 / 5070): 10000
-  #   16 GB card (RTX 4080):                14000
-  #   24 GB card (RTX 3090 / 4090 / A5000): 22000
-  #   48 GB card (A6000 / L40S):            44000
-  # On CPU-only deployments set to 0.
   max_vram_budget_mb: ${oc.decode:${oc.env:GPU_MAX_VRAM_BUDGET_MB,0}}
-  # Safety headroom carved out of the budget for activation spikes
-  # that exceed declared static cost (LoRA injection, img2img, etc.).
   vram_headroom_mb: ${oc.decode:${oc.env:GPU_VRAM_HEADROOM_MB,0}}
-  # MemoryWatchdog — background task that polls live /stats on every
-  # loaded worker and emergency-evicts LRU when live VRAM crosses
-  # threshold (catches leaks + underdeclared vram_mb that the static
-  # budget can't see). 0 = disabled (default); 10-30s recommended.
   watchdog_interval_seconds: ${oc.decode:${oc.env:GPU_WATCHDOG_INTERVAL_SECONDS,15}}
   watchdog_vram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_VRAM_THRESHOLD,0.92}}
   watchdog_ram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_RAM_THRESHOLD,0.90}}
-  # Soft per-category floor — LRU won't drop a category below the
-  # reserved count while other candidates remain. Protects TTS from
-  # being evicted by a burst of chat traffic, and vice-versa.
   category_reservations: {}
 
 queue:
@@ -60,9 +39,6 @@ defaults:
   image: sdxl-base
   text: qwen3.5-4b
   tts: qwen3-tts-06b
-
-# Предзагрузка по первому обращению, LRU + VRAM-watchdog следят, чтобы
-# все три дефолта уживались на 12 GB карте (RTX 5070 и подобных).
 
 rate_limit:
   enabled: false

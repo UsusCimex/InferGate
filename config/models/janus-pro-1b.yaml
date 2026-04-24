@@ -9,8 +9,6 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:JANUS_PRO_1B_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:JANUS_PRO_1B_VRAM_MB,6000}}
-  # Janus is autoregressive — no offload / no quant / no warmup concepts.
-  # Generates 384×384 natively; `size`/`width`/`height` are ignored.
   default_params:
     cfg_weight: ${oc.decode:${oc.env:JANUS_PRO_1B_CFG_WEIGHT,5.0}}
     temperature: ${oc.decode:${oc.env:JANUS_PRO_1B_TEMPERATURE,1.0}}

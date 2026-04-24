@@ -2,12 +2,9 @@ id: xtts-v2
 display_name: "XTTS v2 (Coqui)"
 category: tts
 provider_class: XttsTtsProvider
-# Disabled by default — XTTS-v2 requires ~2GB VRAM and a Coqui Public
-# Model License acceptance; set XTTS_V2_ENABLED=true to opt in.
 enabled: ${oc.decode:${oc.env:XTTS_V2_ENABLED,false}}
 
 model:
-  # Resolved from the Coqui Model Zoo — NOT a HuggingFace repo ID.
   hub_id: "tts_models/multilingual/multi-dataset/xtts_v2"
   device: ${oc.env:XTTS_V2_DEVICE,cuda}
   vram_mb: ${oc.decode:${oc.env:XTTS_V2_VRAM_MB,2000}}

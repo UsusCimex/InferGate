@@ -9,8 +9,6 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:MEISSONIC_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:MEISSONIC_VRAM_MB,10000}}
-  # ~1B transformer + CLIP-L+bigG text encoders + VQModel ≈ 10GB at fp16
-  # 1024×1024 / 64 steps. No offload concept (not a diffusers pipeline).
   default_params:
     num_inference_steps: ${oc.decode:${oc.env:MEISSONIC_STEPS,64}}
     guidance_scale: ${oc.decode:${oc.env:MEISSONIC_CFG,9.0}}

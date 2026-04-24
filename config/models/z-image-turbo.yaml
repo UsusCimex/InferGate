@@ -9,11 +9,9 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:Z_IMAGE_TURBO_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:Z_IMAGE_TURBO_VRAM_MB,12000}}
-  # 6B DiT + large text encoder. Try bf16 first; flip to nf4 if OOM.
   cpu_offload: ${oc.decode:${oc.env:Z_IMAGE_TURBO_CPU_OFFLOAD,false}}
   sequential_cpu_offload: ${oc.decode:${oc.env:Z_IMAGE_TURBO_SEQUENTIAL_OFFLOAD,false}}
   quantization: ${oc.decode:${oc.env:Z_IMAGE_TURBO_QUANTIZATION,null}}
-  # When quantization is enabled, target the text encoder first (largest saving)
   quantize_components: ["text_encoder", "transformer"]
   warmup: ${oc.decode:${oc.env:Z_IMAGE_TURBO_WARMUP,false}}
   default_params:

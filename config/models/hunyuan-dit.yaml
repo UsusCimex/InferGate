@@ -9,8 +9,6 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:HUNYUAN_DIT_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:HUNYUAN_DIT_VRAM_MB,7000}}
-  # 1.5B DiT + bilingual CLIP + mT5. Fits 12GB at fp16 without offload.
-  # If tight on smaller cards, set HUNYUAN_DIT_QUANTIZATION=nf4.
   cpu_offload: ${oc.decode:${oc.env:HUNYUAN_DIT_CPU_OFFLOAD,false}}
   sequential_cpu_offload: ${oc.decode:${oc.env:HUNYUAN_DIT_SEQUENTIAL_OFFLOAD,false}}
   quantization: ${oc.decode:${oc.env:HUNYUAN_DIT_QUANTIZATION,null}}
