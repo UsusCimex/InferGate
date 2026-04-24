@@ -38,6 +38,21 @@ async def test_tts_skip_cache(client):
     assert resp.headers["x-infergate-cache"] == "SKIP"
 
 
+@pytest.mark.asyncio
+async def test_tts_language_routed_into_cache_key(client):
+    """`language` must reach the cache layer: two requests identical except
+    for language should both be MISS (distinct cache keys), not HIT."""
+    base = {"model": "test-tts", "input": "Hola"}
+
+    r1 = await client.post("/v1/audio/speech", json={**base, "language": "Spanish"})
+    assert r1.status_code == 200
+    assert r1.headers["x-infergate-cache"] == "MISS"
+
+    r2 = await client.post("/v1/audio/speech", json={**base, "language": "French"})
+    assert r2.status_code == 200
+    assert r2.headers["x-infergate-cache"] == "MISS"
+
+
 # ── Transcription ──────────────────────────────────────────────────────
 
 _FAKE_AUDIO = b"RIFF\x00\x00\x00\x00WAVEfmt " + b"\x00" * 40  # pseudo-WAV
