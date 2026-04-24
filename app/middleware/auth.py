@@ -8,7 +8,7 @@ _SKIP_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json"})
 
 
 class ApiKeyMiddleware:
-    """Pure ASGI middleware for API key authentication."""
+    """API-key auth: 401 when the Bearer token isn't in the configured allowlist."""
 
     def __init__(self, app: ASGIApp, api_keys: list[str]) -> None:
         self.app = app

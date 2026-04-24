@@ -1,4 +1,3 @@
-"""Observability middleware: request ID and Prometheus instrumentation."""
 from __future__ import annotations
 
 import time
@@ -14,7 +13,7 @@ from app.monitoring.metrics import (
 
 
 class RequestIdMiddleware:
-    """Assigns a unique X-Request-ID to each HTTP request."""
+    """Attach a unique X-Request-ID header and scope.state value to each request."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -39,7 +38,6 @@ class RequestIdMiddleware:
         await self.app(scope, receive, send_wrapper)
 
 
-# Route normalization to avoid high-cardinality metric labels
 _STATIC_ROUTES = frozenset({
     "/v1/chat/completions",
     "/v1/images/generations",
@@ -58,11 +56,10 @@ _STATIC_ROUTES = frozenset({
 
 
 def _normalize_path(path: str) -> str:
-    """Collapse dynamic path segments for metric labels."""
+    """Collapse dynamic path segments into placeholders so metric labels stay bounded."""
     if path in _STATIC_ROUTES:
         return path
-    # /v1/models/{id}/{action} — preserve the trailing action so load vs
-    # unload show up as distinct metric lines instead of collapsing.
+    # Preserve the trailing action so /load vs /unload stay distinct.
     if path.startswith("/v1/models/"):
         parts = path.split("/")
         if len(parts) >= 5:
@@ -72,16 +69,14 @@ def _normalize_path(path: str) -> str:
         return "/cache/stats/{model_id}"
     if path.startswith("/cache/entry/"):
         return "/cache/entry/{key}"
-    # /cache/<model_id> (per-model delete) stays distinct from /cache
-    # (delete-all) — otherwise operators can't tell a "wipe everything"
-    # call apart from a per-model purge in request-rate panels.
+    # Keep /cache/<model_id> distinct from /cache (wipe-all).
     if path.startswith("/cache/"):
         return "/cache/{model_id}"
     return path
 
 
 class PrometheusMiddleware:
-    """Records HTTP request count and duration as Prometheus metrics."""
+    """Record every HTTP request's count and duration into Prometheus metrics."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

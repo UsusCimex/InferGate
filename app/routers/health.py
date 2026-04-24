@@ -69,7 +69,7 @@ async def metrics(
 
 @router.get("/metrics/prometheus")
 async def prometheus_metrics():
-    """Prometheus-compatible metrics endpoint for scraping."""
+    """Return metrics in Prometheus text-exposition format."""
     from app.monitoring import CONTENT_TYPE_LATEST, generate_latest, is_prometheus_available
 
     if not is_prometheus_available():

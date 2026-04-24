@@ -26,7 +26,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = Field(None, ge=1, le=131072)
     stream: bool = False
     response_format: ResponseFormat | None = None
-    thinking: bool | None = None  # None = use model default, True/False = override
+    thinking: bool | None = None
 
 
 class ChatChoice(BaseModel):

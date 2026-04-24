@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: initialize services on startup, cleanup on shutdown."""
+    """Build services on startup and tear them down on shutdown."""
     server_cfg = load_server_config()
     model_cfgs = load_model_configs()
 
@@ -87,13 +87,12 @@ async def lifespan(app: FastAPI):
             continue
         try:
             if manager.get_config(model_id).worker_url:
-                continue  # remote models are handled by worker monitor
+                continue
             await manager.ensure_loaded(model_id)
             logger.info("Preloaded model: %s", model_id)
         except Exception as e:
             logger.warning("Failed to preload %s: %s", model_id, e)
 
-    # Periodic TTL cleanup task
     cleanup_interval = server_cfg.cache.cleanup_interval_minutes * 60
 
     async def _cleanup_loop():
@@ -154,8 +153,8 @@ def create_app() -> FastAPI:
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
-    # CORS is added before auth so preflight requests pass without an API key.
     server_cfg = load_server_config()
+    # CORS before auth so preflight requests pass without an API key.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=server_cfg.cors.allow_origins,
@@ -206,12 +205,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request, exc: RequestValidationError):
-        """OpenAI-style 422 envelope with a single human-readable first error.
-
-        Pydantic `extra='forbid'` surfaces as `type=extra_forbidden`; remap
-        that to a message that actually names the offending field so clients
-        catch typos like `"langauge"` instead of seeing a generic error.
-        """
+        """Return a 422 with an OpenAI-style envelope naming the offending field."""
         errors = exc.errors()
         first = errors[0] if errors else {}
         err_type = first.get("type", "validation_error")
@@ -237,15 +231,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(httpx.HTTPStatusError)
     async def upstream_error_handler(request, exc: httpx.HTTPStatusError):
-        """Forward a worker's structured error response verbatim.
-
-        When a remote worker returns 4xx/5xx with a JSON body (e.g. a
-        ValueError surfaced by the worker as 400 `{"error": {...}}`),
-        httpx raises HTTPStatusError inside the remote provider. Instead
-        of letting that propagate to FastAPI's default 500 handler (which
-        hides the root cause), we unwrap the body and mirror the worker's
-        status so clients see the real reason.
-        """
+        """Forward a remote worker's structured error body and status code verbatim."""
         resp = exc.response
         try:
             body = resp.json()

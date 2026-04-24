@@ -11,9 +11,7 @@ _SKIP_PATHS = frozenset({"/health", "/openapi.json"})
 
 
 class AccessLogMiddleware:
-    """Pure ASGI middleware for access logging.
-    Logs method, path, status, and duration. Skips noisy healthchecks.
-    """
+    """Log method, path, status and duration for every non-healthcheck HTTP request."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

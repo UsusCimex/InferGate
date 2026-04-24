@@ -52,7 +52,6 @@ async def chat_completions(
     if body.thinking is not None:
         params["thinking"] = body.thinking
 
-    # Streaming mode
     if body.stream:
         messages = [m.model_dump() for m in body.messages]
         return StreamingResponse(
@@ -64,7 +63,6 @@ async def chat_completions(
             },
         )
 
-    # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
@@ -97,7 +95,6 @@ async def chat_completions(
     elif no_cache:
         cache_status = "SKIP"
 
-    # Run inference through scheduler
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
     messages = [m.model_dump() for m in body.messages]
@@ -112,7 +109,6 @@ async def chat_completions(
             time.monotonic() - inference_start
         )
 
-    # Cache result
     if should_cache:
         await cache.put(cache_key, json.dumps(result).encode(), model_id, cache_cfg)
 

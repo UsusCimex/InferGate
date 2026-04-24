@@ -127,11 +127,11 @@ async def create_speech(
 
 
 _TRANSCRIPTION_FORMATS = {"json", "text", "verbose_json", "srt", "vtt"}
-_MAX_AUDIO_BYTES = 100 * 1024 * 1024  # 100MB — matches OpenAI's limit
+_MAX_AUDIO_BYTES = 100 * 1024 * 1024
 
 
 def _fmt_srt_time(seconds: float) -> str:
-    """00:00:03,500 — SRT wants a comma before milliseconds."""
+    """Format seconds as the SRT timestamp `HH:MM:SS,ms`."""
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
@@ -140,7 +140,7 @@ def _fmt_srt_time(seconds: float) -> str:
 
 
 def _fmt_vtt_time(seconds: float) -> str:
-    """00:00:03.500 — WebVTT wants a dot before milliseconds."""
+    """Format seconds as the WebVTT timestamp `HH:MM:SS.ms`."""
     return _fmt_srt_time(seconds).replace(",", ".")
 
 
@@ -184,10 +184,7 @@ async def create_transcription(
             status_code=400,
         )
 
-    # srt / vtt are subtitle formats — the provider returns verbose_json
-    # (which has the `segments` list with timestamps) and the gateway
-    # converts to the subtitle text. No provider-level srt/vtt logic
-    # needed; keeps concrete providers focused on transcription.
+    # Subtitle formats are rendered from provider verbose_json — keeps providers focused.
     effective_format = "verbose_json" if response_format in {"srt", "vtt"} else response_format
 
     model_id = model or defaults.get("stt")
@@ -216,8 +213,6 @@ async def create_transcription(
     }
     params = {k: v for k, v in params.items() if v is not None}
 
-    # Cache key incorporates audio hash (done by CacheManager on the bytes key)
-    # plus the full params — same audio with different language hint ≠ cache hit.
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
@@ -264,7 +259,7 @@ async def create_transcription(
 
 
 def _sha(data: bytes) -> str:
-    """Short content hash for the cache key — avoids keying the whole blob."""
+    """Return a short (32-hex) content hash for cache keying."""
     import hashlib
     return hashlib.sha256(data).hexdigest()[:32]
 
@@ -273,7 +268,7 @@ def _transcription_response(
     result, response_format: str, model_id: str, elapsed_ms: int,
     cache_status: str, queue_position: int,
 ):
-    """Shape the provider output + cache hits into the client-facing response."""
+    """Format provider output as the requested `response_format` (json/text/srt/vtt/verbose_json)."""
     import json as _json
     if isinstance(result, (bytes, bytearray)):
         result = _json.loads(result.decode())
@@ -295,11 +290,11 @@ def _transcription_response(
     if response_format == "vtt":
         body = _segments_to_vtt(result.get("segments") or [])
         return Response(content=body, media_type="text/vtt", headers=headers)
-    # Default json — narrow to {text: ...} for strict OpenAI parity.
+    # Narrow to {text: ...} for strict OpenAI parity.
     return JSONResponse({"text": result.get("text", "")}, headers=headers)
 
 
-_MAX_REFERENCE_AUDIO_BYTES = 25 * 1024 * 1024  # 25MB — reference clips are short
+_MAX_REFERENCE_AUDIO_BYTES = 25 * 1024 * 1024
 
 
 @router.post("/v1/audio/speech/voice-clone")
@@ -317,10 +312,7 @@ async def create_speech_voice_clone(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
 ):
-    """Voice-cloning TTS — synthesise `input` in the voice from
-    `reference_audio`. Multipart because the reference is a file upload.
-    `reference_text` (what's being said in the reference clip) is optional
-    but meaningfully improves cloning fidelity on most architectures."""
+    """Synthesise `input` in the voice from `reference_audio` (multipart upload)."""
     model_id = model or defaults.get("tts")
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)
@@ -348,8 +340,6 @@ async def create_speech_voice_clone(
     }
     params = {k: v for k, v in params.items() if v is not None}
 
-    # Cache key: sha256 over (text + reference content + text hint + speed).
-    # Identical clone request → cache HIT, different reference voice → MISS.
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     ref_sha = hashlib.sha256(ref_bytes).hexdigest()[:32]

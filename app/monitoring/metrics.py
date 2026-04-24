@@ -1,4 +1,3 @@
-"""Prometheus metric definitions. Gracefully degrades if prometheus-client not installed."""
 from __future__ import annotations
 
 try:
@@ -69,11 +68,7 @@ def update_runtime_gauges(
     gpu_vram_used_mb: int,
     queue_size: int,
 ) -> None:
-    """Publish latest runtime readings into the Prometheus gauges.
-
-    No-op when prometheus-client is not installed — keeps call-site
-    ergonomics simple (routers don't need to re-check availability).
-    """
+    """Publish runtime gauges (no-op when prometheus-client is absent)."""
     if not _PROMETHEUS_AVAILABLE:
         return
     MODELS_LOADED.set(models_loaded)

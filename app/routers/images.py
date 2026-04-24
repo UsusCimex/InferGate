@@ -18,7 +18,7 @@ from app.schemas.images import ImageData, ImageGenerationRequest, ImageGeneratio
 
 router = APIRouter()
 
-_MAX_UPSCALE_BYTES = 50 * 1024 * 1024  # 50MB input cap
+_MAX_UPSCALE_BYTES = 50 * 1024 * 1024
 
 
 @router.post("/v1/images/generations")
@@ -50,8 +50,7 @@ async def generate_images(
     if body.scheduler is not None:
         params["scheduler"] = body.scheduler
     if body.loras is not None:
-        # Serialise to plain dicts so they survive the JSON hop to the worker
-        # (LoraSpec pydantic models don't serialise by default through httpx).
+        # Serialise to dicts — LoraSpec models don't auto-serialise across the httpx hop.
         params["loras"] = [lora.model_dump() for lora in body.loras]
     if body.textual_inversions is not None:
         params["textual_inversions"] = [ti.model_dump() for ti in body.textual_inversions]
@@ -66,7 +65,6 @@ async def generate_images(
     if body.refiner_switch_at is not None:
         params["refiner_switch_at"] = body.refiner_switch_at
 
-    # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
@@ -99,7 +97,6 @@ async def generate_images(
     elif no_cache:
         cache_status = "SKIP"
 
-    # Generate
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 
@@ -157,14 +154,7 @@ async def edit_images(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
 ):
-    """OpenAI-style multipart image edit / inpaint.
-
-    Transport surface parity with OpenAI's /v1/images/edits (file +
-    optional mask + prompt in multipart form-data). Delegates to the
-    same img2img / inpaint provider path that /v1/images/generations
-    uses when `image` is provided as base64 in JSON — the only
-    difference is how bytes arrive on the wire.
-    """
+    """Multipart img2img/inpaint — delegates to the same path as /v1/images/generations."""
     image_bytes = await image.read()
     if not image_bytes:
         return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
@@ -173,7 +163,7 @@ async def edit_images(
     if mask is not None and mask.filename:
         mask_bytes = await mask.read()
         if not mask_bytes:
-            mask_bytes = None  # field present but empty → treat as absent
+            mask_bytes = None
 
     try:
         body = ImageGenerationRequest(
@@ -214,9 +204,7 @@ async def upscale_image(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
 ):
-    """Super-resolution endpoint — multipart upload, returns upscaled PNG
-    as base64-JSON (default, matches /v1/images/generations shape) or raw
-    bytes (response_format=png, convenient for pipelines)."""
+    """Upscale an uploaded image; returns b64_json (default) or raw PNG bytes."""
     if response_format not in {"b64_json", "png"}:
         return JSONResponse(
             {"error": {"message": "response_format must be 'b64_json' or 'png'"}},
@@ -296,8 +284,6 @@ def _upscale_response(
     }
     if response_format == "png":
         return Response(content=png_bytes, media_type="image/png", headers=headers)
-    # Default b64_json — same envelope as /v1/images/generations for
-    # clients that already handle that shape.
     b64 = base64.b64encode(png_bytes).decode()
     return JSONResponse(
         {"created": int(time.time()), "data": [{"b64_json": b64}]},

@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AudioSpeechRequest(BaseModel):
+    """Request body for /v1/audio/speech."""
     model_config = ConfigDict(extra="forbid", protected_namespaces=())
 
     model: str | None = None
@@ -11,13 +12,11 @@ class AudioSpeechRequest(BaseModel):
     voice: str = "default"
     response_format: str = "mp3"
     speed: float = Field(1.0, ge=0.25, le=4.0)
-    # Honoured by models that advertise multilingual synthesis
-    # (qwen3-tts-06b: 10 languages). Ignored silently by the rest.
     language: str | None = Field(None, max_length=32)
 
 
 class TranscriptionSegment(BaseModel):
-    """verbose_json segment — mirrors OpenAI's /v1/audio/transcriptions shape."""
+    """One verbose_json segment from /v1/audio/transcriptions."""
     id: int
     start: float
     end: float
@@ -25,8 +24,7 @@ class TranscriptionSegment(BaseModel):
 
 
 class TranscriptionResponse(BaseModel):
-    """Default (json) transcription response is `{text: ...}`; verbose_json
-    adds optional language, duration, segments."""
+    """Transcription response envelope (json + optional verbose_json fields)."""
     text: str
     language: str | None = None
     duration: float | None = None

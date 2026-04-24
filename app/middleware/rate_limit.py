@@ -11,15 +11,13 @@ _SKIP_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json"})
 
 
 class RateLimitMiddleware:
-    """Pure ASGI sliding window rate limiter per client IP."""
+    """Sliding-window rate limiter, per client IP."""
 
     def __init__(self, app: ASGIApp, requests_per_minute: int) -> None:
         self.app = app
         self._rpm = requests_per_minute
         self._window = 60.0
-        # Per-IP timestamps are capped at _rpm entries (a deque with maxlen).
-        # A burst cannot exceed the per-minute budget, so we never need to
-        # remember more than that per IP regardless of traffic volume.
+        # Bursts can't exceed the per-minute budget, so the deque is capped at _rpm.
         self._requests: dict[str, deque[float]] = defaultdict(
             lambda: deque(maxlen=max(1, self._rpm))
         )
@@ -35,7 +33,6 @@ class RateLimitMiddleware:
         now = time.monotonic()
         cutoff = now - self._window
 
-        # Periodic cleanup of stale IPs (every 60s)
         if now - self._last_cleanup > 60.0:
             self._last_cleanup = now
             stale = [ip for ip, ts in self._requests.items() if not ts or ts[-1] < cutoff]
@@ -49,7 +46,6 @@ class RateLimitMiddleware:
                 for ip in sorted_ips[: len(self._requests) - _MAX_TRACKED_IPS]:
                     del self._requests[ip]
 
-        # Drop stamps older than the sliding window for this IP
         timestamps = self._requests[client_ip]
         while timestamps and timestamps[0] <= cutoff:
             timestamps.popleft()

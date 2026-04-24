@@ -1,4 +1,3 @@
-"""Server-level configuration (global settings from server.yaml)."""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
@@ -16,9 +15,6 @@ class GpuConfig(BaseModel):
     max_vram_budget_mb: int = Field(0, ge=0)
     vram_headroom_mb: int = Field(0, ge=0)
     pinned_models: list[str] = []
-    # Soft per-category floor: "keep at least N loaded models of this
-    # category". Eviction violates it only when the hard budget leaves
-    # no other choice. Empty dict = feature off.
     category_reservations: dict[str, int] = {}
     device: str = "cuda:0"
     watchdog_interval_seconds: int = Field(0, ge=0)
