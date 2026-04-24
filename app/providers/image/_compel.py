@@ -6,10 +6,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# A1111-style weight syntax: (word:1.5) / (word, phrase:0.8) / (word:-1.2)
-# Simple regex — catches the common form without trying to parse the full
-# compel grammar. If this matches, we route the prompt through compel;
-# otherwise we pass the raw string to the pipeline (cheaper, no semantic shift).
+# A1111 weight syntax: (word:1.5), (phrase:0.8), (word:-1.2).
 _WEIGHT_RE = re.compile(r"\([^()]+:\s*[-+]?\d+\.?\d*\s*\)")
 
 
@@ -18,11 +15,7 @@ def has_weight_syntax(*prompts: str | None) -> bool:
 
 
 class CompelAdapter:
-    """Wraps a compel.Compel instance and its detected pipeline mode.
-
-    Modes: "sdxl" for dual-encoder pipelines (penultimate hidden states +
-    pooled embedding on encoder #2), "sd15" for single-encoder pipelines.
-    """
+    """Builds and applies compel prompt-weighting embeddings for a diffusers pipeline."""
 
     def __init__(self, model_id: str) -> None:
         self._model_id = model_id
@@ -34,7 +27,7 @@ class CompelAdapter:
         return self._compel is not None
 
     def init(self, pipeline: Any) -> None:
-        """Detect pipeline layout and build a Compel instance. No-op on error."""
+        """Detect the pipeline's text-encoder layout and build a Compel instance."""
         try:
             from compel import Compel, ReturnedEmbeddingsType
         except ImportError:
@@ -45,13 +38,10 @@ class CompelAdapter:
             return
 
         pipe_class = type(pipeline).__name__
-        # SD3 / FLUX use T5-mixed embeds ([B,154,4096] / T5-only) — incompatible
-        # with Compel's SDXL [B,77,2048] output. Detect by class name because
-        # SD3 duck-types as SDXL via tokenizer_2 + text_encoder_2.
+        # SD3/FLUX use T5-mixed embeds that don't match compel's SDXL output shape.
         if "StableDiffusion3" in pipe_class or pipe_class.startswith("Flux"):
             logger.info(
-                "Compel skipped for %s (%s): architecture uses T5-mixed embeds "
-                "that are incompatible with compel's SDXL output shape",
+                "Compel skipped for %s (%s): T5-mixed embeds incompatible with SDXL shape",
                 self._model_id, pipe_class,
             )
             return
@@ -93,11 +83,8 @@ class CompelAdapter:
             self._mode = None
 
     def apply(self, prompt: str, negative_prompt: str | None, defaults: dict[str, Any]) -> None:
-        """Replace `prompt`/`negative_prompt` in `defaults` with compel embeds.
-
-        Removes any conflicting string-prompt keys so the pipeline's
-        mutual-exclusion checks don't reject the call.
-        """
+        """Replace string prompts in `defaults` with compel embeddings in-place."""
+        # Drop string prompts so the pipeline's mutual-exclusion check accepts embeds.
         defaults.pop("negative_prompt", None)
         if self._mode == "sdxl":
             p_embeds, p_pooled = self._compel(prompt)
@@ -107,7 +94,7 @@ class CompelAdapter:
                 n_embeds, n_pooled = self._compel(negative_prompt)
                 defaults["negative_prompt_embeds"] = n_embeds
                 defaults["negative_pooled_prompt_embeds"] = n_pooled
-        else:  # sd15
+        else:
             defaults["prompt_embeds"] = self._compel(prompt)
             if negative_prompt:
                 defaults["negative_prompt_embeds"] = self._compel(negative_prompt)

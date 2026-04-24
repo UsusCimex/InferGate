@@ -10,11 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class LoraCache:
-    """Per-provider LRU cache of LoRA adapters registered in a pipeline.
-
-    Maps `(repo_id, weight_file)` → adapter_name and activates a requested
-    subset per request. Eviction is by LRU beyond `max_loaded`.
-    """
+    """LRU cache of LoRA adapters registered in a diffusers pipeline."""
 
     def __init__(self, model_id: str) -> None:
         self._model_id = model_id
@@ -29,20 +25,7 @@ class LoraCache:
         lora_cfg: dict[str, Any],
         model_dir: str,
     ) -> None:
-        """Ensure requested LoRAs are loaded and active on the pipeline.
-
-        `loras` is a list of dicts with keys {id, weight, weight_file,
-        adapter_name}. When None or empty we deactivate all adapters
-        without evicting them (next matching request is still fast).
-
-        Cache strategy:
-          - Each (repo_id, weight_file) pair maps to one adapter_name in
-            the pipeline; reused across requests.
-          - OrderedDict LRU; when size exceeds `lora_cfg.max_loaded`
-            (default 8) the front entry is evicted via delete_adapters.
-          - Weight is per-request state — set via set_adapters, never
-            baked into the adapter itself.
-        """
+        """Activate the requested LoRA set on `pipe`, loading new adapters as needed."""
         if pipe is None:
             return
 

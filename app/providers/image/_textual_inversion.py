@@ -8,12 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class TextualInversionRegistry:
-    """Per-provider dedup set of loaded Textual Inversion embeddings.
-
-    Unlike LoRA, TIs can't be "deactivated" — once registered in the
-    tokenizer they persist for the lifetime of the pipeline (but are
-    only visible via their token in the prompt).
-    """
+    """Dedup set of textual-inversion embeddings registered in a pipeline's tokenizer."""
 
     def __init__(self, model_id: str) -> None:
         self._model_id = model_id
@@ -21,7 +16,7 @@ class TextualInversionRegistry:
         self._lock = threading.Lock()
 
     def apply(self, pipe: Any, tis: list[dict] | None, model_dir: str) -> None:
-        """Register any not-yet-seen TIs with the pipeline. No-op on cache hit."""
+        """Register any not-yet-loaded TIs from `tis` into the pipeline tokenizer."""
         if not tis:
             return
         if pipe is None:
@@ -36,9 +31,7 @@ class TextualInversionRegistry:
                 repo_id = spec["id"]
                 weight_file = spec.get("weight_file")
                 token = spec.get("token")
-                # Lists aren't hashable — normalise to a tuple for the set key.
-                # The value we pass to load_textual_inversion keeps its original
-                # type (diffusers accepts both str and list).
+                # Normalise list tokens to tuples — they'd be unhashable as set keys otherwise.
                 token_key: Any = tuple(token) if isinstance(token, list) else token
                 cache_key = (repo_id, weight_file, token_key)
 
@@ -63,12 +56,8 @@ class TextualInversionRegistry:
                     try:
                         pipe.load_textual_inversion(repo_id, **load_kwargs)
                     except Exception as single_call_err:
-                        # SDXL "pivotal" TIs store separate clip_l / clip_g
-                        # tensors in one file. diffusers' single-call path
-                        # rejects that layout ("Loaded state dictionary is
-                        # incorrect"); fall back to explicit per-encoder
-                        # loading via safetensors + two load_textual_inversion
-                        # calls.
+                        # SDXL pivotal TIs (dual clip_l + clip_g tensors in one file)
+                        # need explicit per-encoder loading; single-call path rejects them.
                         if (
                             "clip_l" in str(single_call_err)
                             and "clip_g" in str(single_call_err)
@@ -77,8 +66,7 @@ class TextualInversionRegistry:
                             and hasattr(pipe, "tokenizer_2")
                         ):
                             logger.info(
-                                "Single-call load rejected dual-tensor TI; "
-                                "retrying with per-encoder pivotal loading"
+                                "Falling back to per-encoder pivotal TI loading for %s", repo_id
                             )
                             self._load_pivotal(pipe, repo_id, weight_file, token, model_dir)
                         else:
@@ -100,12 +88,7 @@ class TextualInversionRegistry:
         token: Any,
         model_dir: str,
     ) -> None:
-        """Load an SDXL pivotal TI (single file, separate clip_l / clip_g tensors).
-
-        The .safetensors file is fetched via hf_hub_download, parsed into a
-        dict of tensors, then each key is registered against the matching
-        (tokenizer, text_encoder) pair of the dual-encoder pipeline.
-        """
+        """Load an SDXL pivotal TI by splitting its clip_l/clip_g tensors across encoders."""
         from huggingface_hub import hf_hub_download
         from safetensors.torch import load_file
 

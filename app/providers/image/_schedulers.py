@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# Per-request scheduler override. Values are either a diffusers class name
-# or a (class_name, extra_kwargs) tuple passed to `Cls.from_config(...)`.
-# All UNet/DiT/MMDiT pipelines accept these — Flow-Matching pipelines
-# (FLUX, SD3.x) have their own FlowMatchEulerDiscreteScheduler and will
-# fail a swap; the caller is expected to match scheduler class to model.
+# Values are either a diffusers class name or (class_name, extra_from_config_kwargs).
 _SCHEDULERS: dict[str, str | tuple[str, dict[str, Any]]] = {
     "euler":            "EulerDiscreteScheduler",
     "euler_a":          "EulerAncestralDiscreteScheduler",
@@ -24,11 +20,7 @@ _SCHEDULERS: dict[str, str | tuple[str, dict[str, Any]]] = {
 
 
 def maybe_swap_scheduler(pipeline: Any, name: str | None) -> None:
-    """Replace `pipeline.scheduler` with a named alternative, in-place.
-
-    Safe because every worker runs queue.max_concurrent=1 — no other thread
-    is mid-generate on the same pipeline. No-op when `name` is None/empty.
-    """
+    """Replace `pipeline.scheduler` with the named alternative in-place."""
     if not name:
         return
     entry = _SCHEDULERS.get(name.lower())

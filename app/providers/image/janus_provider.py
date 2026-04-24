@@ -1,13 +1,3 @@
-"""Autoregressive text-to-image provider for DeepSeek's Janus-Pro series.
-
-Janus generates a 384×384 image by sampling 576 discrete image tokens (24×24
-grid) sequentially from a causal LLM, then decoding them through a built-in
-LlamaGen VQ decoder. No diffusion, no offload, no scheduler — just AR sampling
-+ classifier-free guidance.
-
-Install path for the worker:
-    pip install git+https://github.com/deepseek-ai/Janus.git
-"""
 from __future__ import annotations
 
 import asyncio
@@ -21,25 +11,18 @@ from app.providers.registry import register_provider
 
 logger = logging.getLogger(__name__)
 
-# Serialise generation: AR decoding keeps past_key_values state across steps
-# that must not interleave between concurrent requests.
+# AR decoding keeps past_key_values across steps that must not interleave.
 _GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="janus-gpu"
 )
 
-# Janus-Pro fixed generation geometry (img_size / patch_size = 384 / 16 = 24).
-_IMAGE_TOKEN_NUM = 576  # 24 × 24
-_VQ_SHAPE = [1, 8, 24, 24]  # single image, 8 VQ channels, 24×24 tokens
+_IMAGE_TOKEN_NUM = 576
+_VQ_SHAPE = [1, 8, 24, 24]
 
 
 @register_provider
 class JanusImageProvider(ImageProvider):
-    """Autoregressive image generator (deepseek-ai/Janus-Pro-1B / 7B).
-
-    Native output is 384×384 — the `size` / `width` / `height` params from
-    the OpenAI-compatible schema are ignored (no built-in upscaler).
-    Accepts `cfg_weight` (default 5.0), `temperature` (default 1.0), `seed`.
-    """
+    """Autoregressive image provider for DeepSeek's Janus-Pro (fixed 384x384 output)."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -57,7 +40,7 @@ class JanusImageProvider(ImageProvider):
         dtype = getattr(torch, dtype_name)
         quantization = (self.config.model.get("quantization") or "").lower()
 
-        # Blackwell race guard: force CUDA context init before first alloc.
+        # Blackwell (sm_120): eagerly init CUDA before first alloc to avoid cudaErrorNotReady.
         if torch.cuda.is_available():
             torch.zeros(1, device="cuda")
             torch.cuda.synchronize()
@@ -80,8 +63,7 @@ class JanusImageProvider(ImageProvider):
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_compute_dtype=dtype,
                 )
-                # transformers + bnb auto-places quantized weights on GPU;
-                # we must NOT call .to(dtype).cuda() afterwards or it errors.
+                # bnb auto-places quantized weights — do NOT call .to().cuda() after.
                 kwargs["device_map"] = "cuda:0"
                 model = AutoModelForCausalLM.from_pretrained(hub_id, **kwargs).eval()
             else:
@@ -118,7 +100,6 @@ class JanusImageProvider(ImageProvider):
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
-        # Drop OpenAI-schema params we don't honour (native 384×384 only).
         for k in ("size", "width", "height", "response_format", "n"):
             defaults.pop(k, None)
 
@@ -158,8 +139,7 @@ class JanusImageProvider(ImageProvider):
 
         input_ids = torch.LongTensor(self._tokenizer.encode(full_prompt)).cuda()
 
-        # CFG batch: row 0 = conditional (real prompt), row 1 = unconditional
-        # (prompt tokens replaced by pad_id between BOS/EOS).
+        # CFG batch: row 0 = conditional, row 1 = unconditional (prompt → pad_id).
         tokens = torch.zeros((2, len(input_ids)), dtype=torch.int).cuda()
         tokens[0] = input_ids
         tokens[1] = input_ids
@@ -186,7 +166,6 @@ class JanusImageProvider(ImageProvider):
                 next_token = torch.multinomial(probs, num_samples=1)
                 generated_tokens[:, i] = next_token.squeeze(dim=-1)
 
-                # Duplicate next token for both CFG rows on the next step.
                 paired = torch.cat(
                     [next_token.unsqueeze(dim=1), next_token.unsqueeze(dim=1)], dim=1
                 ).view(-1)
@@ -196,7 +175,7 @@ class JanusImageProvider(ImageProvider):
                 generated_tokens.to(torch.int), shape=_VQ_SHAPE
             )
 
-        # VQ decoder yields (B, 3, 384, 384) in [-1, 1]. Convert to uint8 RGB.
+        # VQ decoder output is (B, 3, 384, 384) in [-1, 1] → uint8 RGB.
         arr = dec.to(torch.float32).cpu().numpy().transpose(0, 2, 3, 1)
         arr = np.clip((arr + 1) / 2 * 255, 0, 255).astype(np.uint8)
 

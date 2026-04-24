@@ -22,21 +22,11 @@ _GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 
 
 def _disable_caching_allocator_warmup() -> None:
-    """Neutralise diffusers/transformers caching-allocator warmup.
-
-    Both libraries pre-allocate a giant CUDA tensor inside `from_pretrained`
-    to speed up subsequent weight loads. On Blackwell (sm_120) this races
-    with lazy CUDA context init and raises `CUDA driver error: device not
-    ready` (cudaErrorNotReady, 600). The warmup is a perf hint, not a
-    correctness primitive — no-opping it makes the first load a few seconds
-    slower but removes the race entirely.
-
-    `from X import Y` creates a local binding, so patching X.Y alone is
-    not enough; we patch every module that re-imported the symbol.
-    """
+    """No-op the warmup tensor preallocation that races with lazy CUDA init on Blackwell."""
     noop = lambda *_a, **_kw: None  # noqa: E731
     import importlib
 
+    # `from X import Y` creates a local binding — every re-importing module must be patched.
     targets = [
         ("diffusers.models.model_loading_utils", "_caching_allocator_warmup"),
         ("diffusers.models.modeling_utils", "_caching_allocator_warmup"),
@@ -73,10 +63,7 @@ _QUANT_BACKENDS = {
 
 @register_provider
 class DiffusersImageProvider(ImageProvider):
-    """Universal provider for any diffusers-compatible model.
-    Supports FLUX, Stable Diffusion, PixArt, etc.
-    The specific model is determined by the YAML config (hub_id).
-    """
+    """Image provider backed by any diffusers pipeline (FLUX, SD, PixArt, ...)."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -85,16 +72,8 @@ class DiffusersImageProvider(ImageProvider):
         self._lora = LoraCache(self.model_id)
         self._ti = TextualInversionRegistry(self.model_id)
         self._model_dir: str | None = None
-
-        # Img2img / inpaint pipelines, built lazily via `from_pipe` so they
-        # share UNet / VAE / text encoders with the base pipeline (zero VRAM
-        # overhead). None until the first img2img / inpaint / highres_fix
-        # request touches the respective slot.
         self._img2img_pipeline = None
         self._inpaint_pipeline = None
-        # Optional SDXL refiner — loaded eagerly at load() time when
-        # `model.refiner_hub_id` is set in YAML. Shares text_encoder_2
-        # and VAE with the base pipeline (~2-3 GB VRAM saving).
         self._refiner = None
 
     async def load(self, model_dir: str) -> None:
@@ -105,9 +84,7 @@ class DiffusersImageProvider(ImageProvider):
 
         _disable_caching_allocator_warmup()
 
-        # Force CUDA context init before any weight loading / quantization.
-        # On Blackwell (sm_120), lazy context init races with the first alloc
-        # inside bitsandbytes.quantize_4bit / diffusers warmup → cudaErrorNotReady.
+        # Blackwell (sm_120): eagerly init CUDA before first alloc to avoid cudaErrorNotReady.
         if torch.cuda.is_available():
             torch.zeros(1, device="cuda")
             torch.cuda.synchronize()
@@ -125,14 +102,10 @@ class DiffusersImageProvider(ImageProvider):
         if revision := self.config.model.get("revision"):
             kwargs["revision"] = revision
 
-        # Drop T5 text encoder for SD 3.5 to save ~9.5 GB VRAM
         if self.config.model.get("drop_t5", False):
             kwargs["text_encoder_3"] = None
             kwargs["tokenizer_3"] = None
 
-        # Optional weight-only quantization (nf4 via bitsandbytes, fp8 via quanto).
-        # Quantises just the large components (transformer, T5) so the pipeline
-        # fits on consumer GPUs without meaningful quality loss.
         quantization = self.config.model.get("quantization")
         if quantization:
             kwargs["quantization_config"] = self._build_quantization_config(
@@ -159,10 +132,6 @@ class DiffusersImageProvider(ImageProvider):
         if self.config.model.get("compel", True):
             self._compel.init(self._pipeline)
 
-        # Optional SDXL Refiner. Shares text_encoder_2 + VAE with the base
-        # to avoid duplicating ~2-3 GB of VRAM. Only triggered on requests
-        # that pass `refiner_switch_at`; if YAML doesn't set refiner_hub_id
-        # the ensemble mode is unreachable.
         refiner_hub_id = self.config.model.get("refiner_hub_id")
         if refiner_hub_id:
             logger.info("Loading refiner %s for %s", refiner_hub_id, self.model_id)
@@ -191,10 +160,6 @@ class DiffusersImageProvider(ImageProvider):
             self._refiner = await loop.run_in_executor(_GPU_EXECUTOR, _load_refiner)
             logger.info("Loaded refiner for %s", self.model_id)
 
-        # Warmup: run a minimal dummy generation so cuDNN kernel tuning,
-        # Triton compilation, and offload-swap patterns happen *here* instead
-        # of punishing the first real client request. Controlled by YAML
-        # `warmup: true|false` (default true).
         if self.config.model.get("warmup", True):
             logger.info("Warming up %s …", self.model_id)
             await loop.run_in_executor(_GPU_EXECUTOR, self._warmup)
@@ -204,23 +169,17 @@ class DiffusersImageProvider(ImageProvider):
         logger.info("Loaded %s", self.model_id)
 
     def _ensure_img2img_pipe(self):
-        """Lazy-build an img2img pipeline that shares weights with the base.
-
-        Uses AutoPipelineForImage2Image.from_pipe so UNet / VAE / text
-        encoders are literally the same tensors (no duplicate VRAM). The
-        scheduler is its own instance per-pipe so we re-sync it on every
-        request — per-request scheduler swap on the base must apply to the
-        img2img pass too for consistent trajectory.
-        """
+        """Return the img2img pipeline, building it lazily from shared base weights."""
         from diffusers import AutoPipelineForImage2Image
 
         if self._img2img_pipeline is None:
             self._img2img_pipeline = AutoPipelineForImage2Image.from_pipe(self._pipeline)
+        # Re-sync scheduler so per-request swap on base applies here too.
         self._img2img_pipeline.scheduler = self._pipeline.scheduler
         return self._img2img_pipeline
 
     def _ensure_inpaint_pipe(self):
-        """Lazy inpaint pipeline via from_pipe — shares UNet/VAE/text encoders."""
+        """Return the inpaint pipeline, building it lazily from shared base weights."""
         from diffusers import AutoPipelineForInpainting
 
         if self._inpaint_pipeline is None:
@@ -230,7 +189,7 @@ class DiffusersImageProvider(ImageProvider):
 
     @staticmethod
     def _decode_image(b64_str: str, mode: str | None = None):
-        """Decode base64 (with/without data: prefix) to PIL.Image, raises ValueError on bad input."""
+        """Decode base64 (with optional data: prefix) into a PIL.Image."""
         import base64 as _b64
         import io as _io
 
@@ -251,7 +210,7 @@ class DiffusersImageProvider(ImageProvider):
         return img
 
     def _warmup(self) -> None:
-        """Minimal dummy inference to trigger kernel autotuning + offload hooks."""
+        """Run one minimal inference to trigger kernel autotune and offload hooks."""
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.pop("response_format", None)
         defaults.pop("n", None)
@@ -265,7 +224,7 @@ class DiffusersImageProvider(ImageProvider):
             logger.warning("Warmup failed for %s: %s", self.model_id, e)
 
     def _build_quantization_config(self, quantization: str, dtype: Any) -> Any:
-        """Translate YAML `quantization: nf4|fp8` into a diffusers pipeline config."""
+        """Build a diffusers PipelineQuantizationConfig from the YAML quantization name."""
         from diffusers import PipelineQuantizationConfig
 
         try:
@@ -316,10 +275,7 @@ class DiffusersImageProvider(ImageProvider):
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
-        # Parse size string if present. Use assignment (not setdefault) so a
-        # per-request `size` always wins over YAML `default_params.width/height`
-        # — otherwise the request value is silently ignored when the YAML
-        # already carries dimensions.
+        # Per-request `size` must win over YAML width/height; use assignment, not setdefault.
         if "size" in defaults:
             size = defaults.pop("size")
             if isinstance(size, str) and "x" in size:
@@ -330,23 +286,15 @@ class DiffusersImageProvider(ImageProvider):
         defaults.pop("response_format", None)
         defaults.pop("n", None)
 
-        # Per-request scheduler override (applied inside the worker thread
-        # so the swap + generate pair is atomic under queue.max_concurrent=1).
         scheduler_name = defaults.pop("scheduler", None)
-
-        # Per-request LoRA adapters (applied *before* compel because LoRAs
-        # can modify the text encoder; compel reads its live weights).
+        # LoRAs apply before compel: compel reads live text-encoder weights.
         loras = defaults.pop("loras", None)
         textual_inversions = defaults.pop("textual_inversions", None)
         highres_fix = defaults.pop("highres_fix", None)
-        # `seed` is router-facing wire format; diffusers pipelines expect a
-        # `generator` (torch.Generator) instead. Build it inside _gen() so
-        # the device matches the pipeline's CUDA context at call time, and
-        # so that a per-request seed doesn't leak across calls. Strict
-        # pipelines (SD3, some FLUX variants) raise TypeError on stray
-        # `seed` kwargs, which is why we pop it unconditionally.
+        # `seed` is wire-format only — diffusers wants a torch.Generator. Build inside
+        # _gen() so the device matches CUDA context, and pop unconditionally because
+        # strict pipelines (SD3, some FLUX variants) raise TypeError on stray `seed`.
         seed = defaults.pop("seed", None)
-        # Decode base64 before the GPU executor hop so bad input 400s fast.
         image_b64 = defaults.pop("image", None)
         mask_b64 = defaults.pop("mask", None)
         denoising_strength = defaults.pop("denoising_strength", None)
@@ -363,9 +311,6 @@ class DiffusersImageProvider(ImageProvider):
         model_dir = self._model_dir or "/app/models"
         lora_cfg = self.config.model.get("lora") or {}
 
-        # Detect A1111-style prompt weighting — only activate compel path
-        # when the syntax is actually used; plain prompts stay on the raw
-        # tokenizer route so we don't subtly change baseline outputs.
         negative_prompt = defaults.get("negative_prompt") or ""
         use_compel = self._compel.available and has_weight_syntax(prompt, negative_prompt)
 
@@ -384,13 +329,11 @@ class DiffusersImageProvider(ImageProvider):
                     self._pipeline, self._ensure_img2img_pipe, prompt, defaults, highres_fix,
                 )
 
-            # Dispatch: inpaint (image+mask) → img2img (image) → text2img.
             if input_image is not None:
                 call_kwargs = dict(defaults)
                 if denoising_strength is not None:
                     call_kwargs["strength"] = float(denoising_strength)
                 if input_mask is not None:
-                    # Paint-app masks can come at any resolution — normalise.
                     from PIL import Image as _Image
                     mask = input_mask
                     if mask.size != input_image.size:
@@ -404,7 +347,6 @@ class DiffusersImageProvider(ImageProvider):
                     return pipe(image=input_image, **call_kwargs).images[0]
                 return pipe(prompt=prompt, image=input_image, **call_kwargs).images[0]
 
-            # SDXL Refiner ensemble — base until `switch_at`, refiner finishes.
             if refiner_switch_at is not None:
                 base_kwargs = dict(defaults)
                 base_kwargs["denoising_end"] = float(refiner_switch_at)
@@ -414,8 +356,6 @@ class DiffusersImageProvider(ImageProvider):
                 else:
                     latents = self._pipeline(prompt=prompt, **base_kwargs).images
 
-                # Refiner gets num_inference_steps, guidance_scale, generator;
-                # size is driven by the latent shape so we drop width/height.
                 ref_kwargs: dict[str, Any] = {
                     "image": latents,
                     "denoising_start": float(refiner_switch_at),
@@ -424,26 +364,17 @@ class DiffusersImageProvider(ImageProvider):
                           "negative_prompt"):
                     if k in defaults:
                         ref_kwargs[k] = defaults[k]
-                # Refiner doesn't take compel-style prompt_embeds directly —
-                # use the text prompt even when compel was on for base. The
-                # refiner is polishing details, weighting is less critical.
+                # Refiner uses the plain prompt; compel prompt_embeds aren't supported here.
                 return self._refiner(prompt=prompt, **ref_kwargs).images[0]
 
             if use_compel:
                 return self._pipeline(**defaults).images[0]
-            # Pass `prompt` as kwarg — some pipelines (e.g. FLUX.2-klein)
-            # have `image` as the first positional arg for img2img, so
-            # positional `prompt` silently lands in the wrong slot.
+            # Pass prompt as kwarg: some pipelines (FLUX.2-klein) take `image` first positionally.
             return self._pipeline(prompt=prompt, **defaults).images[0]
 
         loop = asyncio.get_running_loop()
         image = await loop.run_in_executor(None, _gen)
 
-        # Memory hygiene: drop cached allocator blocks so back-to-back
-        # requests don't accumulate fragmentation on tight VRAM budgets
-        # (12GB cards running SDXL + compel + LoRA/TI registries are close
-        # to the limit already). empty_cache is cheap and only releases
-        # unused blocks — in-use tensors stay put.
         import torch as _torch
         if _torch.cuda.is_available():
             _torch.cuda.empty_cache()

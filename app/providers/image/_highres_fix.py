@@ -14,17 +14,7 @@ def apply_highres_fix(
     defaults: dict[str, Any],
     hires: dict[str, Any],
 ) -> Any:
-    """Two-pass generation — compose at base res, upscale, img2img refine.
-
-    Inputs:
-      base_pipeline        — base txt2img pipeline (used for pass 1)
-      ensure_img2img_pipe  — factory returning the lazily-built img2img pipe
-      prompt               — positive prompt (compel embeds live in `defaults` if active)
-      defaults             — pipeline kwargs for pass 1 (scheduler/size keys already popped)
-      hires                — {scale, denoising_strength, steps?, upscaler}
-
-    Returns: PIL image at (width*scale, height*scale).
-    """
+    """Two-pass high-res generation: compose at base resolution, upscale, img2img refine."""
     from PIL import Image
 
     scale = float(hires.get("scale", 2.0))
@@ -39,8 +29,6 @@ def apply_highres_fix(
         base_w, base_h, scale, denoising, upscaler,
     )
 
-    # Pass 1: generate at base resolution. `prompt` might be None when
-    # compel supplied prompt_embeds — respect that.
     pass1_kwargs = dict(defaults)
     if "prompt_embeds" in pass1_kwargs:
         base_image = base_pipeline(**pass1_kwargs).images[0]
@@ -59,14 +47,12 @@ def apply_highres_fix(
     upscaled = base_image.resize((new_w, new_h), resampler)
     logger.info("HighresFix upscaled: %dx%d", upscaled.width, upscaled.height)
 
-    # Free base-pass intermediate allocations before the (larger) pass 2.
+    # Free base-pass allocations before the larger pass 2.
     import torch as _torch
     if _torch.cuda.is_available():
         _torch.cuda.empty_cache()
 
-    # Pass 2: img2img refine on the upscaled image. Pass width/height
-    # EXPLICITLY — SDXL img2img's auto-detect from input image isn't
-    # reliable (observed snapping to 1024 bucket). Better to be explicit.
+    # Pass width/height explicitly — SDXL img2img auto-detect snaps to 1024-bucket.
     img2img_kwargs = {
         k: v for k, v in defaults.items()
         if k not in ("width", "height")

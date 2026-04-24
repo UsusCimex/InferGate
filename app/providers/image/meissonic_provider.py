@@ -1,14 +1,3 @@
-"""Masked non-autoregressive text-to-image provider for MeissonFlow/Meissonic.
-
-Unlike diffusion (iterative noise→image) and autoregressive (token-by-token),
-Meissonic generates all image tokens in parallel at each step and unmasks the
-most confident ones — a MaskGiT-style iterative decode. 64 steps, 1024×1024.
-
-The Meissonic HF repo ships custom pipeline code that is not registered in
-diffusers. We vendor `src/pipeline.py`, `src/transformer.py`, `src/scheduler.py`
-from github.com/viiika/Meissonic into the worker at /app/_meissonic via the
-Dockerfile POST_INSTALL step, then prepend that path to sys.path at load time.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -27,19 +16,13 @@ _GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="meissonic-gpu"
 )
 
-# Path inside the worker container where POST_INSTALL clones the Meissonic
-# source tree. Matches the POST_INSTALL command in docker-bake.hcl /
-# docker-compose.yml.
+# Worker Dockerfile POST_INSTALL clones github.com/viiika/Meissonic here.
 _VENDOR_PATH = "/app/_meissonic"
 
 
 @register_provider
 class MeissonicImageProvider(ImageProvider):
-    """Masked-token T2I via MeissonFlow/Meissonic.
-
-    Accepts standard kwargs: `negative_prompt`, `num_inference_steps`,
-    `guidance_scale`, `width`, `height`, `seed`.
-    """
+    """Masked-token T2I provider for MeissonFlow/Meissonic."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -69,7 +52,7 @@ class MeissonicImageProvider(ImageProvider):
         dtype_name = self.config.model.get("torch_dtype", "float16")
         dtype = getattr(torch, dtype_name)
 
-        # Blackwell race guard
+        # Blackwell (sm_120): eagerly init CUDA before first alloc to avoid cudaErrorNotReady.
         if torch.cuda.is_available():
             torch.zeros(1, device="cuda")
             torch.cuda.synchronize()
