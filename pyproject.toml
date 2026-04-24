@@ -15,6 +15,10 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "aiofiles>=24.0",
     "httpx>=0.28.0",
+    # Required by any router using UploadFile/File/Form — FastAPI asserts
+    # the import at route-registration time, so this is a hard runtime
+    # dep (not test-only), even though it arrives transitively in many setups.
+    "python-multipart>=0.0.12",
 ]
 
 [project.optional-dependencies]
