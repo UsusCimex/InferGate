@@ -58,13 +58,13 @@ Defaults в `config/models/*.yaml` заточены под 12GB GPU (nf4-ква�
 | Profile | Модели |
 |---------|--------|
 | `text` | qwen3.5-4b (enabled) |
-| `image` | sd35-medium (enabled) |
-| `tts` | kokoro-82m (enabled) |
+| `image` | sdxl-base (enabled) |
+| `tts` | qwen3-tts-06b (enabled, voice-clone-capable, 10 языков) |
 | `stt` | whisper-base (enabled) |
 | `upscale` | realesrgan-x4 (enabled) |
-| `voice-clone` | xtts-v2 (disabled — CPML license opt-in) |
-| `qwen3.5-4b`, `sd35-medium`, `kokoro-82m`, `whisper-base`, `realesrgan-x4`, `xtts-v2` | Индивидуальные |
-| `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `openaudio-s1-mini`, `xtts-v2` | Disabled по умолчанию, запуск через индивидуальный profile |
+| `voice-clone` | qwen3-tts-06b + xtts-v2 (xtts-v2 disabled — CPML license opt-in) |
+| `qwen3.5-4b`, `sdxl-base`, `qwen3-tts-06b`, `kokoro-82m`, `whisper-base`, `realesrgan-x4`, `xtts-v2` | Индивидуальные |
+| `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `sd35-medium`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image`, `hunyuan-dit`, `z-image-turbo`, `janus-pro-1b`, `janus-pro-7b`, `meissonic`, `openaudio-s1-mini`, `xtts-v2` | Disabled по умолчанию, запуск через индивидуальный profile |
 
 ### Локальная разработка
 
@@ -105,7 +105,7 @@ for chunk in stream:
 
 # Изображение
 response = client.images.generate(
-    model="sd35-medium",
+    model="sdxl-base",
     prompt="Кот в космосе"
 )
 
@@ -133,12 +133,19 @@ curl http://localhost:8000/v1/chat/completions \
 # Изображение
 curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
-  -d '{"model": "sd35-medium", "prompt": "Кот в космосе"}'
+  -d '{"model": "sdxl-base", "prompt": "Кот в космосе"}'
 
-# Озвучка
+# Озвучка (одноязычная — Kokoro / OpenAudio)
 curl http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
-  -d '{"model": "kokoro-82m", "input": "Привет, мир!"}' -o speech.mp3
+  -d '{"model": "kokoro-82m", "input": "Hello, world!"}' -o speech.mp3
+
+# Озвучка с выбором языка и формата (мультиязычная Qwen3-TTS — требует
+# reference-аудио, см. блок voice-clone ниже)
+curl http://localhost:8000/v1/audio/speech/voice-clone \
+  -F "reference_audio=@speaker.wav" -F "reference_text=Sample reference text" \
+  -F "input=Привет, мир!" -F "model=qwen3-tts-06b" -F "language=Russian" \
+  -F "response_format=wav" -o ru.wav
 
 # Распознавание речи (multipart — как OpenAI /v1/audio/transcriptions)
 curl http://localhost:8000/v1/audio/transcriptions \
@@ -289,7 +296,8 @@ curl http://localhost:8000/v1/images/generations \
 | **Llama 3.1 8B** | Текст | vLLM | 8 GB | Llama Community |
 | **Kokoro 82M** | TTS | kokoro | CPU | MIT |
 | **OpenAudio S1 Mini** | TTS | fish-speech | 4 GB | Apache 2.0 |
-| **XTTS v2** | Voice-cloning TTS | coqui-tts | 2 GB (fp16) | CPML (non-commercial) |
+| **Qwen3-TTS 0.6B** | Voice-cloning TTS (10 языков) | qwen-tts | 2.5 GB (bf16) | Apache 2.0 |
+| **XTTS v2** | Voice-cloning TTS (17 языков) | coqui-tts | 2 GB (fp16) | CPML (non-commercial) |
 | **Whisper Base** | STT | faster-whisper (CT2) | CPU (int8, ~90 MB) | MIT |
 | **Real-ESRGAN 4×** | Upscale | spandrel | 1.5 GB (fp16) | BSD-3-Clause |
 
@@ -360,6 +368,8 @@ curl http://localhost:8000/v1/images/generations \
 |----------|----------|
 | `speed` | 0.25 – 4.0 |
 | `voice` | str (зависит от модели) |
+| `response_format` | `mp3` (default), `wav`, `flac`, `opus` |
+| `language` | ISO-имя языка для мультиязычных моделей (`qwen3-tts-06b`: `English`, `Russian`, `Chinese`, `Japanese`, `Korean`, `German`, `French`, `Portuguese`, `Spanish`, `Italian`). Игнорируется одноязычными моделями. |
 
 ### Заголовки ответов
 
@@ -452,9 +462,15 @@ queue:
 | category | provider_class | Что поддерживает |
 |----------|---------------|-----------------|
 | `image` | `DiffusersImageProvider` | Любая diffusers-модель (FLUX, SD, PixArt и др.) |
+| `image` | `JanusImageProvider` | DeepSeek Janus-Pro (autoregressive) |
+| `image` | `MeissonicImageProvider` | Meissonic (masked non-AR) |
 | `text` | `VllmTextProvider` | Любая LLM через vLLM (Qwen, Llama, Mistral и др.) |
 | `tts` | `KokoroTtsProvider` | Kokoro TTS |
 | `tts` | `FishSpeechTtsProvider` | OpenAudio / Fish Speech |
+| `tts` | `Qwen3TtsProvider` | Qwen3-TTS (voice cloning, 10 языков) |
+| `tts` | `XttsProvider` | Coqui XTTS v2 (voice cloning, 17 языков) |
+| `stt` | `WhisperProvider` | faster-whisper (CTranslate2) |
+| `upscale` | `SpandrelImageProvider` | spandrel (Real-ESRGAN / SwinIR / …) |
 
 > Если нужен провайдер для нового бэкенда, создайте класс в `app/providers/{категория}/`, наследуя `ImageProvider`, `TextProvider` или `TtsProvider`, и укажите его имя в `provider_class`.
 
@@ -583,9 +599,9 @@ cors:
   allow_headers: ["*"]
 
 defaults:                          # Модели по умолчанию (если model не указан)
-  image: sd35-medium
+  image: sdxl-base
   text: qwen3.5-4b
-  tts: kokoro-82m
+  tts: qwen3-tts-06b
 
 rate_limit:
   enabled: false
@@ -652,11 +668,13 @@ infergate/
 │                                   # /voice-clone, /reload, /health, /load, /unload
 ├── config/
 │   ├── server.yaml
-│   └── models/                     # 1 YAML = 1 модель (17 файлов)
+│   └── models/                     # 1 YAML = 1 модель (21 файл)
 ├── deploy/
 │   ├── Dockerfile.gateway          #   Лёгкий gateway (~500MB)
 │   ├── Dockerfile.worker           #   Единый параметризованный Dockerfile для всех воркеров
 │   ├── docker-compose.yml          #   Compose с profiles (gateway + 21 workers, YAML-якоря)
+│   │                                    По умолчанию поднимаются три alias'а — text / image / tts
+│   │                                    → qwen3.5-4b + sdxl-base + qwen3-tts-06b (12 GB-friendly).
 │   ├── docker-bake.hcl             #   Матрица сборки (1 строка = 1 модель)
 │   ├── .env.example
 │   ├── docker-compose.server.example.yml
@@ -675,7 +693,7 @@ infergate/
 ├── scripts/
 │   ├── diagnose/                   #   Per-model smoke-scripts
 │   └── feature/                    #   End-to-end feature tests (на живых воркерах)
-├── tests/                          #   194 pytest-ов
+├── tests/                          #   195 pytest-ов
 └── pyproject.toml
 ```
 
@@ -687,8 +705,9 @@ infergate/
 
 ```
 Client → Gateway (500MB, без GPU)
-           ├→ worker-qwen3-5-4b       (vLLM, GPU)           — text
-           ├→ worker-sd35-medium      (diffusers, GPU)      — image
+           ├→ worker-qwen3-5-4b       (vLLM, GPU)           — text        (default)
+           ├→ worker-sdxl-base        (diffusers, GPU)      — image       (default)
+           ├→ worker-qwen3-tts-06b    (qwen-tts, GPU)       — TTS         (default, voice-clone)
            ├→ worker-kokoro-82m       (kokoro, CPU)         — TTS
            ├→ worker-xtts-v2          (coqui-tts, GPU)      — voice cloning
            ├→ worker-whisper-base     (faster-whisper, CPU) — STT
@@ -818,7 +837,7 @@ pip install pytest-cov
 pytest --cov=app --cov-branch
 ```
 
-**194 pytest-а** (исключая GPU-провайдеры — они проверяются e2e-скриптами против реальных воркеров, см. `scripts/feature/`).
+**195 pytest-а** (исключая GPU-провайдеры — они проверяются e2e-скриптами против реальных воркеров, см. `scripts/feature/`).
 
 Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, `cache`, `health`), middleware (auth, rate-limit, access-log), мониторинг (Prometheus-лейблы, request ID), `CacheManager`, `GpuScheduler`, `ProviderManager` (включая hot-reload `reload_model`), `ConfigWatcher`, воркер-эндпоинты (`/generate`, `/synthesize`, `/transcribe`, `/upscale`, `/reload`, `/voice-clone`), конфигурацию, валидацию схем, конкурентность, edge cases.
 
@@ -848,9 +867,14 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 4. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
 5. [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
 
+### UX / контракт API
+
+6. [ ] **Default-speaker fallback для voice-clone-only моделей**. `qwen3-tts-06b` и `xtts-v2` требуют `reference_audio` в провайдере; запрос к плоскому `/v1/audio/speech` без файла сейчас падает 500 (`ValueError`) вместо внятного ответа. Варианты: (а) поставлять built-in reference-clip для «default»-голоса каждой модели, чтобы плоский endpoint работал без загрузки; (б) возвращать структурированный 400 с подсказкой клиенту переключиться на `/v1/audio/speech/voice-clone`. Сейчас клиент (Comput) держит эти модели в списке плоского TTS — любой выбор даёт 500.
+7. [ ] **Воспитать `extra='forbid'` на Pydantic-схемах**. Сейчас неизвестные поля тихо дропаются (`extra='ignore'` по умолчанию), и опечатка типа `"langauge"` не вернёт 400. Для API, который хочет быть контрактным, лучше `ConfigDict(extra='forbid')` + `422` — пользователь увидит реальную ошибку вместо молчаливого игнорирования.
+
 ### Рефакторинг и code-hygiene
 
-6. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый; в `app/` остаются ~38 срабатываний на новых правилах (RUF002/003 ambiguous Unicode, устаревшие `# noqa: BLE001` под более свежий ruff) — пройтись автофиксом и завести CI-конфиг (`.github/workflows/ci.yml`).
+8. [ ] **Включить ruff в CI как блокирующую проверку**. `ruff check tests/` уже чистый; в `app/` остаются ~40 срабатываний на новых правилах (RUF002/003 ambiguous Unicode, устаревшие `# noqa: BLE001` под более свежий ruff, `RUF046` double-int-cast в `_srt_timestamp`) — пройтись автофиксом и завести CI-конфиг (`.github/workflows/ci.yml`).
 
 ---
 
