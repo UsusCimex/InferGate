@@ -96,3 +96,55 @@ async def test_embeddings_audio_rejects_empty_upload(client):
         files={"file": ("empty.wav", io.BytesIO(b""), "audio/wav")},
     )
     assert resp.status_code == 400
+
+
+_MIN_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+    b"\r\n\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+async def test_embeddings_image(client):
+    resp = await client.post(
+        "/v1/embeddings/image",
+        files={"file": ("frame.png", io.BytesIO(_MIN_PNG), "image/png")},
+        data={"model": "test-embed-multi"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model"] == "test-embed-multi"
+    assert isinstance(body["embedding"], list)
+    assert len(body["embedding"]) == 6
+
+
+async def test_embeddings_image_uses_default_model(client):
+    resp = await client.post(
+        "/v1/embeddings/image",
+        files={"file": ("frame.png", io.BytesIO(_MIN_PNG), "image/png")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "test-embed-multi"
+
+
+async def test_embeddings_image_rejects_empty_upload(client):
+    resp = await client.post(
+        "/v1/embeddings/image",
+        files={"file": ("empty.png", io.BytesIO(b""), "image/png")},
+    )
+    assert resp.status_code == 400
+
+
+async def test_embeddings_text_via_multimodal_model(client):
+    """SigLIP-style multimodal models can also embed text via /v1/embeddings."""
+    resp = await client.post(
+        "/v1/embeddings",
+        json={"model": "test-embed-multi", "input": "сцена погони"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model"] == "test-embed-multi"
+    assert len(body["data"]) == 1
+    # multimodal fake returns 6-d vectors (same on text + image side)
+    assert len(body["data"][0]["embedding"]) == 6
