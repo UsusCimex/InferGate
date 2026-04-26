@@ -77,9 +77,16 @@ class SigLIPProvider(MultimodalEmbeddingProvider):
         tok_inputs = self._processor(  # type: ignore[misc]
             text=inputs, padding="max_length", truncation=True, return_tensors="pt",
         )
-        tok_inputs = {k: v.to(self._device) for k, v in tok_inputs.items()}
+        kw = {
+            k: v.to(self._device) for k, v in tok_inputs.items()
+            if k in ("input_ids", "attention_mask")
+        }
         with torch.no_grad():
-            features = self._model.get_text_features(**tok_inputs)  # type: ignore[union-attr]
+            text_out = self._model.text_model(**kw)  # type: ignore[union-attr]
+            pooled = (
+                text_out.pooler_output if hasattr(text_out, "pooler_output") else text_out[1]
+            )
+            features = pooled  # SigLIP text head returns the pooled vector directly.
         features = features / features.norm(p=2, dim=-1, keepdim=True)
         return features.cpu().tolist()
 
@@ -93,8 +100,12 @@ class SigLIPProvider(MultimodalEmbeddingProvider):
 
         img = Image.open(io.BytesIO(image)).convert("RGB")
         proc_inputs = self._processor(images=img, return_tensors="pt")  # type: ignore[misc]
-        proc_inputs = {k: v.to(self._device) for k, v in proc_inputs.items()}
+        pixel_values = proc_inputs["pixel_values"].to(self._device)
         with torch.no_grad():
-            features = self._model.get_image_features(**proc_inputs)  # type: ignore[union-attr]
+            vision_out = self._model.vision_model(pixel_values=pixel_values)  # type: ignore[union-attr]
+            pooled = (
+                vision_out.pooler_output if hasattr(vision_out, "pooler_output") else vision_out[1]
+            )
+            features = pooled  # SigLIP vision head returns the pooled vector directly.
         features = features / features.norm(p=2, dim=-1, keepdim=True)
         return features.squeeze(0).cpu().tolist()

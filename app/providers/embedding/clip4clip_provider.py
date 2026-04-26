@@ -92,9 +92,13 @@ class CLIP4ClipProvider(VideoEmbeddingProvider):
         tok = self._processor(  # type: ignore[misc]
             text=inputs, padding=True, truncation=True, return_tensors="pt",
         )
-        tok = {k: v.to(self._device) for k, v in tok.items()}
+        kw = {k: v.to(self._device) for k, v in tok.items() if k in ("input_ids", "attention_mask")}
         with torch.no_grad():
-            features = self._model.get_text_features(**tok)  # type: ignore[union-attr]
+            text_out = self._model.text_model(**kw)  # type: ignore[union-attr]
+            pooled = (
+                text_out.pooler_output if hasattr(text_out, "pooler_output") else text_out[1]
+            )
+            features = self._model.text_projection(pooled)  # type: ignore[union-attr]
         features = features / features.norm(p=2, dim=-1, keepdim=True)
         return features.cpu().tolist()
 
@@ -111,10 +115,14 @@ class CLIP4ClipProvider(VideoEmbeddingProvider):
             raise ValueError("could not decode any frames from the uploaded video")
         pil_frames = [Image.fromarray(f).convert("RGB") for f in frames]
         proc = self._processor(images=pil_frames, return_tensors="pt")  # type: ignore[misc]
-        proc = {k: v.to(self._device) for k, v in proc.items()}
+        pixel_values = proc["pixel_values"].to(self._device)
         with torch.no_grad():
+            vision_out = self._model.vision_model(pixel_values=pixel_values)  # type: ignore[union-attr]
+            frame_pooled = (
+                vision_out.pooler_output if hasattr(vision_out, "pooler_output") else vision_out[1]
+            )
             # (N, 512) per-frame features, then mean-pool into a single 512-d vector.
-            per_frame = self._model.get_image_features(**proc)  # type: ignore[union-attr]
+            per_frame = self._model.visual_projection(frame_pooled)  # type: ignore[union-attr]
         per_frame = per_frame / per_frame.norm(p=2, dim=-1, keepdim=True)
         pooled = per_frame.mean(dim=0)
         pooled = pooled / pooled.norm(p=2)

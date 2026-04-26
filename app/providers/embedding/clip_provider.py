@@ -76,9 +76,15 @@ class CLIPProvider(MultimodalEmbeddingProvider):
         tok = self._processor(  # type: ignore[misc]
             text=inputs, padding=True, truncation=True, return_tensors="pt",
         )
-        tok = {k: v.to(self._device) for k, v in tok.items()}
+        # CLIPModel.get_text_features in some transformers versions returns
+        # BaseModelOutputWithPooling instead of a tensor; do the math manually.
+        kw = {k: v.to(self._device) for k, v in tok.items() if k in ("input_ids", "attention_mask")}
         with torch.no_grad():
-            features = self._model.get_text_features(**tok)  # type: ignore[union-attr]
+            text_out = self._model.text_model(**kw)  # type: ignore[union-attr]
+            pooled = (
+                text_out.pooler_output if hasattr(text_out, "pooler_output") else text_out[1]
+            )
+            features = self._model.text_projection(pooled)  # type: ignore[union-attr]
         features = features / features.norm(p=2, dim=-1, keepdim=True)
         return features.cpu().tolist()
 
@@ -92,8 +98,12 @@ class CLIPProvider(MultimodalEmbeddingProvider):
 
         img = Image.open(io.BytesIO(image)).convert("RGB")
         proc = self._processor(images=img, return_tensors="pt")  # type: ignore[misc]
-        proc = {k: v.to(self._device) for k, v in proc.items()}
+        pixel_values = proc["pixel_values"].to(self._device)
         with torch.no_grad():
-            features = self._model.get_image_features(**proc)  # type: ignore[union-attr]
+            vision_out = self._model.vision_model(pixel_values=pixel_values)  # type: ignore[union-attr]
+            pooled = (
+                vision_out.pooler_output if hasattr(vision_out, "pooler_output") else vision_out[1]
+            )
+            features = self._model.visual_projection(pooled)  # type: ignore[union-attr]
         features = features / features.norm(p=2, dim=-1, keepdim=True)
         return features.squeeze(0).cpu().tolist()
