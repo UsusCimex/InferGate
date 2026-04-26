@@ -9,9 +9,11 @@ from typing import Any
 import httpx
 
 from app.providers.base import (
+    AudioEmbeddingProvider,
     ImageProvider,
     ImageUpscaleProvider,
     SttProvider,
+    TextEmbeddingProvider,
     TextProvider,
     TtsProvider,
 )
@@ -198,3 +200,23 @@ class RemoteUpscaleProvider(BaseRemoteMixin, ImageUpscaleProvider):
         resp = await self._client.post("/upscale", files=files)
         resp.raise_for_status()
         return resp.content
+
+
+class RemoteTextEmbeddingProvider(BaseRemoteMixin, TextEmbeddingProvider):
+    """Text-embedding provider that proxies to a remote worker via JSON /embed."""
+
+    async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
+        resp = await self._client.post("/embed", json={"input": inputs, **params})
+        resp.raise_for_status()
+        return resp.json()["embeddings"]
+
+
+class RemoteAudioEmbeddingProvider(BaseRemoteMixin, AudioEmbeddingProvider):
+    """Audio-embedding provider that proxies to a remote worker via multipart /embed-audio."""
+
+    async def embed(self, audio: bytes, **params: Any) -> list[float]:
+        filename = str(params.pop("filename", "audio.wav"))
+        files = {"file": (filename, audio, "application/octet-stream")}
+        resp = await self._client.post("/embed-audio", files=files)
+        resp.raise_for_status()
+        return resp.json()["embedding"]
