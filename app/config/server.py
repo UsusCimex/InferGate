@@ -46,6 +46,7 @@ class DefaultsConfig(BaseModel):
     tts: str = "kokoro-82m"
     embedding_text: str | None = None
     embedding_audio: str | None = None
+    embedding_image: str | None = None
 
 
 class RateLimitConfig(BaseModel):

@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
         defaults.get("image"),
         defaults.get("embedding_text"),
         defaults.get("embedding_audio"),
+        defaults.get("embedding_image"),
         *server_cfg.gpu.pinned_models,
     ]))
     for model_id in preload_ids:

@@ -12,11 +12,13 @@ from app.schemas.embeddings import (
     EmbeddingItem,
     EmbeddingRequest,
     EmbeddingResponse,
+    ImageEmbeddingResponse,
 )
 
 router = APIRouter()
 
 _MAX_AUDIO_BYTES = 100 * 1024 * 1024
+_MAX_IMAGE_BYTES = 25 * 1024 * 1024
 
 
 @router.post("/v1/embeddings", response_model=EmbeddingResponse)
@@ -103,3 +105,46 @@ async def create_audio_embedding(
         )
 
     return AudioEmbeddingResponse(model=model_id, embedding=vec)
+
+
+@router.post("/v1/embeddings/image", response_model=ImageEmbeddingResponse)
+async def create_image_embedding(
+    file: UploadFile = File(...),
+    model: str | None = Form(None),
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+    defaults=Depends(get_defaults),
+):
+    """Encode an image (≤25MB) into a single embedding vector."""
+    model_id = model or defaults.get("embedding_image")
+    if not model_id:
+        return JSONResponse(
+            {"error": {"message": "No image embedding model specified"}}, status_code=400
+        )
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
+    if len(image_bytes) > _MAX_IMAGE_BYTES:
+        return JSONResponse(
+            {"error": {"message": f"Image exceeds {_MAX_IMAGE_BYTES // (1024 * 1024)}MB limit"}},
+            status_code=413,
+        )
+
+    provider = await manager.ensure_loaded(model_id)
+    config = manager.get_config(model_id)
+
+    inference_start = time.monotonic()
+    async with manager.active_request(model_id):
+        vec = await scheduler.submit(
+            model_id,
+            config.queue.priority,
+            provider.embed_image(image_bytes, filename=file.filename or "image.jpg"),
+            config.queue.timeout_seconds,
+        )
+    if is_prometheus_available():
+        INFERENCE_DURATION.labels(model_id=model_id, category="embedding-image").observe(
+            time.monotonic() - inference_start
+        )
+
+    return ImageEmbeddingResponse(model=model_id, embedding=vec)

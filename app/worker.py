@@ -427,3 +427,19 @@ async def embed_audio(request: Request, file: UploadFile = File(...)):
                 {"error": {"message": str(e), "type": "invalid_request"}},
                 status_code=400,
             )
+
+
+@app.post("/embed-image")
+async def embed_image(request: Request, file: UploadFile = File(...)):
+    """Encode an image; returns {'embedding': list[float]}."""
+    async with request.app.state.reload_lock:
+        provider: BaseProvider = request.app.state.provider
+        image = await file.read()
+        try:
+            vec = await provider.embed_image(image, filename=file.filename or "image.jpg")
+            return JSONResponse({"embedding": vec})
+        except ValueError as e:
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "invalid_request"}},
+                status_code=400,
+            )

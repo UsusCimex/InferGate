@@ -33,3 +33,9 @@ class AudioEmbeddingResponse(BaseModel):
     """Response envelope for /v1/embeddings/audio (multipart extension)."""
     model: str
     embedding: list[float]
+
+
+class ImageEmbeddingResponse(BaseModel):
+    """Response envelope for /v1/embeddings/image (multipart extension)."""
+    model: str
+    embedding: list[float]

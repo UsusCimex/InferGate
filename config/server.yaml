@@ -41,6 +41,7 @@ defaults:
   tts: qwen3-tts-06b
   embedding_text: multilingual-e5-base
   embedding_audio: clap-htsat-fused
+  embedding_image: siglip-base-multilingual
 
 rate_limit:
   enabled: false

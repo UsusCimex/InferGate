@@ -113,6 +113,7 @@ class ProviderManager:
         from app.providers.remote import (
             RemoteAudioEmbeddingProvider,
             RemoteImageProvider,
+            RemoteMultimodalEmbeddingProvider,
             RemoteSttProvider,
             RemoteTextEmbeddingProvider,
             RemoteTextProvider,
@@ -128,6 +129,7 @@ class ProviderManager:
             "upscale": RemoteUpscaleProvider,
             "embedding-text": RemoteTextEmbeddingProvider,
             "embedding-audio": RemoteAudioEmbeddingProvider,
+            "embedding-multimodal": RemoteMultimodalEmbeddingProvider,
         }
         cls = category_map.get(config.category)
         if cls is None:
