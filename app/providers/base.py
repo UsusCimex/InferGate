@@ -86,3 +86,19 @@ class ImageUpscaleProvider(BaseProvider):
     @abstractmethod
     async def upscale(self, image: bytes, **params: Any) -> bytes:
         """Upscale `image` by the provider's configured factor. Returns PNG bytes."""
+
+
+class TextEmbeddingProvider(BaseProvider):
+    """Interface for text embedding models."""
+
+    @abstractmethod
+    async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
+        """Encode a batch of strings into embedding vectors."""
+
+
+class AudioEmbeddingProvider(BaseProvider):
+    """Interface for audio embedding models."""
+
+    @abstractmethod
+    async def embed(self, audio: bytes, **params: Any) -> list[float]:
+        """Encode a single audio chunk into an embedding vector."""
