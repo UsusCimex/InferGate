@@ -119,6 +119,7 @@ class ProviderManager:
             RemoteTextProvider,
             RemoteTtsProvider,
             RemoteUpscaleProvider,
+            RemoteVideoEmbeddingProvider,
         )
 
         category_map: dict[str, type[BaseProvider]] = {
@@ -130,6 +131,7 @@ class ProviderManager:
             "embedding-text": RemoteTextEmbeddingProvider,
             "embedding-audio": RemoteAudioEmbeddingProvider,
             "embedding-multimodal": RemoteMultimodalEmbeddingProvider,
+            "embedding-video": RemoteVideoEmbeddingProvider,
         }
         cls = category_map.get(config.category)
         if cls is None:

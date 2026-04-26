@@ -443,3 +443,19 @@ async def embed_image(request: Request, file: UploadFile = File(...)):
                 {"error": {"message": str(e), "type": "invalid_request"}},
                 status_code=400,
             )
+
+
+@app.post("/embed-video")
+async def embed_video(request: Request, file: UploadFile = File(...)):
+    """Encode a video clip; returns {'embedding': list[float]}."""
+    async with request.app.state.reload_lock:
+        provider: BaseProvider = request.app.state.provider
+        video = await file.read()
+        try:
+            vec = await provider.embed_video(video, filename=file.filename or "clip.mp4")
+            return JSONResponse({"embedding": vec})
+        except ValueError as e:
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "invalid_request"}},
+                status_code=400,
+            )

@@ -39,3 +39,9 @@ class ImageEmbeddingResponse(BaseModel):
     """Response envelope for /v1/embeddings/image (multipart extension)."""
     model: str
     embedding: list[float]
+
+
+class VideoEmbeddingResponse(BaseModel):
+    """Response envelope for /v1/embeddings/video (multipart extension)."""
+    model: str
+    embedding: list[float]

@@ -47,6 +47,7 @@ class DefaultsConfig(BaseModel):
     embedding_text: str | None = None
     embedding_audio: str | None = None
     embedding_image: str | None = None
+    embedding_video: str | None = None
 
 
 class RateLimitConfig(BaseModel):

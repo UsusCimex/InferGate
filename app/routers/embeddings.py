@@ -13,12 +13,14 @@ from app.schemas.embeddings import (
     EmbeddingRequest,
     EmbeddingResponse,
     ImageEmbeddingResponse,
+    VideoEmbeddingResponse,
 )
 
 router = APIRouter()
 
 _MAX_AUDIO_BYTES = 100 * 1024 * 1024
 _MAX_IMAGE_BYTES = 25 * 1024 * 1024
+_MAX_VIDEO_BYTES = 200 * 1024 * 1024
 
 
 @router.post("/v1/embeddings", response_model=EmbeddingResponse)
@@ -148,3 +150,46 @@ async def create_image_embedding(
         )
 
     return ImageEmbeddingResponse(model=model_id, embedding=vec)
+
+
+@router.post("/v1/embeddings/video", response_model=VideoEmbeddingResponse)
+async def create_video_embedding(
+    file: UploadFile = File(...),
+    model: str | None = Form(None),
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+    defaults=Depends(get_defaults),
+):
+    """Encode a video clip (≤200MB) into a single embedding vector."""
+    model_id = model or defaults.get("embedding_video")
+    if not model_id:
+        return JSONResponse(
+            {"error": {"message": "No video embedding model specified"}}, status_code=400
+        )
+
+    video_bytes = await file.read()
+    if not video_bytes:
+        return JSONResponse({"error": {"message": "Empty video file"}}, status_code=400)
+    if len(video_bytes) > _MAX_VIDEO_BYTES:
+        return JSONResponse(
+            {"error": {"message": f"Video exceeds {_MAX_VIDEO_BYTES // (1024 * 1024)}MB limit"}},
+            status_code=413,
+        )
+
+    provider = await manager.ensure_loaded(model_id)
+    config = manager.get_config(model_id)
+
+    inference_start = time.monotonic()
+    async with manager.active_request(model_id):
+        vec = await scheduler.submit(
+            model_id,
+            config.queue.priority,
+            provider.embed_video(video_bytes, filename=file.filename or "clip.mp4"),
+            config.queue.timeout_seconds,
+        )
+    if is_prometheus_available():
+        INFERENCE_DURATION.labels(model_id=model_id, category="embedding-video").observe(
+            time.monotonic() - inference_start
+        )
+
+    return VideoEmbeddingResponse(model=model_id, embedding=vec)
