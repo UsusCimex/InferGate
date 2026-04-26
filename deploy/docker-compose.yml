@@ -140,6 +140,7 @@ services:
       - WORKER_URL_QWEN3_TTS_06B=http://worker-qwen3-tts-06b:8001
       - WORKER_URL_MULTILINGUAL_E5_BASE=http://worker-multilingual-e5-base:8001
       - WORKER_URL_CLAP_HTSAT_FUSED=http://worker-clap-htsat-fused:8001
+      - WORKER_URL_SIGLIP_BASE_MULTILINGUAL=http://worker-siglip-base-multilingual:8001
     env_file: *env-file
     volumes:
       - ../config:/app/config:ro
@@ -501,6 +502,22 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/clap-htsat-fused/requirements.txt
     volumes:
       - ../config/models/clap-htsat-fused.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts-gpu
+
+  worker-siglip-base-multilingual:
+    <<: *gpu
+    profiles: ["embedding", "embedding-image", "siglip-base-multilingual"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/siglip-base-multilingual/requirements.txt
+    volumes:
+      - ../config/models/siglip-base-multilingual.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env

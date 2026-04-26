@@ -74,8 +74,9 @@ target "worker" {
       # ─── Upscale (super-resolution) ──────────────────────────────────
       { id = "realesrgan-x4",     base = GPU_BASE_IMAGE, apt = "",                post = "" },
       # ─── Embeddings ──────────────────────────────────────────────────
-      { id = "multilingual-e5-base", base = CPU_BASE_IMAGE, apt = "",             post = "" },
-      { id = "clap-htsat-fused",     base = GPU_BASE_IMAGE, apt = "",             post = "" },
+      { id = "multilingual-e5-base",    base = CPU_BASE_IMAGE, apt = "",          post = "" },
+      { id = "clap-htsat-fused",        base = GPU_BASE_IMAGE, apt = "",          post = "" },
+      { id = "siglip-base-multilingual", base = GPU_BASE_IMAGE, apt = "",         post = "" },
     ]
   }
 }

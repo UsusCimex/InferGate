@@ -1,0 +1,24 @@
+id: siglip-base-multilingual
+display_name: "SigLIP Base Multilingual"
+category: embedding-multimodal
+provider_class: SigLIPProvider
+enabled: ${oc.decode:${oc.env:SIGLIP_ENABLED,false}}
+
+model:
+  hub_id: "google/siglip-base-patch16-256-multilingual"
+  device: ${oc.env:SIGLIP_DEVICE,cuda}
+  vram_mb: ${oc.decode:${oc.env:SIGLIP_VRAM_MB,2000}}
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: ${oc.env:SIGLIP_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:SIGLIP_TIMEOUT,30}}
+  max_concurrent: ${oc.decode:${oc.env:SIGLIP_MAX_CONCURRENT,2}}
+
+metadata:
+  license: Apache-2.0
+  description: "SigLIP base multilingual (text+image, 35+ langs incl. RU, 768-d)"
+  tags: ["embedding", "multimodal", "image", "text", "multilingual"]
