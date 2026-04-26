@@ -148,3 +148,49 @@ async def test_embeddings_text_via_multimodal_model(client):
     assert len(body["data"]) == 1
     # multimodal fake returns 6-d vectors (same on text + image side)
     assert len(body["data"][0]["embedding"]) == 6
+
+
+async def test_embeddings_video(client):
+    fake_mp4 = b"\x00\x00\x00\x20ftypmp42" + b"\x00" * 64
+    resp = await client.post(
+        "/v1/embeddings/video",
+        files={"file": ("clip.mp4", io.BytesIO(fake_mp4), "video/mp4")},
+        data={"model": "test-embed-video"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model"] == "test-embed-video"
+    assert isinstance(body["embedding"], list)
+    assert len(body["embedding"]) == 5
+
+
+async def test_embeddings_video_uses_default_model(client):
+    fake_mp4 = b"\x00\x00\x00\x20ftypmp42" + b"\x00" * 64
+    resp = await client.post(
+        "/v1/embeddings/video",
+        files={"file": ("clip.mp4", io.BytesIO(fake_mp4), "video/mp4")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "test-embed-video"
+
+
+async def test_embeddings_video_rejects_empty_upload(client):
+    resp = await client.post(
+        "/v1/embeddings/video",
+        files={"file": ("empty.mp4", io.BytesIO(b""), "video/mp4")},
+    )
+    assert resp.status_code == 400
+
+
+async def test_embeddings_text_via_video_model(client):
+    """CLIP4Clip-style video models can also embed text via /v1/embeddings."""
+    resp = await client.post(
+        "/v1/embeddings",
+        json={"model": "test-embed-video", "input": "horse chase"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model"] == "test-embed-video"
+    assert len(body["data"]) == 1
+    # video fake returns 5-d vectors (same on text + video side)
+    assert len(body["data"][0]["embedding"]) == 5

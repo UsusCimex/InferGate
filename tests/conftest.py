@@ -16,6 +16,7 @@ from app.providers.base import (
     TextEmbeddingProvider,
     TextProvider,
     TtsProvider,
+    VideoEmbeddingProvider,
 )
 from app.providers.registry import register_provider
 from app.services.cache_manager import CacheManager
@@ -145,6 +146,24 @@ class FakeMultimodalEmbeddingProvider(MultimodalEmbeddingProvider):
 
 
 @register_provider
+class FakeVideoEmbeddingProvider(VideoEmbeddingProvider):
+    async def load(self, model_dir: str) -> None:
+        self._loaded = True
+
+    async def unload(self) -> None:
+        self._loaded = False
+
+    async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
+        # Deterministic 5-d vectors keyed off string length.
+        return [[float((len(s) + i) % 13) / 13.0 for i in range(5)] for s in inputs]
+
+    async def embed_video(self, video: bytes, **params: Any) -> list[float]:
+        # Deterministic 5-d vector derived from byte length.
+        n = len(video)
+        return [float((n + i) % 13) / 13.0 for i in range(5)]
+
+
+@register_provider
 class FakeUpscaleProvider(ImageUpscaleProvider):
     async def load(self, model_dir: str) -> None:
         self._loaded = True
@@ -203,6 +222,9 @@ async def services(tmp_path):
     emb_m_config = _make_model_config(
         "test-embed-multi", "embedding-multimodal", "FakeMultimodalEmbeddingProvider"
     )
+    emb_v_config = _make_model_config(
+        "test-embed-video", "embedding-video", "FakeVideoEmbeddingProvider"
+    )
 
     manager._registry["test-image"] = FakeImageProvider(img_config)
     manager._registry["test-text"] = FakeTextProvider(txt_config)
@@ -212,6 +234,7 @@ async def services(tmp_path):
     manager._registry["test-embed-text"] = FakeTextEmbeddingProvider(emb_t_config)
     manager._registry["test-embed-audio"] = FakeAudioEmbeddingProvider(emb_a_config)
     manager._registry["test-embed-multi"] = FakeMultimodalEmbeddingProvider(emb_m_config)
+    manager._registry["test-embed-video"] = FakeVideoEmbeddingProvider(emb_v_config)
 
     scheduler = GpuScheduler(max_queue_size=10)
     scheduler.register_model("test-image", 2)
@@ -222,6 +245,7 @@ async def services(tmp_path):
     scheduler.register_model("test-embed-text", 2)
     scheduler.register_model("test-embed-audio", 2)
     scheduler.register_model("test-embed-multi", 2)
+    scheduler.register_model("test-embed-video", 2)
 
     cache_mgr = CacheManager({
         "enabled": True,
@@ -236,6 +260,7 @@ async def services(tmp_path):
         "tts": "test-tts", "stt": "test-stt", "upscale": "test-upscale",
         "embedding_text": "test-embed-text", "embedding_audio": "test-embed-audio",
         "embedding_image": "test-embed-multi",
+        "embedding_video": "test-embed-video",
     }
 
     yield {
