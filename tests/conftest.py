@@ -8,9 +8,11 @@ from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
 from app.providers.base import (
+    AudioEmbeddingProvider,
     ImageProvider,
     ImageUpscaleProvider,
     SttProvider,
+    TextEmbeddingProvider,
     TextProvider,
     TtsProvider,
 )
@@ -97,6 +99,33 @@ class FakeSttProvider(SttProvider):
 
 
 @register_provider
+class FakeTextEmbeddingProvider(TextEmbeddingProvider):
+    async def load(self, model_dir: str) -> None:
+        self._loaded = True
+
+    async def unload(self) -> None:
+        self._loaded = False
+
+    async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
+        # Deterministic 8-d vectors keyed off string length so tests can assert ordering.
+        return [[float((len(s) + i) % 7) / 7.0 for i in range(8)] for s in inputs]
+
+
+@register_provider
+class FakeAudioEmbeddingProvider(AudioEmbeddingProvider):
+    async def load(self, model_dir: str) -> None:
+        self._loaded = True
+
+    async def unload(self) -> None:
+        self._loaded = False
+
+    async def embed(self, audio: bytes, **params: Any) -> list[float]:
+        # Deterministic 4-d vector derived from byte length.
+        n = len(audio)
+        return [float((n + i) % 5) / 5.0 for i in range(4)]
+
+
+@register_provider
 class FakeUpscaleProvider(ImageUpscaleProvider):
     async def load(self, model_dir: str) -> None:
         self._loaded = True
@@ -146,12 +175,20 @@ async def services(tmp_path):
     tts_config = _make_model_config("test-tts", "tts", "FakeTtsProvider", "always")
     stt_config = _make_model_config("test-stt", "stt", "FakeSttProvider", "always")
     ups_config = _make_model_config("test-upscale", "upscale", "FakeUpscaleProvider", "always")
+    emb_t_config = _make_model_config(
+        "test-embed-text", "embedding-text", "FakeTextEmbeddingProvider"
+    )
+    emb_a_config = _make_model_config(
+        "test-embed-audio", "embedding-audio", "FakeAudioEmbeddingProvider"
+    )
 
     manager._registry["test-image"] = FakeImageProvider(img_config)
     manager._registry["test-text"] = FakeTextProvider(txt_config)
     manager._registry["test-tts"] = FakeTtsProvider(tts_config)
     manager._registry["test-stt"] = FakeSttProvider(stt_config)
     manager._registry["test-upscale"] = FakeUpscaleProvider(ups_config)
+    manager._registry["test-embed-text"] = FakeTextEmbeddingProvider(emb_t_config)
+    manager._registry["test-embed-audio"] = FakeAudioEmbeddingProvider(emb_a_config)
 
     scheduler = GpuScheduler(max_queue_size=10)
     scheduler.register_model("test-image", 2)
@@ -159,6 +196,8 @@ async def services(tmp_path):
     scheduler.register_model("test-tts", 2)
     scheduler.register_model("test-stt", 2)
     scheduler.register_model("test-upscale", 2)
+    scheduler.register_model("test-embed-text", 2)
+    scheduler.register_model("test-embed-audio", 2)
 
     cache_mgr = CacheManager({
         "enabled": True,
@@ -171,6 +210,7 @@ async def services(tmp_path):
     defaults = {
         "image": "test-image", "text": "test-text",
         "tts": "test-tts", "stt": "test-stt", "upscale": "test-upscale",
+        "embedding_text": "test-embed-text", "embedding_audio": "test-embed-audio",
     }
 
     yield {
@@ -191,7 +231,7 @@ async def client(services):
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
 
-    from app.routers import admin, audio, cache, chat, health, images, models
+    from app.routers import admin, audio, cache, chat, embeddings, health, images, models
     from app.services.gpu_scheduler import QueueFullError, RequestTimeoutError
     from app.services.provider_manager import ModelNotFoundError
 
@@ -248,6 +288,7 @@ async def client(services):
     app.include_router(chat.router)
     app.include_router(images.router)
     app.include_router(audio.router)
+    app.include_router(embeddings.router)
     app.include_router(models.router)
     app.include_router(cache.router)
     app.include_router(health.router)
