@@ -392,3 +392,38 @@ async def upscale(request: Request, file: UploadFile = File(...)):
                 {"error": {"message": str(e), "type": "invalid_request"}},
                 status_code=400,
             )
+
+
+@app.post("/embed")
+async def embed(request: Request):
+    """Encode a batch of texts; returns {'embeddings': list[list[float]]}."""
+    async with request.app.state.reload_lock:
+        provider: BaseProvider = request.app.state.provider
+        body = await request.json()
+        try:
+            inputs = body.pop("input")
+            if isinstance(inputs, str):
+                inputs = [inputs]
+            vecs = await provider.embed(inputs, **body)
+            return JSONResponse({"embeddings": vecs})
+        except ValueError as e:
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "invalid_request"}},
+                status_code=400,
+            )
+
+
+@app.post("/embed-audio")
+async def embed_audio(request: Request, file: UploadFile = File(...)):
+    """Encode an audio chunk; returns {'embedding': list[float]}."""
+    async with request.app.state.reload_lock:
+        provider: BaseProvider = request.app.state.provider
+        audio = await file.read()
+        try:
+            vec = await provider.embed(audio, filename=file.filename or "audio.wav")
+            return JSONResponse({"embedding": vec})
+        except ValueError as e:
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "invalid_request"}},
+                status_code=400,
+            )

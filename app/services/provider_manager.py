@@ -111,8 +111,10 @@ class ProviderManager:
     def _create_remote_provider(config: ModelConfig) -> BaseProvider:
         """Build the RemoteProvider subclass matching `config.category`."""
         from app.providers.remote import (
+            RemoteAudioEmbeddingProvider,
             RemoteImageProvider,
             RemoteSttProvider,
+            RemoteTextEmbeddingProvider,
             RemoteTextProvider,
             RemoteTtsProvider,
             RemoteUpscaleProvider,
@@ -124,6 +126,8 @@ class ProviderManager:
             "tts": RemoteTtsProvider,
             "stt": RemoteSttProvider,
             "upscale": RemoteUpscaleProvider,
+            "embedding-text": RemoteTextEmbeddingProvider,
+            "embedding-audio": RemoteAudioEmbeddingProvider,
         }
         cls = category_map.get(config.category)
         if cls is None:
