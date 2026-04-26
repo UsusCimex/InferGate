@@ -78,11 +78,19 @@ class ClapEmbeddingProvider(AudioEmbeddingProvider):
 
         samples, _ = librosa.load(io.BytesIO(audio), sr=_TARGET_SR, mono=True)
         inputs = self._processor(  # type: ignore[misc]
-            audios=samples, sampling_rate=_TARGET_SR, return_tensors="pt"
+            audio=samples, sampling_rate=_TARGET_SR, return_tensors="pt"
         )
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
         with torch.no_grad():
-            features = self._model.get_audio_features(**inputs)  # type: ignore[union-attr]
+            out = self._model.get_audio_features(**inputs)  # type: ignore[union-attr]
+        # transformers >=5: get_audio_features() returns ModelOutput with .audio_embeds;
+        # older versions returned the tensor directly.
+        if hasattr(out, "audio_embeds"):
+            features = out.audio_embeds
+        elif hasattr(out, "pooler_output"):
+            features = out.pooler_output
+        else:
+            features = out
         # L2-normalise so cosine similarity == dot product downstream.
         features = features / features.norm(p=2, dim=-1, keepdim=True)
         return features.squeeze(0).cpu().tolist()
