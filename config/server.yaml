@@ -39,6 +39,8 @@ defaults:
   image: sdxl-base
   text: qwen3.5-4b
   tts: qwen3-tts-06b
+  embedding_text: multilingual-e5-base
+  embedding_audio: clap-htsat-fused
 
 rate_limit:
   enabled: false

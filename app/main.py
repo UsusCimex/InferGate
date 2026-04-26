@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from app.config import load_model_configs, load_server_config
 from app.middleware import AccessLogMiddleware, ApiKeyMiddleware, RateLimitMiddleware
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
-from app.routers import admin, audio, cache, chat, health, images, models
+from app.routers import admin, audio, cache, chat, embeddings, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.config_watcher import ConfigWatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
@@ -80,6 +80,8 @@ async def lifespan(app: FastAPI):
         defaults.get("text"),
         defaults.get("tts"),
         defaults.get("image"),
+        defaults.get("embedding_text"),
+        defaults.get("embedding_audio"),
         *server_cfg.gpu.pinned_models,
     ]))
     for model_id in preload_ids:
@@ -242,6 +244,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(images.router)
     app.include_router(audio.router)
+    app.include_router(embeddings.router)
     app.include_router(models.router)
     app.include_router(cache.router)
     app.include_router(health.router)

@@ -44,6 +44,8 @@ class DefaultsConfig(BaseModel):
     image: str = "flux1-schnell"
     text: str = "qwen3.5-9b"
     tts: str = "kokoro-82m"
+    embedding_text: str | None = None
+    embedding_audio: str | None = None
 
 
 class RateLimitConfig(BaseModel):
