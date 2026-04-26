@@ -1,0 +1,26 @@
+id: multilingual-e5-base
+display_name: "Multilingual E5 Base"
+category: embedding-text
+provider_class: SentenceTransformerEmbeddingProvider
+enabled: ${oc.decode:${oc.env:E5_BASE_ENABLED,false}}
+
+model:
+  hub_id: "intfloat/multilingual-e5-base"
+  device: ${oc.env:E5_BASE_DEVICE,cpu}
+  vram_mb: ${oc.decode:${oc.env:E5_BASE_VRAM_MB,0}}
+  default_params:
+    normalize: ${oc.decode:${oc.env:E5_BASE_NORMALIZE,true}}
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: ${oc.env:E5_BASE_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:E5_BASE_TIMEOUT,30}}
+  max_concurrent: ${oc.decode:${oc.env:E5_BASE_MAX_CONCURRENT,4}}
+
+metadata:
+  license: MIT
+  description: "Multilingual text embeddings (RU/EN + 50 more languages, 768-d)"
+  tags: ["embedding", "text", "multilingual", "cpu"]

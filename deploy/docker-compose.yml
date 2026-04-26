@@ -138,6 +138,8 @@ services:
       - WORKER_URL_REALESRGAN_X4=http://worker-realesrgan-x4:8001
       - WORKER_URL_XTTS_V2=http://worker-xtts-v2:8001
       - WORKER_URL_QWEN3_TTS_06B=http://worker-qwen3-tts-06b:8001
+      - WORKER_URL_MULTILINGUAL_E5_BASE=http://worker-multilingual-e5-base:8001
+      - WORKER_URL_CLAP_HTSAT_FUSED=http://worker-clap-htsat-fused:8001
     env_file: *env-file
     volumes:
       - ../config:/app/config:ro
@@ -470,6 +472,39 @@ services:
     env_file: *env-file
     environment: *env
     healthcheck: *hc-tts
+
+  # ─── Embedding workers ──────────────────────────────────────────────
+  worker-multilingual-e5-base:
+    <<: *cpu-worker
+    profiles: ["embedding", "embedding-text", "multilingual-e5-base"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: python:3.12-slim
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/multilingual-e5-base/requirements.txt
+    volumes:
+      - ../config/models/multilingual-e5-base.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts
+
+  worker-clap-htsat-fused:
+    <<: *gpu
+    profiles: ["embedding", "embedding-audio", "clap-htsat-fused"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/clap-htsat-fused/requirements.txt
+    volumes:
+      - ../config/models/clap-htsat-fused.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts-gpu
 
   # ─── Upscale workers (super-resolution) ─────────────────────────────
   worker-realesrgan-x4:

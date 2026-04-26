@@ -36,6 +36,12 @@ tts = [
     "kokoro>=0.7.0",
     "soundfile>=0.12.0",
 ]
+embedding = [
+    "sentence-transformers>=2.7.0",
+    "transformers>=4.48.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+]
 monitoring = [
     "prometheus-client>=0.20.0",
 ]
@@ -48,7 +54,7 @@ dev = [
     "psutil>=5.9",
     "prometheus-client>=0.20.0",
 ]
-all = ["infergate[gpu,tts,monitoring,quant,dev]"]
+all = ["infergate[gpu,tts,embedding,monitoring,quant,dev]"]
 
 [build-system]
 requires = ["hatchling"]

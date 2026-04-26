@@ -1,0 +1,24 @@
+id: clap-htsat-fused
+display_name: "LAION CLAP HTSAT Fused"
+category: embedding-audio
+provider_class: ClapEmbeddingProvider
+enabled: ${oc.decode:${oc.env:CLAP_ENABLED,false}}
+
+model:
+  hub_id: "laion/clap-htsat-fused"
+  device: ${oc.env:CLAP_DEVICE,cuda}
+  vram_mb: ${oc.decode:${oc.env:CLAP_VRAM_MB,4000}}
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: ${oc.env:CLAP_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:CLAP_TIMEOUT,30}}
+  max_concurrent: ${oc.decode:${oc.env:CLAP_MAX_CONCURRENT,2}}
+
+metadata:
+  license: CC-BY-4.0
+  description: "LAION CLAP audio embeddings (512-d) for sound search"
+  tags: ["embedding", "audio", "clap"]
