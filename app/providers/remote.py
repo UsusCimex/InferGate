@@ -17,6 +17,7 @@ from app.providers.base import (
     TextEmbeddingProvider,
     TextProvider,
     TtsProvider,
+    VideoEmbeddingProvider,
 )
 
 logger = logging.getLogger(__name__)
@@ -235,5 +236,21 @@ class RemoteMultimodalEmbeddingProvider(BaseRemoteMixin, MultimodalEmbeddingProv
         filename = str(params.pop("filename", "image.jpg"))
         files = {"file": (filename, image, "application/octet-stream")}
         resp = await self._client.post("/embed-image", files=files)
+        resp.raise_for_status()
+        return resp.json()["embedding"]
+
+
+class RemoteVideoEmbeddingProvider(BaseRemoteMixin, VideoEmbeddingProvider):
+    """Video+text embedding provider over JSON /embed and multipart /embed-video."""
+
+    async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
+        resp = await self._client.post("/embed", json={"input": inputs, **params})
+        resp.raise_for_status()
+        return resp.json()["embeddings"]
+
+    async def embed_video(self, video: bytes, **params: Any) -> list[float]:
+        filename = str(params.pop("filename", "clip.mp4"))
+        files = {"file": (filename, video, "application/octet-stream")}
+        resp = await self._client.post("/embed-video", files=files)
         resp.raise_for_status()
         return resp.json()["embedding"]

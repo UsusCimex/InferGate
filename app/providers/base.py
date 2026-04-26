@@ -110,3 +110,11 @@ class MultimodalEmbeddingProvider(TextEmbeddingProvider):
     @abstractmethod
     async def embed_image(self, image: bytes, **params: Any) -> list[float]:
         """Encode a single image into an embedding vector (same space as embed())."""
+
+
+class VideoEmbeddingProvider(TextEmbeddingProvider):
+    """Interface for joint text+video embedding models (e.g. CLIP4Clip)."""
+
+    @abstractmethod
+    async def embed_video(self, video: bytes, **params: Any) -> list[float]:
+        """Encode a single video clip into an embedding vector (same space as embed())."""
