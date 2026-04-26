@@ -102,3 +102,11 @@ class AudioEmbeddingProvider(BaseProvider):
     @abstractmethod
     async def embed(self, audio: bytes, **params: Any) -> list[float]:
         """Encode a single audio chunk into an embedding vector."""
+
+
+class MultimodalEmbeddingProvider(TextEmbeddingProvider):
+    """Interface for joint text+image embedding models (e.g. SigLIP, CLIP)."""
+
+    @abstractmethod
+    async def embed_image(self, image: bytes, **params: Any) -> list[float]:
+        """Encode a single image into an embedding vector (same space as embed())."""

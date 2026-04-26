@@ -12,6 +12,7 @@ from app.providers.base import (
     AudioEmbeddingProvider,
     ImageProvider,
     ImageUpscaleProvider,
+    MultimodalEmbeddingProvider,
     SttProvider,
     TextEmbeddingProvider,
     TextProvider,
@@ -218,5 +219,21 @@ class RemoteAudioEmbeddingProvider(BaseRemoteMixin, AudioEmbeddingProvider):
         filename = str(params.pop("filename", "audio.wav"))
         files = {"file": (filename, audio, "application/octet-stream")}
         resp = await self._client.post("/embed-audio", files=files)
+        resp.raise_for_status()
+        return resp.json()["embedding"]
+
+
+class RemoteMultimodalEmbeddingProvider(BaseRemoteMixin, MultimodalEmbeddingProvider):
+    """Multimodal text+image embedding provider over JSON /embed and multipart /embed-image."""
+
+    async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
+        resp = await self._client.post("/embed", json={"input": inputs, **params})
+        resp.raise_for_status()
+        return resp.json()["embeddings"]
+
+    async def embed_image(self, image: bytes, **params: Any) -> list[float]:
+        filename = str(params.pop("filename", "image.jpg"))
+        files = {"file": (filename, image, "application/octet-stream")}
+        resp = await self._client.post("/embed-image", files=files)
         resp.raise_for_status()
         return resp.json()["embedding"]
