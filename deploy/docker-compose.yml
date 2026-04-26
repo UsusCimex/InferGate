@@ -511,7 +511,7 @@ services:
 
   worker-siglip-base-multilingual:
     <<: *gpu
-    profiles: ["embedding-siglip", "siglip-base-multilingual"]
+    profiles: ["embedding", "embedding-image", "siglip-base-multilingual"]
     build:
       <<: *build
       args:
