@@ -511,7 +511,10 @@ services:
 
   worker-siglip-base-multilingual:
     <<: *gpu
-    profiles: ["embedding", "embedding-image", "siglip-base-multilingual"]
+    # Не в общем `embedding`-профиле — модель оставлена в InferGate для опциональной
+    # сравнительной проверки. Поднять её можно явно через `--profile siglip-base-multilingual`,
+    # затем выставить SIGLIP_ENABLED=true в deploy/.env и пересоздать контейнер.
+    profiles: ["siglip-base-multilingual"]
     build:
       <<: *build
       args:
