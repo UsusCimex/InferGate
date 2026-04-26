@@ -141,6 +141,8 @@ services:
       - WORKER_URL_MULTILINGUAL_E5_BASE=http://worker-multilingual-e5-base:8001
       - WORKER_URL_CLAP_HTSAT_FUSED=http://worker-clap-htsat-fused:8001
       - WORKER_URL_SIGLIP_BASE_MULTILINGUAL=http://worker-siglip-base-multilingual:8001
+      - WORKER_URL_CLIP_VIT_BASE_PATCH32=http://worker-clip-vit-base-patch32:8001
+      - WORKER_URL_CLIP4CLIP_WEBVID150K=http://worker-clip4clip-webvid150k:8001
     env_file: *env-file
     volumes:
       - ../config:/app/config:ro
@@ -509,7 +511,7 @@ services:
 
   worker-siglip-base-multilingual:
     <<: *gpu
-    profiles: ["embedding", "embedding-image", "siglip-base-multilingual"]
+    profiles: ["embedding-siglip", "siglip-base-multilingual"]
     build:
       <<: *build
       args:
@@ -518,6 +520,38 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/siglip-base-multilingual/requirements.txt
     volumes:
       - ../config/models/siglip-base-multilingual.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts-gpu
+
+  worker-clip-vit-base-patch32:
+    <<: *gpu
+    profiles: ["embedding", "embedding-image", "clip-vit-base-patch32"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/clip-vit-base-patch32/requirements.txt
+    volumes:
+      - ../config/models/clip-vit-base-patch32.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts-gpu
+
+  worker-clip4clip-webvid150k:
+    <<: *gpu
+    profiles: ["embedding", "embedding-video", "clip4clip-webvid150k"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/clip4clip-webvid150k/requirements.txt
+    volumes:
+      - ../config/models/clip4clip-webvid150k.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env

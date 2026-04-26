@@ -1,0 +1,24 @@
+id: clip-vit-base-patch32
+display_name: "OpenAI CLIP ViT-B/32"
+category: embedding-multimodal
+provider_class: CLIPProvider
+enabled: ${oc.decode:${oc.env:CLIP_ENABLED,false}}
+
+model:
+  hub_id: "openai/clip-vit-base-patch32"
+  device: ${oc.env:CLIP_DEVICE,cuda}
+  vram_mb: ${oc.decode:${oc.env:CLIP_VRAM_MB,1500}}
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: ${oc.env:CLIP_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:CLIP_TIMEOUT,30}}
+  max_concurrent: ${oc.decode:${oc.env:CLIP_MAX_CONCURRENT,4}}
+
+metadata:
+  license: MIT
+  description: "OpenAI CLIP ViT-B/32 — joint text+image embeddings (English-only, 512-d, L2-normalised)"
+  tags: ["embedding", "multimodal", "image", "text", "clip"]

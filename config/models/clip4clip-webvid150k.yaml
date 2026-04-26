@@ -1,0 +1,26 @@
+id: clip4clip-webvid150k
+display_name: "CLIP4Clip WebVid-150k"
+category: embedding-video
+provider_class: CLIP4ClipProvider
+enabled: ${oc.decode:${oc.env:CLIP4CLIP_ENABLED,false}}
+
+model:
+  hub_id: "Searchium-ai/clip4clip-webvid150k"
+  device: ${oc.env:CLIP4CLIP_DEVICE,cuda}
+  vram_mb: ${oc.decode:${oc.env:CLIP4CLIP_VRAM_MB,2000}}
+  num_frames: ${oc.decode:${oc.env:CLIP4CLIP_NUM_FRAMES,12}}
+  fallback_processor_hub_id: "openai/clip-vit-base-patch32"
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: ${oc.env:CLIP4CLIP_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:CLIP4CLIP_TIMEOUT,60}}
+  max_concurrent: ${oc.decode:${oc.env:CLIP4CLIP_MAX_CONCURRENT,2}}
+
+metadata:
+  license: MIT
+  description: "CLIP4Clip ViT-B/32 — text+video embeddings (12-frame mean pool, 512-d, English)"
+  tags: ["embedding", "video", "clip4clip", "multimodal"]
