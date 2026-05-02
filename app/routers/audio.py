@@ -173,6 +173,9 @@ async def create_transcription(
     prompt: str | None = Form(None),
     response_format: str = Form("json"),
     temperature: float = Form(0.0, ge=0.0, le=1.0),
+    # Whisper-specific extension (not in OpenAI spec): drop silence/noise segments
+    # before transcription. Reduces hallucinations on short / quiet clips.
+    vad_filter: bool | None = Form(None),
     manager=Depends(get_provider_manager),
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
@@ -206,6 +209,7 @@ async def create_transcription(
         "prompt": prompt,
         "response_format": effective_format,
         "temperature": temperature,
+        "vad_filter": vad_filter,
         "filename": file.filename or "audio.wav",
     }
     params = {k: v for k, v in params.items() if v is not None}

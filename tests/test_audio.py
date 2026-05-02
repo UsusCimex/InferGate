@@ -175,6 +175,54 @@ async def test_stt_rejects_empty_file(client):
 
 
 @pytest.mark.asyncio
+async def test_stt_vad_filter_param_reaches_provider(client, services, monkeypatch):
+    """vad_filter form-field must be forwarded to provider.transcribe(**params)."""
+    captured: dict = {}
+
+    provider = services["manager"].get("test-stt")
+    real = provider.transcribe
+
+    async def spy(audio, **params):
+        captured.update(params)
+        return await real(audio, **params)
+
+    monkeypatch.setattr(provider, "transcribe", spy)
+
+    files = {"file": ("a.wav", _FAKE_AUDIO, "audio/wav")}
+    resp = await client.post(
+        "/v1/audio/transcriptions",
+        files=files,
+        data={"model": "test-stt", "vad_filter": "true"},
+    )
+    assert resp.status_code == 200
+    assert captured.get("vad_filter") is True
+
+
+@pytest.mark.asyncio
+async def test_stt_vad_filter_omitted_does_not_propagate(client, services, monkeypatch):
+    """When vad_filter is not sent, the key must not appear in params (provider falls back to YAML default)."""
+    captured: dict = {}
+
+    provider = services["manager"].get("test-stt")
+    real = provider.transcribe
+
+    async def spy(audio, **params):
+        captured.update(params)
+        return await real(audio, **params)
+
+    monkeypatch.setattr(provider, "transcribe", spy)
+
+    files = {"file": ("a.wav", _FAKE_AUDIO, "audio/wav")}
+    resp = await client.post(
+        "/v1/audio/transcriptions",
+        files=files,
+        data={"model": "test-stt"},
+    )
+    assert resp.status_code == 200
+    assert "vad_filter" not in captured
+
+
+@pytest.mark.asyncio
 async def test_stt_cache_hit_on_same_audio(client):
     """Same bytes + same params → cache HIT on second call."""
     files = {"file": ("a.wav", _FAKE_AUDIO, "audio/wav")}

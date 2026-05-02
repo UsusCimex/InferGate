@@ -493,6 +493,7 @@ async def transcribe(
     prompt: str | None = Form(None),
     response_format: str = Form("json"),
     temperature: float = Form(0.0),
+    vad_filter: bool | None = Form(None),
 ):
     """Transcribe audio to text."""
     async with request.app.state.reload_lock:
@@ -503,6 +504,7 @@ async def transcribe(
             "prompt": prompt,
             "response_format": response_format,
             "temperature": temperature,
+            "vad_filter": vad_filter,
             "filename": file.filename or "audio.wav",
         }
         params = {k: v for k, v in params.items() if v is not None}
