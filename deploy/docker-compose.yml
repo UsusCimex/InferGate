@@ -395,7 +395,7 @@ services:
   # ─── TTS workers ─────────────────────────────────────────────────────
   worker-kokoro-82m:
     <<: *cpu-worker
-    profiles: ["kokoro-82m"]
+    profiles: ["tts", "kokoro-82m"]
     build:
       <<: *build
       args:
@@ -445,7 +445,7 @@ services:
 
   worker-qwen3-tts-06b:
     <<: *gpu
-    profiles: ["tts", "voice-clone", "qwen3-tts-06b"]
+    profiles: ["voice-clone", "qwen3-tts-06b"]
     build:
       <<: *build
       args:

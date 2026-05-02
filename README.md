@@ -59,10 +59,10 @@ Defaults в `config/models/*.yaml` заточены под 12GB GPU (nf4-ква�
 |---------|--------|
 | `text` | qwen3.5-4b (enabled) |
 | `image` | sdxl-base (enabled) |
-| `tts` | qwen3-tts-06b (enabled, voice-clone-capable, 10 языков) |
+| `tts` | kokoro-82m (enabled, CPU, работает без reference_audio) |
 | `stt` | whisper-base (enabled) |
 | `upscale` | realesrgan-x4 (enabled) |
-| `voice-clone` | qwen3-tts-06b + xtts-v2 (xtts-v2 disabled — CPML license opt-in) |
+| `voice-clone` | qwen3-tts-06b + xtts-v2 (xtts-v2 disabled — CPML license opt-in). Voice cloning — отдельный профиль, потому что `qwen3-tts-06b` имеет `voice_clone_only: true` и требует reference_audio. |
 | `qwen3.5-4b`, `sdxl-base`, `qwen3-tts-06b`, `kokoro-82m`, `whisper-base`, `realesrgan-x4`, `xtts-v2` | Индивидуальные |
 | `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `sd35-medium`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image`, `hunyuan-dit`, `z-image-turbo`, `janus-pro-1b`, `janus-pro-7b`, `meissonic`, `openaudio-s1-mini`, `xtts-v2` | Disabled по умолчанию, запуск через индивидуальный profile |
 
@@ -601,7 +601,7 @@ cors:
 defaults:                          # Модели по умолчанию (если model не указан)
   image: sdxl-base
   text: qwen3.5-4b
-  tts: qwen3-tts-06b
+  tts: kokoro-82m                  # voice-clone модели — через --profile voice-clone
 
 rate_limit:
   enabled: false
@@ -707,8 +707,8 @@ infergate/
 Client → Gateway (500MB, без GPU)
            ├→ worker-qwen3-5-4b       (vLLM, GPU)           — text        (default)
            ├→ worker-sdxl-base        (diffusers, GPU)      — image       (default)
-           ├→ worker-qwen3-tts-06b    (qwen-tts, GPU)       — TTS         (default, voice-clone)
-           ├→ worker-kokoro-82m       (kokoro, CPU)         — TTS
+           ├→ worker-kokoro-82m       (kokoro, CPU)         — TTS         (default)
+           ├→ worker-qwen3-tts-06b    (qwen-tts, GPU)       — voice cloning
            ├→ worker-xtts-v2          (coqui-tts, GPU)      — voice cloning
            ├→ worker-whisper-base     (faster-whisper, CPU) — STT
            ├→ worker-realesrgan-x4    (spandrel, GPU)       — upscale

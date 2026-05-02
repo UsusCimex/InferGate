@@ -38,7 +38,9 @@ models_dir: "./models"
 defaults:
   image: sdxl-base
   text: qwen3.5-4b
-  tts: qwen3-tts-06b
+  # kokoro is CPU-only and accepts /v1/audio/speech without reference_audio
+  # → works out-of-box; voice-cloning models live behind --profile voice-clone.
+  tts: kokoro-82m
   embedding_text: multilingual-e5-base
   embedding_audio: clap-htsat-fused
   embedding_image: clip-vit-base-patch32
