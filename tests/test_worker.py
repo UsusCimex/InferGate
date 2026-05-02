@@ -25,9 +25,19 @@ def _make_config(category: str, provider_class: str) -> ModelConfig:
     )
 
 
+def _ready_load_state() -> dict:
+    return {
+        "status": "ready",
+        "error": None,
+        "started_at": None,
+        "duration_seconds": None,
+        "cancellation_requested": False,
+    }
+
+
 @pytest_asyncio.fixture
 async def text_worker():
-    """Worker app serving a fake text model."""
+    """Worker app serving a preloaded fake text model (load_state=ready)."""
     from fastapi import FastAPI
 
     app = FastAPI()
@@ -39,11 +49,25 @@ async def text_worker():
     app.state.provider = provider
     app.state.config = config
     app.state.reload_lock = asyncio.Lock()
+    app.state.load_lock = asyncio.Lock()
+    app.state.load_state = _ready_load_state()
+    app.state.load_task = None
 
-    # Import worker routes
-    from app.worker import generate, health, load, reload_config, stats, synthesize, unload
+    from app.worker import (
+        _ready_guard,
+        generate,
+        health,
+        load,
+        load_status,
+        reload_config,
+        stats,
+        synthesize,
+        unload,
+    )
+    app.middleware("http")(_ready_guard)
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/load", load, methods=["POST"])
+    app.add_api_route("/load/status", load_status, methods=["GET"])
     app.add_api_route("/unload", unload, methods=["POST"])
     app.add_api_route("/generate", generate, methods=["POST"])
     app.add_api_route("/synthesize", synthesize, methods=["POST"])
@@ -57,7 +81,7 @@ async def text_worker():
 
 @pytest_asyncio.fixture
 async def image_worker():
-    """Worker app serving a fake image model."""
+    """Worker app serving a preloaded fake image model (load_state=ready)."""
     from fastapi import FastAPI
     app = FastAPI()
 
@@ -68,8 +92,12 @@ async def image_worker():
     app.state.provider = provider
     app.state.config = config
     app.state.reload_lock = asyncio.Lock()
+    app.state.load_lock = asyncio.Lock()
+    app.state.load_state = _ready_load_state()
+    app.state.load_task = None
 
-    from app.worker import generate, health, load, reload_config
+    from app.worker import _ready_guard, generate, health, load, reload_config
+    app.middleware("http")(_ready_guard)
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/load", load, methods=["POST"])
     app.add_api_route("/generate", generate, methods=["POST"])
@@ -389,20 +417,6 @@ async def test_unload_during_load_signals_cancelling(async_worker, monkeypatch):
     # FakeProvider.load awaits asyncio.sleep → cancellable → returns 200 status=ok.
     assert unload_resp.status_code in (200, 409)
     assert async_worker._app.state.load_state["status"] in ("idle", "cancelling")
-
-
-@pytest.mark.asyncio
-async def test_load_status_legacy_path_when_load_state_missing(text_worker):
-    """Legacy fixture (no load_state on app.state) — /load/status synthesises shape."""
-    # text_worker fixture preloads provider and doesn't set load_state.
-    from app.worker import load_status
-    text_worker._transport.app.add_api_route(
-        "/load/status", load_status, methods=["GET"]
-    )
-
-    resp = await text_worker.get("/load/status")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "ready"
 
 
 @pytest.mark.asyncio

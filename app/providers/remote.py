@@ -179,7 +179,7 @@ class BaseRemoteMixin:
         """Connect to the worker and ensure the model is loaded.
 
         Worker contract:
-        - POST /load returns 200 → ready immediately (legacy worker fast-path).
+        - POST /load returns 200 → already-ready fast path (model was loaded earlier).
         - POST /load returns 202 → background load running; we poll GET /load/status
           until "ready"/"failed" or `_LOAD_TIMEOUT` deadline.
         """
@@ -228,7 +228,7 @@ class BaseRemoteMixin:
                     self._client = None
                     raise
             elif 200 <= load_resp.status_code < 300:
-                # Legacy worker — synchronous /load returned success.
+                # Fast path: worker reports model already ready.
                 pass
             else:
                 body = load_resp.text[:500]
@@ -291,14 +291,6 @@ class BaseRemoteMixin:
                 # Transient — keep polling until the deadline.
                 logger.debug("Poll /load/status failed (transient): %s", e)
                 continue
-
-            if resp.status_code == 404:
-                # Legacy worker without /load/status — accept the original 202 as ready.
-                logger.info(
-                    "Worker %s lacks /load/status — assuming ready (legacy contract)",
-                    self._worker_url,
-                )
-                return
 
             if resp.status_code != 200:
                 logger.debug(

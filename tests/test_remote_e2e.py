@@ -609,54 +609,21 @@ async def test_e2e_load_total_timeout(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_e2e_legacy_sync_worker_still_works(monkeypatch):
-    """Legacy worker returns 200 on /load (no /load/status route) — gateway succeeds."""
+async def test_e2e_already_ready_returns_200_fast_path(monkeypatch):
+    """Worker reports model already loaded → /load returns 200 → gateway skips polling."""
     from app.providers import remote as r
 
-    legacy = FastAPI()
+    fast = FastAPI()
 
-    @legacy.get("/health")
+    @fast.get("/health")
     async def _h():
         return {"status": "ok"}
 
-    @legacy.post("/load")
+    @fast.post("/load")
     async def _l():
         return {"status": "ok"}
 
-    transport = ASGITransport(app=legacy)
-
-    def _build(self, timeout):
-        return httpx.AsyncClient(
-            base_url=self._worker_url, timeout=timeout, transport=transport
-        )
-
-    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
-
-    provider = r.RemoteTextProvider(_make_remote_config("text"))
-    await provider.load("/tmp")
-    assert provider.is_loaded()
-
-
-@pytest.mark.asyncio
-async def test_e2e_polling_handles_legacy_worker_404_on_status(monkeypatch):
-    """Mid-protocol worker: returns 202 but has no /load/status — gateway accepts as ready."""
-    from app.providers import remote as r
-
-    monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0])
-
-    half_legacy = FastAPI()
-
-    @half_legacy.get("/health")
-    async def _h():
-        return {"status": "ok"}
-
-    @half_legacy.post("/load")
-    async def _l():
-        return JSONResponse({"status": "loading"}, status_code=202)
-
-    # No /load/status — FastAPI returns 404.
-
-    transport = ASGITransport(app=half_legacy)
+    transport = ASGITransport(app=fast)
 
     def _build(self, timeout):
         return httpx.AsyncClient(

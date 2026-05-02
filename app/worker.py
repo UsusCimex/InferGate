@@ -157,15 +157,10 @@ async def _ready_guard(request: Request, call_next):
 @app.get("/health")
 async def health(request: Request):
     """Return liveness + model/category metadata."""
-    state = getattr(request.app.state, "load_state", None)
+    state: dict[str, Any] = request.app.state.load_state
     config = request.app.state.config
-    if state is not None:
-        ready = state.get("status") == "ready"
-    else:
-        # Fixture-built apps may not init load_state — fall back to provider state.
-        ready = request.app.state.provider.is_loaded()
     return {
-        "status": "ok" if ready else "loading",
+        "status": "ok" if state["status"] == "ready" else "loading",
         "model": config.id,
         "category": config.category,
     }
@@ -240,22 +235,6 @@ async def load(request: Request):
     app_state = request.app.state
     config = app_state.config
 
-    # Fixture-built apps without load_state still want sync semantics for legacy tests.
-    if not hasattr(app_state, "load_state"):
-        provider: BaseProvider = app_state.provider
-        if provider.is_loaded():
-            return {"status": "ok", "model": config.id}
-        models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
-        try:
-            await provider.load(models_dir)
-        except Exception as e:
-            logger.error("Load failed for %s: %s", config.id, e)
-            return JSONResponse(
-                {"error": {"message": str(e), "type": "load_failed"}},
-                status_code=503,
-            )
-        return {"status": "ok", "model": config.id}
-
     state: dict[str, Any] = app_state.load_state
     status = state["status"]
 
@@ -288,15 +267,10 @@ async def load(request: Request):
 @app.get("/load/status")
 async def load_status(request: Request):
     """Return the current background-load state machine snapshot."""
-    state = getattr(request.app.state, "load_state", None)
-    if state is None:
-        # Legacy fixture path — synthesise a stable shape from provider.is_loaded().
-        loaded = request.app.state.provider.is_loaded()
-        return {
-            "status": "ready" if loaded else "idle",
-            "model": request.app.state.config.id,
-        }
-    return {"model": request.app.state.config.id, **_public_state(state)}
+    return {
+        "model": request.app.state.config.id,
+        **_public_state(request.app.state.load_state),
+    }
 
 
 def _public_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -313,10 +287,10 @@ def _public_state(state: dict[str, Any]) -> dict[str, Any]:
 async def unload(request: Request):
     """Cancel any in-flight load, then unload the model."""
     app_state = request.app.state
-    state = getattr(app_state, "load_state", None)
-    task: asyncio.Task | None = getattr(app_state, "load_task", None)
+    state: dict[str, Any] = app_state.load_state
+    task: asyncio.Task | None = app_state.load_task
 
-    if state is not None and task is not None and not task.done():
+    if task is not None and not task.done():
         state["cancellation_requested"] = True
         state["status"] = "cancelling"
         task.cancel()
@@ -329,16 +303,10 @@ async def unload(request: Request):
             )
 
     # load_lock guarantees we don't race a freshly started load.
-    lock = getattr(app_state, "load_lock", None)
-    provider: BaseProvider = app_state.provider
-    if lock is not None:
-        async with lock:
-            await provider.unload()
-    else:
-        await provider.unload()
+    async with app_state.load_lock:
+        await app_state.provider.unload()
 
-    if state is not None:
-        state.update(_initial_load_state())
+    state.update(_initial_load_state())
     return {"status": "ok"}
 
 
