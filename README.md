@@ -838,6 +838,36 @@ docker compose -f deploy/docker-compose.yml build worker-qwen-image
 | Новая зависимость модели | ~5–10 мин (только эта модель) |
 | Добавление новой модели | Не затрагивает существующие |
 
+### HTTPS / TLS через Caddy
+
+По умолчанию gateway слушает чистый HTTP на порту 8000 — для production нужен TLS, иначе API-ключи и контент летят в открытом виде. Готовый override-файл фронтит gateway Caddy-ом с автоматическим Let's Encrypt:
+
+```bash
+cp deploy/Caddyfile.example deploy/Caddyfile
+# отредактировать infergate.example.com → ваш домен (с публичной A-записью)
+
+docker compose -f deploy/docker-compose.yml \
+               -f deploy/docker-compose.tls.yml \
+               up -d
+```
+
+Что получаем:
+- HTTPS на 443 с автоматическим выпуском и продлением сертификата (ACME)
+- HTTP/2 + HTTP/3 (QUIC) — стриминг chat completions через SSE multiplexes
+- Gzip-компрессия JSON-ответов
+- Edge-уровень `request_body max_size 200MB` (поверх app-level лимитов из `app/utils/uploads.py`)
+- `/metrics` и `/metrics/prometheus` блокируются снаружи — скрейпьте из docker-сети
+- `X-Request-ID` пробрасывается, end-to-end tracing gateway↔worker сохраняется
+
+`docker-compose.tls.yml` использует `ports: !reset []` чтобы убрать публичный 8000 наружу — gateway доступен только через Caddy. Требует Compose v2.20+; на старом Compose закомментируйте этот блок и блокируйте 8000 файрволом хоста.
+
+**LAN / self-signed** (без публичного домена) — раскомментируйте блок `:443 { tls internal ... }` в `Caddyfile.example`. Caddy сгенерит локальный CA; клиенты должны добавить его в trust store:
+```bash
+docker compose ... exec caddy cat /data/caddy/pki/authorities/local/root.crt
+```
+
+В Comput / любом OpenAI-клиенте остаётся только сменить `baseUrl` с `http://host:8000/v1/` на `https://infergate.example.com/v1/` — никакой код-правки в gateway/worker не требуется.
+
 ---
 
 ## 12. Тестирование

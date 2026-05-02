@@ -1,0 +1,56 @@
+# Caddyfile for InferGate — copy to deploy/Caddyfile and edit the domain.
+# Caddy auto-issues + auto-renews Let's Encrypt certs on first request.
+# Docs: https://caddyserver.com/docs/caddyfile
+
+# ── Public domain with Let's Encrypt ─────────────────────────────────
+# Replace `infergate.example.com` with your real domain (must resolve to
+# this host's public IP; ports 80 + 443 must be reachable from the internet).
+
+infergate.example.com {
+    # Optional: contact for ACME (cert expiry warnings).
+    # tls you@example.com
+
+    # Tighten upload caps if needed — InferGate already enforces app-level
+    # streaming limits via app/utils/uploads.py, but Caddy's request_body
+    # short-circuits oversized requests at the edge.
+    request_body {
+        max_size 200MB
+    }
+
+    # SSE / streaming chat completions need flush per chunk; Caddy's reverse_proxy
+    # streams responses by default. We disable buffering explicitly so vLLM token
+    # output reaches the client without latency spikes.
+    reverse_proxy gateway:8000 {
+        flush_interval -1
+        # Forward the X-Request-ID so InferGate's RequestIdMiddleware honours
+        # it (gateway↔worker tracing already does this end-to-end).
+        header_up X-Request-ID {http.request.header.X-Request-ID}
+    }
+
+    encode gzip
+
+    # Block the metrics surface from the internet — scrape from inside the
+    # docker network instead. Drop this block if you front Prometheus through
+    # a separate auth layer.
+    @internal_metrics path /metrics /metrics/prometheus
+    respond @internal_metrics 404
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+# ── LAN / self-signed alternative ────────────────────────────────────
+# Uncomment + remove the public domain block above when running on a private
+# network without DNS. Clients must trust Caddy's local CA — read it from
+# the caddy_data volume after first start:
+#   docker compose ... exec caddy cat /data/caddy/pki/authorities/local/root.crt
+#
+# :443 {
+#     tls internal
+#     reverse_proxy gateway:8000 {
+#         flush_interval -1
+#     }
+#     encode gzip
+# }

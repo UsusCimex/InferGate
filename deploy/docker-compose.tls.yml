@@ -1,0 +1,43 @@
+# Compose override that fronts the gateway with Caddy + automatic TLS
+# (Let's Encrypt). Layer it on top of the base compose to enable HTTPS:
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/docker-compose.tls.yml \
+#                  up -d
+#
+# Requirements:
+# - Public DNS A/AAAA record pointing to this host (Let's Encrypt ACME challenge).
+# - Ports 80 and 443 reachable from the internet.
+# - deploy/Caddyfile present (see deploy/Caddyfile.example).
+#
+# For a private LAN / self-signed setup, replace your domain in Caddyfile with
+# `:443 { tls internal ... }` — Caddy will mint a local CA cert; clients must
+# trust /data/caddy/pki/authorities/local/root.crt.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: infergate-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC) — Caddy enables it by default
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data         # ACME state, issued certs (persist across restarts)
+      - caddy_config:/config     # Caddy's internal config; cheap to rebuild
+    depends_on:
+      - gateway
+    networks:
+      - default
+
+  gateway:
+    # Drop the public 8000 binding — only Caddy reaches gateway, over the
+    # internal compose network. `!reset []` requires Compose v2.20+; older
+    # versions can comment this block and rely on a host firewall to block 8000.
+    ports: !reset []
+
+volumes:
+  caddy_data:
+  caddy_config:
