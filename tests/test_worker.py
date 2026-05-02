@@ -241,6 +241,170 @@ async def test_stats_prefers_nvml_over_torch(text_worker, monkeypatch):
     assert body["vram_free_mb"] == 3 * 1024
 
 
+# ── Async /load + /load/status ──────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def async_worker():
+    """Worker with full lifespan-style state (load_state machine, locks, no preloaded provider)."""
+    from fastapi import FastAPI
+
+    from app.worker import (
+        _ready_guard,
+        generate,
+        health,
+        load,
+        load_status,
+        synthesize,
+        unload,
+    )
+
+    app = FastAPI()
+    config = _make_config("text", "FakeTextProvider")
+    provider = FakeTextProvider(config)
+
+    app.state.provider = provider
+    app.state.config = config
+    app.state.models_dir = "."
+    app.state.reload_lock = asyncio.Lock()
+    app.state.load_lock = asyncio.Lock()
+    app.state.load_state = {
+        "status": "idle",
+        "error": None,
+        "started_at": None,
+        "duration_seconds": None,
+        "cancellation_requested": False,
+    }
+    app.state.load_task = None
+
+    app.middleware("http")(_ready_guard)
+    app.add_api_route("/health", health, methods=["GET"])
+    app.add_api_route("/load", load, methods=["POST"])
+    app.add_api_route("/load/status", load_status, methods=["GET"])
+    app.add_api_route("/unload", unload, methods=["POST"])
+    app.add_api_route("/generate", generate, methods=["POST"])
+    app.add_api_route("/synthesize", synthesize, methods=["POST"])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://worker") as ac:
+        ac._app = app  # tests poke load_state directly
+        yield ac
+
+
+@pytest.mark.asyncio
+async def test_async_load_starts_in_background_and_status_transitions(async_worker):
+    """POST /load when idle returns 202 + loading, eventually settles to ready."""
+    resp = await async_worker.post("/load")
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["status"] == "loading"
+    assert body["load_state"]["status"] in ("loading", "ready")
+
+    # Drive the background task to completion (FakeProvider load is instant).
+    task = async_worker._app.state.load_task
+    assert task is not None
+    await task
+
+    status_resp = await async_worker.get("/load/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_load_already_loaded_returns_200_sync(async_worker):
+    """If load_state is already 'ready', /load returns 200 immediately (fast path)."""
+    async_worker._app.state.load_state["status"] = "ready"
+    async_worker._app.state.provider._loaded = True
+
+    resp = await async_worker.post("/load")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_inference_returns_503_when_not_ready(async_worker):
+    """POST /generate while status='loading' must return 503 model_not_ready."""
+    async_worker._app.state.load_state["status"] = "loading"
+    resp = await async_worker.post(
+        "/generate", json={"messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 503
+    assert resp.json()["error"]["type"] == "model_not_ready"
+
+
+@pytest.mark.asyncio
+async def test_load_failure_marks_status_failed_and_can_retry(async_worker, monkeypatch):
+    """Provider.load raises → status=failed, error set; subsequent /load can retry."""
+    provider = async_worker._app.state.provider
+
+    fail_count = {"n": 0}
+    real_load = provider.load
+
+    async def flaky_load(model_dir):
+        fail_count["n"] += 1
+        if fail_count["n"] == 1:
+            raise RuntimeError("boom")
+        await real_load(model_dir)
+
+    monkeypatch.setattr(provider, "load", flaky_load)
+
+    # First attempt: 202 → background fails.
+    resp1 = await async_worker.post("/load")
+    assert resp1.status_code == 202
+    await async_worker._app.state.load_task
+
+    status = (await async_worker.get("/load/status")).json()
+    assert status["status"] == "failed"
+    assert "boom" in status["error"]
+
+    # Retry: status was 'failed' → /load enters new loading cycle.
+    resp2 = await async_worker.post("/load")
+    assert resp2.status_code == 202
+    await async_worker._app.state.load_task
+
+    status2 = (await async_worker.get("/load/status")).json()
+    assert status2["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_unload_during_load_signals_cancelling(async_worker, monkeypatch):
+    """POST /unload while loading — cancels background task, transitions away from 'loading'."""
+    provider = async_worker._app.state.provider
+
+    async def slow_load(model_dir):
+        # Long enough that the test races /unload against it.
+        await asyncio.sleep(5.0)
+        provider._loaded = True
+
+    monkeypatch.setattr(provider, "load", slow_load)
+
+    load_resp = await async_worker.post("/load")
+    assert load_resp.status_code == 202
+
+    # Give the background task a tick to start.
+    await asyncio.sleep(0.05)
+    assert async_worker._app.state.load_state["status"] == "loading"
+
+    unload_resp = await async_worker.post("/unload")
+    # FakeProvider.load awaits asyncio.sleep → cancellable → returns 200 status=ok.
+    assert unload_resp.status_code in (200, 409)
+    assert async_worker._app.state.load_state["status"] in ("idle", "cancelling")
+
+
+@pytest.mark.asyncio
+async def test_load_status_legacy_path_when_load_state_missing(text_worker):
+    """Legacy fixture (no load_state on app.state) — /load/status synthesises shape."""
+    # text_worker fixture preloads provider and doesn't set load_state.
+    from app.worker import load_status
+    text_worker._transport.app.add_api_route(
+        "/load/status", load_status, methods=["GET"]
+    )
+
+    resp = await text_worker.get("/load/status")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ready"
+
+
 @pytest.mark.asyncio
 async def test_reload_serialises_with_generate(text_worker):
     """Reload must wait for an inflight /generate to finish before

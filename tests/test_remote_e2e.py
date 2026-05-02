@@ -499,3 +499,202 @@ def test_registry_rejects_unknown_category():
         remote_provider_for("clairvoyance")
 
 
+# ── Async /load polling ─────────────────────────────────────────────
+
+
+def _make_polling_worker(
+    statuses: list[dict],
+    *,
+    accept_load: bool = True,
+) -> FastAPI:
+    """Worker that returns 202 on /load and replays `statuses` on each /load/status call."""
+    app = FastAPI()
+    cursor = {"i": 0}
+
+    @app.get("/health")
+    async def _h():
+        return {"status": "ok"}
+
+    @app.post("/load")
+    async def _l():
+        if not accept_load:
+            return JSONResponse({"status": "error"}, status_code=500)
+        return JSONResponse(
+            {"status": "loading", "load_state": {"status": "loading"}},
+            status_code=202,
+        )
+
+    @app.get("/load/status")
+    async def _s():
+        i = min(cursor["i"], len(statuses) - 1)
+        cursor["i"] += 1
+        return statuses[i]
+
+    return app
+
+
+@pytest.mark.asyncio
+async def test_e2e_async_load_polling_succeeds(monkeypatch):
+    """FakeWorker reports loading→loading→ready; gateway completes load via polling."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0, 0.0, 0.0])
+
+    app = _make_polling_worker([
+        {"status": "loading"},
+        {"status": "loading"},
+        {"status": "ready"},
+    ])
+    transport = ASGITransport(app=app)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(
+            base_url=self._worker_url, timeout=timeout, transport=transport
+        )
+
+    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
+
+    provider = r.RemoteTextProvider(_make_remote_config("text"))
+    await provider.load("/tmp")
+    assert provider.is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_e2e_async_load_failure_propagates(monkeypatch):
+    """FakeWorker reports failed → gateway raises RuntimeError carrying error."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0])
+
+    app = _make_polling_worker([
+        {"status": "failed", "error": "OOM at layer 42"},
+    ])
+    transport = ASGITransport(app=app)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(
+            base_url=self._worker_url, timeout=timeout, transport=transport
+        )
+
+    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
+
+    provider = r.RemoteTextProvider(_make_remote_config("text"))
+    with pytest.raises(RuntimeError, match="OOM at layer 42"):
+        await provider.load("/tmp")
+    assert not provider.is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_e2e_load_total_timeout(monkeypatch):
+    """FakeWorker stays in loading forever — gateway raises after _LOAD_TIMEOUT."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.05])
+    monkeypatch.setattr(r, "_LOAD_TIMEOUT", 0.2)
+
+    app = _make_polling_worker([{"status": "loading"}] * 100)
+    transport = ASGITransport(app=app)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(
+            base_url=self._worker_url, timeout=timeout, transport=transport
+        )
+
+    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
+
+    provider = r.RemoteTextProvider(_make_remote_config("text"))
+    with pytest.raises(RuntimeError, match="did not become ready"):
+        await provider.load("/tmp")
+    assert not provider.is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_e2e_legacy_sync_worker_still_works(monkeypatch):
+    """Legacy worker returns 200 on /load (no /load/status route) — gateway succeeds."""
+    from app.providers import remote as r
+
+    legacy = FastAPI()
+
+    @legacy.get("/health")
+    async def _h():
+        return {"status": "ok"}
+
+    @legacy.post("/load")
+    async def _l():
+        return {"status": "ok"}
+
+    transport = ASGITransport(app=legacy)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(
+            base_url=self._worker_url, timeout=timeout, transport=transport
+        )
+
+    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
+
+    provider = r.RemoteTextProvider(_make_remote_config("text"))
+    await provider.load("/tmp")
+    assert provider.is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_e2e_polling_handles_legacy_worker_404_on_status(monkeypatch):
+    """Mid-protocol worker: returns 202 but has no /load/status — gateway accepts as ready."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0])
+
+    half_legacy = FastAPI()
+
+    @half_legacy.get("/health")
+    async def _h():
+        return {"status": "ok"}
+
+    @half_legacy.post("/load")
+    async def _l():
+        return JSONResponse({"status": "loading"}, status_code=202)
+
+    # No /load/status — FastAPI returns 404.
+
+    transport = ASGITransport(app=half_legacy)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(
+            base_url=self._worker_url, timeout=timeout, transport=transport
+        )
+
+    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
+
+    provider = r.RemoteTextProvider(_make_remote_config("text"))
+    await provider.load("/tmp")
+    assert provider.is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_e2e_load_cancellation_during_polling(monkeypatch):
+    """Outer asyncio.wait_for cancels polling — gateway closes httpx client cleanly."""
+    import asyncio as _asyncio
+
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.5])
+
+    app = _make_polling_worker([{"status": "loading"}] * 100)
+    transport = ASGITransport(app=app)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(
+            base_url=self._worker_url, timeout=timeout, transport=transport
+        )
+
+    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
+
+    provider = r.RemoteTextProvider(_make_remote_config("text"))
+    with pytest.raises(_asyncio.TimeoutError):
+        await _asyncio.wait_for(provider.load("/tmp"), timeout=0.2)
+
+    assert not provider.is_loaded()
+    # httpx client must be closed → second load() rebuilds it without error.
+    assert provider._client is None
+
+

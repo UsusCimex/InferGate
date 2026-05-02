@@ -58,6 +58,29 @@ _MAX_CONNECTIONS = _env_int("GATEWAY_REMOTE_MAX_CONNECTIONS", 100)
 _RETRY_ATTEMPTS = max(1, _env_int("GATEWAY_REMOTE_RETRY_ATTEMPTS", 3))
 _RETRY_BASE_BACKOFF = _env_float("GATEWAY_REMOTE_RETRY_BACKOFF", 0.25)
 
+# Stepped backoff: small models (<=0.5s) avoid the full 2s overhead, long loads
+# settle into 2s polls. Override via GATEWAY_REMOTE_LOAD_POLL_BACKOFF="0.5,1,2,2,2".
+_DEFAULT_POLL_BACKOFF = "0.5,1.0,2.0,2.0,2.0"
+
+
+def _parse_poll_backoff() -> list[float]:
+    raw = os.environ.get("GATEWAY_REMOTE_LOAD_POLL_BACKOFF", _DEFAULT_POLL_BACKOFF)
+    out: list[float] = []
+    for piece in raw.split(","):
+        piece = piece.strip()
+        if not piece:
+            continue
+        try:
+            v = float(piece)
+            if v > 0:
+                out.append(v)
+        except ValueError:
+            continue
+    return out or [0.5, 1.0, 2.0, 2.0, 2.0]
+
+
+_LOAD_POLL_BACKOFF = _parse_poll_backoff()
+
 
 def _generate_timeout() -> httpx.Timeout:
     return httpx.Timeout(connect=_CONNECT_TIMEOUT, read=_GENERATE_TIMEOUT, write=10.0, pool=10.0)
@@ -153,7 +176,13 @@ class BaseRemoteMixin:
         )
 
     async def load(self, model_dir: str) -> None:
-        """Connect to the worker and POST /load; raises on either failure."""
+        """Connect to the worker and ensure the model is loaded.
+
+        Worker contract:
+        - POST /load returns 200 → ready immediately (legacy worker fast-path).
+        - POST /load returns 202 → background load running; we poll GET /load/status
+          until "ready"/"failed" or `_LOAD_TIMEOUT` deadline.
+        """
         self._client = self._build_client(_generate_timeout())
 
         httpx_logger = logging.getLogger("httpx")
@@ -183,21 +212,32 @@ class BaseRemoteMixin:
                     timeout=_load_timeout(),
                     headers=_request_id_headers(),
                 )
-                load_resp.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                body = e.response.text[:500] if e.response is not None else ""
-                await self._client.aclose()
-                self._client = None
-                raise RuntimeError(
-                    f"Worker {self._worker_url} rejected /load "
-                    f"(status {e.response.status_code}): {body}"
-                ) from e
             except httpx.HTTPError as e:
                 await self._client.aclose()
                 self._client = None
                 raise RuntimeError(
                     f"Worker {self._worker_url} /load call failed: {e}"
                 ) from e
+
+            if load_resp.status_code == 202:
+                try:
+                    await self._poll_load_status(load_resp)
+                except BaseException:
+                    # Cancel/timeout/failure → release the httpx pool slot.
+                    await self._client.aclose()
+                    self._client = None
+                    raise
+            elif 200 <= load_resp.status_code < 300:
+                # Legacy worker — synchronous /load returned success.
+                pass
+            else:
+                body = load_resp.text[:500]
+                await self._client.aclose()
+                self._client = None
+                raise RuntimeError(
+                    f"Worker {self._worker_url} rejected /load "
+                    f"(status {load_resp.status_code}): {body}"
+                )
         finally:
             httpx_logger.setLevel(prev_level)
 
@@ -206,6 +246,80 @@ class BaseRemoteMixin:
             "Connected to worker %s for %s",
             self._worker_url, self.model_id,  # type: ignore[attr-defined]
         )
+
+    async def _poll_load_status(self, initial_resp: httpx.Response) -> None:
+        """Poll GET /load/status until ready/failed or _LOAD_TIMEOUT elapses."""
+        client = self._client
+        assert client is not None
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _LOAD_TIMEOUT
+        backoff = list(_LOAD_POLL_BACKOFF)
+
+        # Initial 202 body may already say "ready" if the worker raced us.
+        try:
+            body = initial_resp.json()
+        except ValueError:
+            body = {}
+        state = body.get("load_state") or body
+        if state.get("status") == "ready":
+            return
+        if state.get("status") == "failed":
+            raise RuntimeError(
+                f"Worker {self._worker_url} load failed: {state.get('error', 'unknown')}"
+            )
+
+        idx = 0
+        while True:
+            now = loop.time()
+            if now >= deadline:
+                raise RuntimeError(
+                    f"Worker {self._worker_url} did not become ready within "
+                    f"{_LOAD_TIMEOUT}s (last status: {state.get('status')!r})"
+                )
+            sleep_for = backoff[min(idx, len(backoff) - 1)]
+            sleep_for = min(sleep_for, deadline - now)
+            await asyncio.sleep(sleep_for)
+            idx += 1
+
+            try:
+                resp = await client.get(
+                    "/load/status",
+                    timeout=_quick_timeout(),
+                    headers=_request_id_headers(),
+                )
+            except httpx.HTTPError as e:
+                # Transient — keep polling until the deadline.
+                logger.debug("Poll /load/status failed (transient): %s", e)
+                continue
+
+            if resp.status_code == 404:
+                # Legacy worker without /load/status — accept the original 202 as ready.
+                logger.info(
+                    "Worker %s lacks /load/status — assuming ready (legacy contract)",
+                    self._worker_url,
+                )
+                return
+
+            if resp.status_code != 200:
+                logger.debug(
+                    "Poll /load/status returned %d: %s",
+                    resp.status_code, resp.text[:200],
+                )
+                continue
+
+            try:
+                state = resp.json()
+            except ValueError:
+                continue
+
+            status = state.get("status")
+            if status == "ready":
+                return
+            if status == "failed":
+                raise RuntimeError(
+                    f"Worker {self._worker_url} load failed: "
+                    f"{state.get('error', 'unknown')}"
+                )
 
     async def unload(self) -> None:
         """Best-effort /unload + close the HTTP client."""

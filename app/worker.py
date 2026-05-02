@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
+import time
 import warnings
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -15,6 +18,49 @@ from app.providers.base import BaseProvider
 from app.providers.registry import get_provider_class
 
 logger = logging.getLogger(__name__)
+
+_UNLOAD_CANCEL_TIMEOUT = 10.0
+
+
+def _initial_load_state() -> dict[str, Any]:
+    return {
+        "status": "idle",
+        "error": None,
+        "started_at": None,
+        "duration_seconds": None,
+        "cancellation_requested": False,
+    }
+
+
+async def _run_load(app: FastAPI, models_dir: str) -> None:
+    """Background load task — owns load_lock; updates load_state on completion/failure."""
+    state: dict[str, Any] = app.state.load_state
+    provider: BaseProvider = app.state.provider
+    started = time.monotonic()
+    state["started_at"] = started
+    state["duration_seconds"] = None
+    state["error"] = None
+    state["status"] = "loading"
+
+    async with app.state.load_lock:
+        try:
+            await provider.load(models_dir)
+            state["status"] = "ready"
+            logger.info(
+                "Loaded %s in %.1fs (background)",
+                app.state.config.id, time.monotonic() - started,
+            )
+        except asyncio.CancelledError:
+            state["status"] = "idle"
+            state["error"] = "cancelled"
+            logger.info("Background load of %s cancelled", app.state.config.id)
+            raise
+        except Exception as e:
+            state["status"] = "failed"
+            state["error"] = str(e)
+            logger.error("Background load of %s failed: %s", app.state.config.id, e)
+        finally:
+            state["duration_seconds"] = time.monotonic() - started
 
 
 @asynccontextmanager
@@ -56,12 +102,22 @@ async def lifespan(app: FastAPI):
     app.state.models_dir = models_dir
     # Serialises /reload vs /generate+/synthesize.
     app.state.reload_lock = asyncio.Lock()
+    # Held by the background /load task across provider.load(); also acquired by /reload
+    # (reload_lock first → load_lock) and /unload to serialise model swaps.
+    app.state.load_lock = asyncio.Lock()
+    app.state.load_state = _initial_load_state()
+    app.state.load_task = None
 
     # Start unloaded — gateway's VRAM planner calls /load when it's made room.
     logger.info("Worker started (model unloaded): %s — awaiting /load", config.id)
     yield
 
     logger.info("Worker shutting down: %s", config.id)
+    task: asyncio.Task | None = app.state.load_task
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(task, timeout=_UNLOAD_CANCEL_TIMEOUT)
     if provider.is_loaded():
         await provider.unload()
 
@@ -69,13 +125,47 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="InferGate Worker", lifespan=lifespan)
 
 
+_INFERENCE_PATHS = frozenset({
+    "/generate",
+    "/synthesize",
+    "/voice-clone",
+    "/transcribe",
+    "/upscale",
+    "/embed",
+    "/embed-audio",
+    "/embed-image",
+    "/embed-video",
+})
+
+
+@app.middleware("http")
+async def _ready_guard(request: Request, call_next):
+    """Return 503 from inference endpoints when the model isn't yet ready."""
+    if request.url.path in _INFERENCE_PATHS:
+        state = getattr(request.app.state, "load_state", None)
+        if state is not None and state.get("status") != "ready":
+            return JSONResponse(
+                {"error": {
+                    "message": f"model not ready (status={state.get('status')})",
+                    "type": "model_not_ready",
+                }},
+                status_code=503,
+            )
+    return await call_next(request)
+
+
 @app.get("/health")
 async def health(request: Request):
     """Return liveness + model/category metadata."""
-    provider: BaseProvider = request.app.state.provider
+    state = getattr(request.app.state, "load_state", None)
     config = request.app.state.config
+    if state is not None:
+        ready = state.get("status") == "ready"
+    else:
+        # Fixture-built apps may not init load_state — fall back to provider state.
+        ready = request.app.state.provider.is_loaded()
     return {
-        "status": "ok" if provider.is_loaded() else "loading",
+        "status": "ok" if ready else "loading",
         "model": config.id,
         "category": config.category,
     }
@@ -146,29 +236,109 @@ async def stats(request: Request):
 
 @app.post("/load")
 async def load(request: Request):
-    """Load the configured model; returns structured 503 on provider.load failure."""
-    provider: BaseProvider = request.app.state.provider
-    if provider.is_loaded():
-        return {"status": "ok", "model": request.app.state.config.id}
+    """Start the configured model loading; returns 200 if ready, 202 if loading begins."""
+    app_state = request.app.state
+    config = app_state.config
 
-    models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
-    try:
-        await provider.load(models_dir)
-    except Exception as e:
-        logger.error("Load failed for %s: %s", request.app.state.config.id, e)
+    # Fixture-built apps without load_state still want sync semantics for legacy tests.
+    if not hasattr(app_state, "load_state"):
+        provider: BaseProvider = app_state.provider
+        if provider.is_loaded():
+            return {"status": "ok", "model": config.id}
+        models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
+        try:
+            await provider.load(models_dir)
+        except Exception as e:
+            logger.error("Load failed for %s: %s", config.id, e)
+            return JSONResponse(
+                {"error": {"message": str(e), "type": "load_failed"}},
+                status_code=503,
+            )
+        return {"status": "ok", "model": config.id}
+
+    state: dict[str, Any] = app_state.load_state
+    status = state["status"]
+
+    if status == "ready":
+        return {"status": "ok", "model": config.id}
+
+    if status in ("loading", "cancelling"):
         return JSONResponse(
-            {"error": {"message": str(e), "type": "load_failed"}},
-            status_code=503,
+            {"status": "loading", "model": config.id, "load_state": _public_state(state)},
+            status_code=202,
         )
-    logger.info("Loaded %s via /load", request.app.state.config.id)
-    return {"status": "ok", "model": request.app.state.config.id}
+
+    # Reap any prior task before starting a new one — avoids parallel loads.
+    prior: asyncio.Task | None = app_state.load_task
+    if prior is not None and not prior.done():
+        with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+            await asyncio.wait_for(prior, timeout=_UNLOAD_CANCEL_TIMEOUT)
+
+    state.update(_initial_load_state())
+    state["status"] = "loading"
+    state["started_at"] = time.monotonic()
+    models_dir = os.environ.get("WORKER_MODELS_DIR", app_state.models_dir)
+    app_state.load_task = asyncio.create_task(_run_load(request.app, models_dir))
+    return JSONResponse(
+        {"status": "loading", "model": config.id, "load_state": _public_state(state)},
+        status_code=202,
+    )
+
+
+@app.get("/load/status")
+async def load_status(request: Request):
+    """Return the current background-load state machine snapshot."""
+    state = getattr(request.app.state, "load_state", None)
+    if state is None:
+        # Legacy fixture path — synthesise a stable shape from provider.is_loaded().
+        loaded = request.app.state.provider.is_loaded()
+        return {
+            "status": "ready" if loaded else "idle",
+            "model": request.app.state.config.id,
+        }
+    return {"model": request.app.state.config.id, **_public_state(state)}
+
+
+def _public_state(state: dict[str, Any]) -> dict[str, Any]:
+    """Strip internal fields before returning state to the gateway."""
+    return {
+        "status": state["status"],
+        "error": state.get("error"),
+        "started_at": state.get("started_at"),
+        "duration_seconds": state.get("duration_seconds"),
+    }
 
 
 @app.post("/unload")
 async def unload(request: Request):
-    """Unload the current model."""
-    provider: BaseProvider = request.app.state.provider
-    await provider.unload()
+    """Cancel any in-flight load, then unload the model."""
+    app_state = request.app.state
+    state = getattr(app_state, "load_state", None)
+    task: asyncio.Task | None = getattr(app_state, "load_task", None)
+
+    if state is not None and task is not None and not task.done():
+        state["cancellation_requested"] = True
+        state["status"] = "cancelling"
+        task.cancel()
+        try:
+            await asyncio.wait_for(task, timeout=_UNLOAD_CANCEL_TIMEOUT)
+        except (asyncio.CancelledError, TimeoutError):
+            return JSONResponse(
+                {"status": "cancelling", "note": "load may continue in background"},
+                status_code=409,
+            )
+
+    # load_lock guarantees we don't race a freshly started load.
+    lock = getattr(app_state, "load_lock", None)
+    provider: BaseProvider = app_state.provider
+    if lock is not None:
+        async with lock:
+            await provider.unload()
+    else:
+        await provider.unload()
+
+    if state is not None:
+        state.update(_initial_load_state())
     return {"status": "ok"}
 
 
