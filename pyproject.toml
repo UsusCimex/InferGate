@@ -49,6 +49,9 @@ embedding = [
 monitoring = [
     "prometheus-client>=0.20.0",
 ]
+redis = [
+    "redis>=5.0",
+]
 dev = [
     "pytest>=8.4.0",
     "pytest-asyncio>=0.26.0",
@@ -57,8 +60,10 @@ dev = [
     "pillow>=10.0",
     "psutil>=5.9",
     "prometheus-client>=0.21.0",
+    "redis>=5.0",
+    "fakeredis[lua]>=2.20",
 ]
-all = ["infergate[gpu,tts,embedding,monitoring,quant,dev]"]
+all = ["infergate[gpu,tts,embedding,monitoring,quant,redis,dev]"]
 
 [build-system]
 requires = ["hatchling"]

@@ -1,10 +1,11 @@
 """Contract tests for CacheBackend implementations.
 
 Each implementation gets the same test battery via parametrisation. Adding a
-new backend = add it to `_BACKEND_FACTORIES`; the contract is enforced.
+new backend = add it to `_BACKEND_BUILDERS`; the contract is enforced.
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -17,24 +18,44 @@ from app.services.cache_backends import (
 )
 
 
-def _local_factory(tmp_path) -> dict[str, Any]:
-    return {
+def _local_builder(tmp_path) -> tuple[type[CacheBackend], dict[str, Any], dict]:
+    cfg = {
         "enabled": True,
         "directory": str(tmp_path / "cache"),
         "max_total_size_gb": 0.001,
         "eviction_policy": "lru",
     }
+    return LocalCacheBackend, cfg, {}
 
 
-_BACKEND_FACTORIES: dict[str, Any] = {
-    "local": (LocalCacheBackend, _local_factory),
+def _redis_builder(tmp_path) -> tuple[type[CacheBackend], dict[str, Any], dict]:
+    """Build a RedisCacheBackend wired to fakeredis (no external Redis needed)."""
+    import fakeredis.aioredis
+
+    from app.services.cache_backends import RedisCacheBackend
+
+    cfg = {
+        "enabled": True,
+        "backend": "redis",
+        "redis_prefix": f"infergate:test:{uuid.uuid4().hex[:8]}",
+        "max_total_size_gb": 0.001,
+        "eviction_policy": "lru",
+    }
+    fake = fakeredis.aioredis.FakeRedis()
+    return RedisCacheBackend, cfg, {"client": fake}
+
+
+_BACKEND_BUILDERS: dict[str, Any] = {
+    "local": _local_builder,
+    "redis": _redis_builder,
 }
 
 
-@pytest_asyncio.fixture(params=list(_BACKEND_FACTORIES.keys()))
+@pytest_asyncio.fixture(params=list(_BACKEND_BUILDERS.keys()))
 async def backend(request, tmp_path) -> CacheBackend:
-    cls, cfg_factory = _BACKEND_FACTORIES[request.param]
-    instance: CacheBackend = cls(cfg_factory(tmp_path))
+    builder = _BACKEND_BUILDERS[request.param]
+    cls, cfg, kwargs = builder(tmp_path)
+    instance: CacheBackend = cls(cfg, **kwargs)
     await instance.initialize()
     yield instance
     await instance.close()
@@ -173,6 +194,17 @@ def test_factory_explicit_local(tmp_path):
 def test_factory_unknown_backend_raises(tmp_path):
     with pytest.raises(ValueError, match="Unknown cache backend"):
         make_cache_backend({"backend": "telepathy", "directory": str(tmp_path)})
+
+
+def test_factory_redis_returns_redis_backend():
+    """make_cache_backend({backend: redis}) must yield a RedisCacheBackend (no connection yet)."""
+    from app.services.cache_backends import RedisCacheBackend
+
+    backend = make_cache_backend({
+        "backend": "redis",
+        "redis_url": "redis://localhost:6379/0",  # not connecting yet — only on initialize()
+    })
+    assert isinstance(backend, RedisCacheBackend)
 
 
 def test_factory_case_insensitive(tmp_path):

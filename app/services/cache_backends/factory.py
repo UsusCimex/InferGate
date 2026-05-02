@@ -15,7 +15,10 @@ def make_cache_backend(global_config: dict[str, Any]) -> CacheBackend:
     backend = str(global_config.get("backend", "local")).lower()
     if backend == "local":
         return LocalCacheBackend(global_config)
+    if backend == "redis":
+        # Lazy import: redis is optional; only fail if user actually selects it.
+        from app.services.cache_backends.redis import RedisCacheBackend
+        return RedisCacheBackend(global_config)
     raise ValueError(
-        f"Unknown cache backend '{backend}'. Supported: local. "
-        f"(Redis/S3 backends can be plugged in by implementing CacheBackend.)"
+        f"Unknown cache backend '{backend}'. Supported: local, redis."
     )
