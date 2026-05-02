@@ -137,7 +137,7 @@ async def test_cache_missing_file(services):
     # Delete the file manually (simulate corruption)
     import asyncio
     from pathlib import Path
-    async with cache_mgr._db.execute(
+    async with cache_mgr.backend._db.execute(
         "SELECT file_path FROM cache_entries WHERE key = ?", ("file-key",)
     ) as cursor:
         row = await cursor.fetchone()

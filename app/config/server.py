@@ -28,6 +28,7 @@ class QueueConfig(BaseModel):
 
 class CacheConfig(BaseModel):
     enabled: bool = True
+    backend: str = "local"
     directory: str = "./cache"
     max_total_size_gb: float = Field(10, ge=0)
     eviction_policy: EvictionPolicy = EvictionPolicy.LRU
