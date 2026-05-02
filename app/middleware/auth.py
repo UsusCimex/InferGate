@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -12,7 +13,19 @@ class ApiKeyMiddleware:
 
     def __init__(self, app: ASGIApp, api_keys: list[str]) -> None:
         self.app = app
-        self._api_keys = set(api_keys)
+        # Keep a list (not a set) so each comparison runs against every entry
+        # at the same speed regardless of which key is valid.
+        self._api_keys = list(api_keys)
+
+    def _is_valid(self, token: str) -> bool:
+        if not token:
+            return False
+        # OR over constant-time compare — never short-circuits on first match.
+        valid = False
+        for key in self._api_keys:
+            if hmac.compare_digest(token, key):
+                valid = True
+        return valid
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["path"] in _SKIP_PATHS:
@@ -24,7 +37,7 @@ class ApiKeyMiddleware:
 
         token = auth_header[7:] if auth_header.startswith("Bearer ") else auth_header
 
-        if not token or token not in self._api_keys:
+        if not self._is_valid(token):
             body = json.dumps(
                 {"error": {"message": "Invalid API key", "type": "authentication_error"}}
             ).encode()

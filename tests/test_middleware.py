@@ -141,3 +141,16 @@ async def test_auth_rejects_empty_token(app_with_auth):
 async def test_auth_skips_health(app_with_auth):
     resp = await app_with_auth.get("/health")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_auth_uses_constant_time_compare():
+    """ApiKeyMiddleware._is_valid must accept the right key and reject anything else."""
+    from app.middleware.auth import ApiKeyMiddleware
+
+    mw = ApiKeyMiddleware(app=None, api_keys=["key-a", "key-b", "key-c"])  # type: ignore[arg-type]
+    assert mw._is_valid("key-a") is True
+    assert mw._is_valid("key-b") is True
+    assert mw._is_valid("key-c") is True
+    assert mw._is_valid("key-d") is False
+    assert mw._is_valid("") is False
