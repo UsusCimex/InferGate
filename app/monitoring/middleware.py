@@ -54,6 +54,7 @@ _STATIC_ROUTES = frozenset({
     "/v1/audio/speech/voice-clone",
     "/v1/audio/transcriptions",
     "/v1/models",
+    "/v1/health",
     "/cache",
     "/cache/stats",
     "/health",

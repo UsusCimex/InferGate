@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 _MAX_TRACKED_IPS = 10_000
-_SKIP_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json"})
+_SKIP_PATHS = frozenset({"/health", "/v1/health", "/docs", "/redoc", "/openapi.json"})
 
 
 class RateLimitMiddleware:

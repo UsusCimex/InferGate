@@ -9,7 +9,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
-_SKIP_PATHS = frozenset({"/health", "/openapi.json"})
+_SKIP_PATHS = frozenset({"/health", "/v1/health", "/openapi.json"})
 
 
 def _format_enabled() -> bool:

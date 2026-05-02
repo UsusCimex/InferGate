@@ -16,7 +16,9 @@ router = APIRouter()
 
 
 @router.get("/health")
+@router.get("/v1/health")
 async def health(cache=Depends(get_cache_manager)):
+    """Liveness probe. /v1/health alias matches OpenAI-style clients that prefix every call."""
     if not cache.is_initialized():
         return JSONResponse({"status": "unhealthy", "reason": "cache DB not initialized"}, status_code=503)
     return {"status": "ok"}

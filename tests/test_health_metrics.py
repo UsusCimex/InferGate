@@ -12,6 +12,14 @@ async def test_health_ok(client):
 
 
 @pytest.mark.asyncio
+async def test_health_v1_alias(client):
+    """OpenAI-style clients prefix every path with /v1 — /v1/health must mirror /health."""
+    resp = await client.get("/v1/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_metrics(client):
     resp = await client.get("/metrics")
     assert resp.status_code == 200
