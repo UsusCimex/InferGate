@@ -297,9 +297,11 @@ class CacheManager:
             (model_id,),
         ) as cursor:
             miss_row = await cursor.fetchone()
-            misses = miss_row[0] if miss_row else entries
+            misses = miss_row[0] if miss_row else 0
 
-        hit_rate = round(hits / (hits + misses) * 100, 1) if (hits + misses) > 0 else 0.0
+        # hit_rate is meaningful only after at least one hit or recorded miss; otherwise 0.0.
+        total = hits + misses
+        hit_rate = round(hits / total * 100, 1) if total > 0 else 0.0
 
         return {
             "entries": entries,

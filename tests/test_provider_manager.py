@@ -738,4 +738,27 @@ async def test_reload_remote_falls_back_on_worker_error(services):
     # provider so the model is still registered. `changed` is True:
     # something WAS updated (the provider instance is fresh).
     assert changed is True
+
+
+@pytest.mark.asyncio
+async def test_get_model_lock_idempotent(services):
+    """_get_model_lock must return the same Lock instance for repeated calls."""
+    manager = services["manager"]
+    lock_a = manager._get_model_lock("test-image")
+    lock_b = manager._get_model_lock("test-image")
+    assert lock_a is lock_b
+
+
+@pytest.mark.asyncio
+async def test_get_model_lock_concurrent(services):
+    """Concurrent _get_model_lock calls under asyncio must share one Lock instance."""
+    import asyncio as _asyncio
+
+    manager = services["manager"]
+
+    async def _fetch():
+        return manager._get_model_lock("test-text")
+
+    results = await _asyncio.gather(*[_fetch() for _ in range(20)])
+    assert all(lock is results[0] for lock in results)
     assert "test-image" in manager._registry

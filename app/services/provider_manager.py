@@ -156,9 +156,8 @@ class ProviderManager:
         return provider is not None and bool(provider.config.worker_url)
 
     def _get_model_lock(self, model_id: str) -> asyncio.Lock:
-        if model_id not in self._model_locks:
-            self._model_locks[model_id] = asyncio.Lock()
-        return self._model_locks[model_id]
+        # setdefault is atomic on dicts: two concurrent callers see the same Lock instance.
+        return self._model_locks.setdefault(model_id, asyncio.Lock())
 
     def start_worker_monitor(self) -> None:
         """Start the background task that tracks remote worker reachability."""
@@ -221,7 +220,10 @@ class ProviderManager:
                             "Worker disconnected: %s (%s) — marking unavailable",
                             model_id, provider.config.worker_url,
                         )
-                        provider._loaded = False
+                        # Run unload() so httpx clients are closed; swallow errors —
+                        # the worker is already unreachable.
+                        with contextlib.suppress(Exception):
+                            await provider.unload()
                         async with self._state_lock:
                             self._loaded_order.pop(model_id, None)
                     reachable.discard(model_id)

@@ -164,6 +164,36 @@ async def test_eviction_for_model(cache):
 
 
 @pytest.mark.asyncio
+async def test_hit_rate_zero_when_no_records(cache):
+    """Without recorded hits or misses, hit_rate must be 0.0 — not derived from entries."""
+    cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
+    key = cache.make_key("model-zero", {"prompt": "a"})
+    await cache.put(key, b"data", "model-zero", cfg)
+
+    stats = await cache.stats("model-zero")
+    assert stats["hit_count"] == 0
+    assert stats["miss_count"] == 0
+    assert stats["hit_rate_percent"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_hit_rate_after_hits_and_misses(cache):
+    """hit_rate must reflect real hits and recorded misses."""
+    cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
+    key = cache.make_key("model-r", {"prompt": "x"})
+    await cache.put(key, b"data", "model-r", cfg)
+    await cache.get(key)  # hit
+    await cache.get(key)  # hit
+    await cache.get(key)  # hit
+    await cache.record_miss("model-r")
+
+    stats = await cache.stats("model-r")
+    assert stats["hit_count"] == 3
+    assert stats["miss_count"] == 1
+    assert stats["hit_rate_percent"] == 75.0
+
+
+@pytest.mark.asyncio
 async def test_close_and_operations(cache):
     await cache.close()
     # Operations on closed cache should return safely

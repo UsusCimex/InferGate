@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Build services on startup and tear them down on shutdown."""
-    server_cfg = load_server_config()
+    # create_app() already loaded server config and stashed it on app.state.
+    server_cfg = app.state.server_config
     model_cfgs = load_model_configs()
 
     logging.basicConfig(
@@ -86,16 +87,20 @@ async def lifespan(app: FastAPI):
         defaults.get("embedding_video"),
         *server_cfg.gpu.pinned_models,
     ]))
-    for model_id in preload_ids:
+
+    async def _preload_one(model_id: str) -> None:
         if model_id is None:
-            continue
+            return
         try:
             if manager.get_config(model_id).worker_url:
-                continue
+                return
             await manager.ensure_loaded(model_id)
             logger.info("Preloaded model: %s", model_id)
         except Exception as e:
             logger.warning("Failed to preload %s: %s", model_id, e)
+
+    # Parallel preload — VRAM planner serialises evictions internally.
+    await asyncio.gather(*[_preload_one(mid) for mid in preload_ids])
 
     cleanup_interval = server_cfg.cache.cleanup_interval_minutes * 60
 
@@ -153,11 +158,14 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    server_cfg = load_server_config()
+    # Stash so lifespan() doesn't re-parse YAML on every startup.
+    app.state.server_config = server_cfg
+
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
-    server_cfg = load_server_config()
     # CORS before auth so preflight requests pass without an API key.
     app.add_middleware(
         CORSMiddleware,
