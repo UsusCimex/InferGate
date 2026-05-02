@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
         max_vram_budget_mb=server_cfg.gpu.max_vram_budget_mb,
         vram_headroom_mb=server_cfg.gpu.vram_headroom_mb,
         category_reservations=server_cfg.gpu.category_reservations,
+        worker_url_template=server_cfg.gpu.worker_url_template,
     )
     manager.discover_models(model_cfgs)
     manager.validate_config()

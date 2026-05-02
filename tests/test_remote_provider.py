@@ -161,3 +161,83 @@ def test_remote_request_id_headers_empty_when_unset():
 
     set_request_id(None)
     assert _request_id_headers() == {}
+
+
+# ── Worker URL resolution chain ────────────────────────────────────
+
+
+def test_resolve_worker_url_env_first(monkeypatch):
+    """env WORKER_URL_<ID> wins over template."""
+    from app.services.provider_manager import resolve_worker_url
+
+    monkeypatch.setenv("WORKER_URL_QWEN3_5_4B", "http://from-env:8001")
+    url = resolve_worker_url(
+        "qwen3.5-4b", template="http://discovery/{id}:8000"
+    )
+    assert url == "http://from-env:8001"
+
+
+def test_resolve_worker_url_template_fallback(monkeypatch):
+    """When env is missing, the template is used."""
+    from app.services.provider_manager import resolve_worker_url
+
+    monkeypatch.delenv("WORKER_URL_QWEN3_5_4B", raising=False)
+    url = resolve_worker_url(
+        "qwen3.5-4b", template="http://worker-{id}.workers:8000"
+    )
+    assert url == "http://worker-qwen3.5-4b.workers:8000"
+
+
+def test_resolve_worker_url_returns_none_without_template_or_env(monkeypatch):
+    from app.services.provider_manager import resolve_worker_url
+
+    monkeypatch.delenv("WORKER_URL_LOCAL_ONLY", raising=False)
+    assert resolve_worker_url("local-only", template=None) is None
+
+
+def test_resolve_worker_url_handles_special_chars_in_id(monkeypatch):
+    """env key normalisation: dots and dashes collapse to underscores; uppercased."""
+    from app.services.provider_manager import resolve_worker_url
+
+    monkeypatch.setenv("WORKER_URL_FLUX1_SCHNELL_FP8", "http://flux:8001")
+    url = resolve_worker_url("flux1-schnell.fp8", template=None)
+    assert url == "http://flux:8001"
+
+
+def test_resolve_worker_url_bad_template_returns_none(monkeypatch, caplog):
+    """A template that references a non-existent placeholder logs a warning, returns None."""
+    import logging
+
+    from app.services.provider_manager import resolve_worker_url
+
+    monkeypatch.delenv("WORKER_URL_X", raising=False)
+    with caplog.at_level(logging.WARNING):
+        url = resolve_worker_url("x", template="http://worker-{nonexistent}:8000")
+    assert url is None
+    assert any("could not be formatted" in r.message for r in caplog.records)
+
+
+def test_provider_manager_uses_template_for_remote_discovery():
+    """ProviderManager.discover_models picks up template-derived worker URLs."""
+    from app.services.provider_manager import ProviderManager
+
+    manager = ProviderManager(
+        model_dir=".", max_loaded=2,
+        worker_url_template="http://worker-{id}:8000",
+    )
+    cfg = ModelConfig(
+        id="text-template",
+        display_name="t",
+        category="text",
+        provider_class="Unused",
+        enabled=True,
+        worker_url=None,  # neither explicit nor env
+        model={"hub_id": "test/test", "vram_mb": 0},
+        cache=ModelCacheConfig(),
+        queue=ModelQueueConfig(),
+        metadata=ModelMetadata(),
+    )
+    manager.discover_models([cfg])
+
+    provider = manager.get("text-template")
+    assert provider.config.worker_url == "http://worker-text-template:8000"

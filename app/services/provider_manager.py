@@ -18,6 +18,28 @@ _WORKER_MONITOR_INTERVAL = 10
 _WORKER_MAX_BACKOFF = 300
 
 
+def resolve_worker_url(model_id: str, template: str | None = None) -> str | None:
+    """Pick a worker URL for `model_id` using the configured resolution chain.
+
+    Order: WORKER_URL_<ID> env var → `template` formatted with {id} → None.
+    Caller decides whether None means "local provider" (config.worker_url left
+    unset) or an error.
+    """
+    env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", model_id.upper())
+    env_url = os.environ.get(env_key)
+    if env_url:
+        return env_url
+    if template:
+        try:
+            return template.format(id=model_id)
+        except (KeyError, IndexError) as e:
+            logger.warning(
+                "worker_url_template %r could not be formatted for %s: %s",
+                template, model_id, e,
+            )
+    return None
+
+
 class ModelNotFoundError(Exception):
     pass
 
@@ -45,6 +67,7 @@ class ProviderManager:
         max_vram_budget_mb: int = 0,
         vram_headroom_mb: int = 0,
         category_reservations: dict[str, int] | None = None,
+        worker_url_template: str | None = None,
     ):
         self._registry: dict[str, BaseProvider] = {}
         self._loaded_order: OrderedDict[str, None] = OrderedDict()
@@ -54,6 +77,7 @@ class ProviderManager:
         self._model_dir = model_dir
         self._pinned = set(pinned or [])
         self._category_reservations = dict(category_reservations or {})
+        self._worker_url_template = worker_url_template
         self._state_lock = asyncio.Lock()
         self._model_locks: dict[str, asyncio.Lock] = {}
         self._monitor_task: asyncio.Task | None = None
@@ -90,10 +114,9 @@ class ProviderManager:
                 continue
 
             if not config.worker_url:
-                env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", config.id.upper())
-                env_url = os.environ.get(env_key)
-                if env_url:
-                    config.worker_url = env_url
+                config.worker_url = resolve_worker_url(
+                    config.id, self._worker_url_template
+                )
 
             try:
                 if config.worker_url:
@@ -280,10 +303,7 @@ class ProviderManager:
             return False
 
         if not config.worker_url:
-            env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", model_id.upper())
-            env_url = os.environ.get(env_key)
-            if env_url:
-                config.worker_url = env_url
+            config.worker_url = resolve_worker_url(model_id, self._worker_url_template)
 
         # Remote hot-path: keep the httpx pool, push the new config via the worker's /reload.
         if (
