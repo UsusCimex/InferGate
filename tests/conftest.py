@@ -281,9 +281,11 @@ async def client(services):
     from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
 
+    from app.config import UploadLimitsConfig
     from app.routers import admin, audio, cache, chat, embeddings, health, images, models
     from app.services.gpu_scheduler import QueueFullError, RequestTimeoutError
     from app.services.provider_manager import ModelNotFoundError
+    from app.utils import UploadTooLargeError
 
     app = FastAPI()
 
@@ -292,6 +294,7 @@ async def client(services):
     app.state.gpu_scheduler = services["scheduler"]
     app.state.cache_manager = services["cache"]
     app.state.defaults = services["defaults"]
+    app.state.upload_limits = services.get("upload_limits", UploadLimitsConfig())
     app.state.start_time = time.time()
 
     @app.exception_handler(ModelNotFoundError)
@@ -310,6 +313,15 @@ async def client(services):
     async def queue_full_handler(request, exc):
         return JSONResponse(
             {"error": {"message": str(exc), "type": "queue_full"}}, status_code=503
+        )
+
+    @app.exception_handler(UploadTooLargeError)
+    async def upload_too_large_handler(request, exc: UploadTooLargeError):
+        mb = exc.max_bytes // (1024 * 1024)
+        return JSONResponse(
+            {"error": {"message": f"upload exceeds {mb}MB limit",
+                       "type": "upload_too_large"}},
+            status_code=413,
         )
 
     @app.exception_handler(RequestValidationError)

@@ -16,6 +16,7 @@ from app.config.server import (
     QueueConfig,
     RateLimitConfig,
     ServerConfig,
+    UploadLimitsConfig,
 )
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "QueueConfig",
     "RateLimitConfig",
     "ServerConfig",
+    "UploadLimitsConfig",
     "load_model_configs",
     "load_server_config",
     "load_single_model_config",

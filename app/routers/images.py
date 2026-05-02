@@ -12,13 +12,13 @@ from app.dependencies import (
     get_defaults,
     get_gpu_scheduler,
     get_provider_manager,
+    get_upload_limits,
 )
 from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prometheus_available
 from app.schemas.images import ImageData, ImageGenerationRequest, ImageGenerationResponse
+from app.utils import read_with_limit
 
 router = APIRouter()
-
-_MAX_UPSCALE_BYTES = 50 * 1024 * 1024
 
 
 @router.post("/v1/images/generations")
@@ -153,15 +153,16 @@ async def edit_images(
     scheduler_dep=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
     """Multipart img2img/inpaint — delegates to the same path as /v1/images/generations."""
-    image_bytes = await image.read()
+    image_bytes = await read_with_limit(image, limits.max_image_mb * 1024 * 1024)
     if not image_bytes:
         return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
 
     mask_bytes: bytes | None = None
     if mask is not None and mask.filename:
-        mask_bytes = await mask.read()
+        mask_bytes = await read_with_limit(mask, limits.max_image_mb * 1024 * 1024)
         if not mask_bytes:
             mask_bytes = None
 
@@ -203,6 +204,7 @@ async def upscale_image(
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
     """Upscale an uploaded image; returns b64_json (default) or raw PNG bytes."""
     if response_format not in {"b64_json", "png"}:
@@ -215,14 +217,9 @@ async def upscale_image(
     if not model_id:
         return JSONResponse({"error": {"message": "No upscale model specified"}}, status_code=400)
 
-    image_bytes = await file.read()
+    image_bytes = await read_with_limit(file, limits.max_upscale_mb * 1024 * 1024)
     if not image_bytes:
         return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
-    if len(image_bytes) > _MAX_UPSCALE_BYTES:
-        return JSONResponse(
-            {"error": {"message": f"Image exceeds {_MAX_UPSCALE_BYTES // (1024*1024)}MB limit"}},
-            status_code=413,
-        )
 
     start = time.monotonic()
     provider = await manager.ensure_loaded(model_id)

@@ -28,6 +28,7 @@ from app.services.provider_manager import (
     ProviderManager,
     WorkerNotReadyError,
 )
+from app.utils import UploadTooLargeError
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
     app.state.gpu_scheduler = scheduler
     app.state.cache_manager = cache_mgr
     app.state.defaults = defaults
+    app.state.upload_limits = server_cfg.upload_limits
     app.state.start_time = time.time()
 
     manager.start_worker_monitor()
@@ -214,6 +216,17 @@ def create_app() -> FastAPI:
     async def queue_full_handler(request, exc):
         return JSONResponse(
             {"error": {"message": str(exc), "type": "queue_full"}}, status_code=503
+        )
+
+    @app.exception_handler(UploadTooLargeError)
+    async def upload_too_large_handler(request, exc: UploadTooLargeError):
+        mb = exc.max_bytes // (1024 * 1024)
+        return JSONResponse(
+            {"error": {
+                "message": f"upload exceeds {mb}MB limit",
+                "type": "upload_too_large",
+            }},
+            status_code=413,
         )
 
     @app.exception_handler(RequestValidationError)

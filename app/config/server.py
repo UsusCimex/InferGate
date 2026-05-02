@@ -59,6 +59,14 @@ class RateLimitConfig(BaseModel):
     requests_per_minute: int = Field(60, ge=1)
 
 
+class UploadLimitsConfig(BaseModel):
+    """Per-endpoint upload size caps, applied via streaming read-with-limit."""
+    max_image_mb: int = Field(20, ge=1)
+    max_audio_mb: int = Field(25, ge=1)
+    max_video_mb: int = Field(200, ge=1)
+    max_upscale_mb: int = Field(50, ge=1)
+
+
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = Field(8000, ge=1, le=65535)
@@ -72,3 +80,4 @@ class ServerConfig(BaseModel):
     models_dir: str = "./models"
     defaults: DefaultsConfig = DefaultsConfig()
     rate_limit: RateLimitConfig = RateLimitConfig()
+    upload_limits: UploadLimitsConfig = UploadLimitsConfig()

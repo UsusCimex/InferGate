@@ -5,7 +5,12 @@ import time
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
-from app.dependencies import get_defaults, get_gpu_scheduler, get_provider_manager
+from app.dependencies import (
+    get_defaults,
+    get_gpu_scheduler,
+    get_provider_manager,
+    get_upload_limits,
+)
 from app.monitoring import INFERENCE_DURATION, is_prometheus_available
 from app.schemas.embeddings import (
     AudioEmbeddingResponse,
@@ -15,12 +20,9 @@ from app.schemas.embeddings import (
     ImageEmbeddingResponse,
     VideoEmbeddingResponse,
 )
+from app.utils import read_with_limit
 
 router = APIRouter()
-
-_MAX_AUDIO_BYTES = 100 * 1024 * 1024
-_MAX_IMAGE_BYTES = 25 * 1024 * 1024
-_MAX_VIDEO_BYTES = 200 * 1024 * 1024
 
 
 @router.post("/v1/embeddings", response_model=EmbeddingResponse)
@@ -73,22 +75,18 @@ async def create_audio_embedding(
     manager=Depends(get_provider_manager),
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
-    """Encode an audio file (≤100MB) into a single embedding vector."""
+    """Encode an audio file into a single embedding vector."""
     model_id = model or defaults.get("embedding_audio")
     if not model_id:
         return JSONResponse(
             {"error": {"message": "No audio embedding model specified"}}, status_code=400
         )
 
-    audio_bytes = await file.read()
+    audio_bytes = await read_with_limit(file, limits.max_audio_mb * 1024 * 1024)
     if not audio_bytes:
         return JSONResponse({"error": {"message": "Empty audio file"}}, status_code=400)
-    if len(audio_bytes) > _MAX_AUDIO_BYTES:
-        return JSONResponse(
-            {"error": {"message": f"Audio exceeds {_MAX_AUDIO_BYTES // (1024 * 1024)}MB limit"}},
-            status_code=413,
-        )
 
     provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
@@ -116,22 +114,18 @@ async def create_image_embedding(
     manager=Depends(get_provider_manager),
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
-    """Encode an image (≤25MB) into a single embedding vector."""
+    """Encode an image into a single embedding vector."""
     model_id = model or defaults.get("embedding_image")
     if not model_id:
         return JSONResponse(
             {"error": {"message": "No image embedding model specified"}}, status_code=400
         )
 
-    image_bytes = await file.read()
+    image_bytes = await read_with_limit(file, limits.max_image_mb * 1024 * 1024)
     if not image_bytes:
         return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
-    if len(image_bytes) > _MAX_IMAGE_BYTES:
-        return JSONResponse(
-            {"error": {"message": f"Image exceeds {_MAX_IMAGE_BYTES // (1024 * 1024)}MB limit"}},
-            status_code=413,
-        )
 
     provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
@@ -159,22 +153,18 @@ async def create_video_embedding(
     manager=Depends(get_provider_manager),
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
-    """Encode a video clip (≤200MB) into a single embedding vector."""
+    """Encode a video clip into a single embedding vector."""
     model_id = model or defaults.get("embedding_video")
     if not model_id:
         return JSONResponse(
             {"error": {"message": "No video embedding model specified"}}, status_code=400
         )
 
-    video_bytes = await file.read()
+    video_bytes = await read_with_limit(file, limits.max_video_mb * 1024 * 1024)
     if not video_bytes:
         return JSONResponse({"error": {"message": "Empty video file"}}, status_code=400)
-    if len(video_bytes) > _MAX_VIDEO_BYTES:
-        return JSONResponse(
-            {"error": {"message": f"Video exceeds {_MAX_VIDEO_BYTES // (1024 * 1024)}MB limit"}},
-            status_code=413,
-        )
 
     provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)

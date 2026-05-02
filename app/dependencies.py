@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from fastapi import Request
 
 if TYPE_CHECKING:
+    from app.config import UploadLimitsConfig
     from app.services.cache_manager import CacheManager
     from app.services.gpu_scheduler import GpuScheduler
     from app.services.provider_manager import ProviderManager
@@ -29,3 +30,7 @@ def get_defaults(request: Request) -> dict[str, str]:
 
 def get_start_time(request: Request) -> float:
     return request.app.state.start_time
+
+
+def get_upload_limits(request: Request) -> UploadLimitsConfig:
+    return request.app.state.upload_limits

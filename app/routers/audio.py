@@ -11,9 +11,11 @@ from app.dependencies import (
     get_defaults,
     get_gpu_scheduler,
     get_provider_manager,
+    get_upload_limits,
 )
 from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prometheus_available
 from app.schemas.audio import AudioSpeechRequest
+from app.utils import read_with_limit
 
 router = APIRouter()
 
@@ -127,7 +129,6 @@ async def create_speech(
 
 
 _TRANSCRIPTION_FORMATS = {"json", "text", "verbose_json", "srt", "vtt"}
-_MAX_AUDIO_BYTES = 100 * 1024 * 1024
 
 
 def _fmt_srt_time(seconds: float) -> str:
@@ -176,6 +177,7 @@ async def create_transcription(
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
     """OpenAI-compatible multipart transcription endpoint."""
     if response_format not in _TRANSCRIPTION_FORMATS:
@@ -191,14 +193,9 @@ async def create_transcription(
     if not model_id:
         return JSONResponse({"error": {"message": "No STT model specified"}}, status_code=400)
 
-    audio_bytes = await file.read()
+    audio_bytes = await read_with_limit(file, limits.max_audio_mb * 1024 * 1024)
     if not audio_bytes:
         return JSONResponse({"error": {"message": "Empty audio file"}}, status_code=400)
-    if len(audio_bytes) > _MAX_AUDIO_BYTES:
-        return JSONResponse(
-            {"error": {"message": f"Audio exceeds {_MAX_AUDIO_BYTES // (1024*1024)}MB limit"}},
-            status_code=413,
-        )
 
     start = time.monotonic()
     provider = await manager.ensure_loaded(model_id)
@@ -294,9 +291,6 @@ def _transcription_response(
     return JSONResponse({"text": result.get("text", "")}, headers=headers)
 
 
-_MAX_REFERENCE_AUDIO_BYTES = 25 * 1024 * 1024
-
-
 @router.post("/v1/audio/speech/voice-clone")
 async def create_speech_voice_clone(
     request: Request,
@@ -311,20 +305,16 @@ async def create_speech_voice_clone(
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
     """Synthesise `input` in the voice from `reference_audio` (multipart upload)."""
     model_id = model or defaults.get("tts")
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)
 
-    ref_bytes = await reference_audio.read()
+    ref_bytes = await read_with_limit(reference_audio, limits.max_audio_mb * 1024 * 1024)
     if not ref_bytes:
         return JSONResponse({"error": {"message": "Empty reference_audio"}}, status_code=400)
-    if len(ref_bytes) > _MAX_REFERENCE_AUDIO_BYTES:
-        return JSONResponse(
-            {"error": {"message": f"reference_audio exceeds {_MAX_REFERENCE_AUDIO_BYTES // (1024*1024)}MB"}},
-            status_code=413,
-        )
 
     start = time.monotonic()
     provider = await manager.ensure_loaded(model_id)
