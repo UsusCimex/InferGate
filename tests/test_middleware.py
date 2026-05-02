@@ -81,6 +81,72 @@ async def test_access_log_skips_health(app_with_access_log):
 
 
 @pytest.mark.asyncio
+async def test_access_log_human_format_logs_request(app_with_access_log, caplog, monkeypatch):
+    """Default format: 'client METHOD PATH -> status (Nms)' line."""
+    import logging as _logging
+
+    monkeypatch.delenv("INFERGATE_ACCESS_LOG_JSON", raising=False)
+    with caplog.at_level(_logging.INFO, logger="app.middleware.access_log"):
+        await app_with_access_log.get("/test")
+
+    msgs = [r.message for r in caplog.records if r.name == "app.middleware.access_log"]
+    assert any("/test" in m and "200" in m for m in msgs)
+
+
+@pytest.mark.asyncio
+async def test_access_log_json_format_emits_structured_line(
+    app_with_access_log, caplog, monkeypatch
+):
+    """INFERGATE_ACCESS_LOG_JSON=true → emit a single-line JSON record."""
+    import json as _json
+    import logging as _logging
+
+    monkeypatch.setenv("INFERGATE_ACCESS_LOG_JSON", "true")
+    with caplog.at_level(_logging.INFO, logger="app.middleware.access_log"):
+        await app_with_access_log.get("/test")
+
+    msgs = [r.message for r in caplog.records if r.name == "app.middleware.access_log"]
+    parsed = [m for m in msgs if m.startswith("{")]
+    assert parsed, f"expected at least one JSON line, got: {msgs}"
+
+    record = _json.loads(parsed[0])
+    assert record["msg"] == "http_access"
+    assert record["method"] == "GET"
+    assert record["path"] == "/test"
+    assert record["status"] == 200
+    assert isinstance(record["latency_ms"], int)
+
+
+@pytest.mark.asyncio
+async def test_access_log_includes_request_id_when_set(monkeypatch, caplog):
+    """When RequestIdMiddleware is mounted upstream, JSON log carries request_id."""
+    import json as _json
+    import logging as _logging
+
+    from app.middleware.access_log import AccessLogMiddleware
+    from app.monitoring import RequestIdMiddleware
+
+    inner_app = FastAPI()
+
+    @inner_app.get("/test")
+    async def _t():
+        return {"ok": True}
+
+    # AccessLog is innermost; RequestId wraps it so scope["state"]["request_id"] is set.
+    app = RequestIdMiddleware(AccessLogMiddleware(inner_app))
+    monkeypatch.setenv("INFERGATE_ACCESS_LOG_JSON", "true")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        with caplog.at_level(_logging.INFO, logger="app.middleware.access_log"):
+            await ac.get("/test", headers={"X-Request-ID": "test-id-42"})
+
+    msgs = [r.message for r in caplog.records if r.name == "app.middleware.access_log"]
+    parsed = [_json.loads(m) for m in msgs if m.startswith("{")]
+    assert any(p.get("request_id") == "test-id-42" for p in parsed), parsed
+
+
+@pytest.mark.asyncio
 async def test_rate_limit_allows_under_limit(app_with_rate_limit):
     for _ in range(3):
         resp = await app_with_rate_limit.get("/test")
