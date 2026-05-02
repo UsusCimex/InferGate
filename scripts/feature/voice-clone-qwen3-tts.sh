@@ -49,8 +49,7 @@ done
 [[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
-update_env "$ENV_FILE" QWEN3_TTS_06B_ENABLED true
-ok "Env flags set (qwen3-tts-06b enabled)"
+ok "Env flags set (qwen3-tts-06b uses YAML default enabled=true)"
 
 log "Building + starting gateway + $SERVICE …"
 "${COMPOSE[@]}" build gateway "$SERVICE"

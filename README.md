@@ -625,67 +625,81 @@ Client → FastAPI (pure ASGI middleware: auth, rate-limit, access-log)
 infergate/
 ├── app/
 │   ├── main.py                     # FastAPI, lifespan, exception handlers
-│   ├── worker.py                   # Standalone worker для distributed-режима
-│   ├── config.py                   # Загрузка YAML-конфигов
-│   ├── auth.py                     # API Key middleware (pure ASGI)
-│   ├── rate_limit.py               # Rate limiter (pure ASGI)
-│   ├── logging_middleware.py       # Access log (pure ASGI)
+│   ├── worker.py                   # Standalone worker (один процесс = одна модель)
+│   │                                    /load (202 + background task), /load/status,
+│   │                                    /generate, /synthesize, /voice-clone, /transcribe,
+│   │                                    /upscale, /embed*, /reload, /health, /unload
 │   ├── dependencies.py             # FastAPI Depends + app.state
+│   ├── config/                     # YAML-loader, server/model schemas, enums
+│   ├── middleware/
+│   │   ├── auth.py                 # API key (pure ASGI, hmac.compare_digest)
+│   │   ├── rate_limit.py           # Sliding-window per-IP (pure ASGI)
+│   │   └── access_log.py           # Pure ASGI; INFERGATE_ACCESS_LOG_JSON → JSON формат
+│   ├── monitoring/
+│   │   ├── metrics.py              # Prometheus metric defs
+│   │   ├── middleware.py           # PrometheusMiddleware + RequestIdMiddleware
+│   │   └── request_context.py      # ContextVar для X-Request-ID propagation
 │   ├── routers/                    # API эндпоинты
-│   │   ├── chat.py                 # /v1/chat/completions (+ streaming)
+│   │   ├── chat.py                 # /v1/chat/completions (+ streaming SSE)
 │   │   ├── images.py               # /v1/images/{generations,edits,upscale}
 │   │   ├── audio.py                # /v1/audio/{speech,speech/voice-clone,transcriptions}
+│   │   ├── embeddings.py           # /v1/embeddings (text/audio/image/video)
 │   │   ├── models.py               # /v1/models
 │   │   ├── cache.py                # /cache/*
+│   │   ├── admin.py                # /v1/models/{id}/{load,unload}
 │   │   └── health.py               # /health, /metrics, /metrics/prometheus
 │   ├── schemas/                    # Pydantic-модели с Field-валидацией
 │   ├── providers/
-│   │   ├── base.py                 # ABC: Image/Text/Tts/Stt/ImageUpscale Providers
+│   │   ├── base.py                 # ABC: Image / Text / Tts / Stt / Upscale / Embedding{Text,Audio,Multimodal,Video}
 │   │   ├── registry.py             # @register_provider + авто-обнаружение
-│   │   ├── remote.py               # RemoteProvider для distributed-режима (5 категорий)
+│   │   ├── _remote_protocol.py     # JsonEndpoint / MultipartEndpoint dataclasses + call_json/call_multipart
+│   │   ├── remote.py               # CATEGORY_REGISTRY: 9 категорий → RemoteProvider classes;
+│   │   │                                retry на ConnectError, X-Request-ID propagation, per-endpoint timeouts
 │   │   ├── image/
-│   │   │   ├── diffusers_provider.py  # Diffusion (SD, SDXL, FLUX, Hunyuan, Z-Image, Qwen)
-│   │   │   │                         # + LoRA / TI / compel / scheduler swap
-│   │   │   │                         # + HighresFix / img2img / inpaint
-│   │   │   ├── janus_provider.py     # Autoregressive (DeepSeek Janus-Pro 1B / 7B)
-│   │   │   └── meissonic_provider.py # Masked non-AR (vendored Meissonic pipeline)
+│   │   │   ├── diffusers_provider.py    # SD / SDXL / FLUX / Hunyuan / Z-Image / Qwen
+│   │   │   │                             # + LoRA / TI / compel / scheduler swap / HighresFix / img2img / inpaint
+│   │   │   ├── janus_provider.py        # Autoregressive (DeepSeek Janus-Pro 1B / 7B)
+│   │   │   └── meissonic_provider.py    # Masked non-AR (vendored Meissonic pipeline)
 │   │   ├── text/
 │   │   │   └── vllm_provider.py    # + streaming + tokenizer chat templates
 │   │   ├── tts/
 │   │   │   ├── kokoro.py
-│   │   │   └── fish_speech.py      # OpenAudio S1 / Fish Speech + voice-clone stub
+│   │   │   ├── fish_speech.py      # OpenAudio S1 / Fish Speech
+│   │   │   ├── qwen3_tts.py        # Qwen3-TTS 0.6B (10 языков, voice-clone-only)
+│   │   │   └── xtts.py             # Coqui XTTS v2 (17 языков, voice cloning)
 │   │   ├── stt/
 │   │   │   └── whisper_provider.py # faster-whisper (CTranslate2)
-│   │   └── upscale/
-│   │       └── spandrel_provider.py # spandrel (ESRGAN / Real-ESRGAN / SwinIR / …)
+│   │   ├── upscale/
+│   │   │   └── spandrel_provider.py # spandrel (ESRGAN / Real-ESRGAN / SwinIR / …)
+│   │   └── embedding/
+│   │       ├── sentence_transformer_provider.py  # E5 multilingual
+│   │       ├── clap_provider.py    # CLAP (audio embeddings)
+│   │       ├── clip_provider.py    # CLIP ViT (text+image)
+│   │       ├── clip4clip_provider.py # CLIP4Clip (text+video)
+│   │       └── siglip_provider.py  # SigLIP (text+image)
 │   ├── services/
-│   │   ├── provider_manager.py     # LRU, per-model locks, reload_model, worker-monitor
+│   │   ├── provider_manager.py     # LRU + VRAM budget, per-model locks, reload_model,
+│   │   │                                worker_monitor, resolve_worker_url (env / template)
 │   │   ├── gpu_scheduler.py        # per-model concurrency + priority queue
-│   │   ├── cache_manager.py        # SQLite WAL, atomic writes, miss tracking
-│   │   └── config_watcher.py       # polls config/models/*.yaml → hot-reload
-│   └── worker.py                   # Standalone FastAPI worker (один процесс = одна модель)
-│                                   # /generate, /synthesize, /transcribe, /upscale,
-│                                   # /voice-clone, /reload, /health, /load, /unload
+│   │   ├── cache_manager.py        # Façade: should_cache + make_key, делегирует backend
+│   │   ├── cache_backends/         # CacheBackend ABC + LocalCacheBackend (SQLite+FS) + RedisCacheBackend
+│   │   ├── config_watcher.py       # polls config/models/*.yaml → hot-reload
+│   │   └── memory_watchdog.py      # live VRAM/RAM monitor → emergency LRU eviction
+│   └── utils/
+│       └── uploads.py              # read_with_limit() — streaming upload size guard
 ├── config/
 │   ├── server.yaml
-│   └── models/                     # 1 YAML = 1 модель (21 файл)
+│   └── models/                     # 1 YAML = 1 модель (26 файлов)
 ├── deploy/
-│   ├── Dockerfile.gateway          #   Лёгкий gateway (~500MB)
+│   ├── Dockerfile.gateway          #   Лёгкий gateway (~500 MB)
 │   ├── Dockerfile.worker           #   Единый параметризованный Dockerfile для всех воркеров
-│   ├── docker-compose.yml          #   Compose с profiles (gateway + 21 workers, YAML-якоря)
-│   │                                    По умолчанию поднимаются три alias'а — text / image / tts
-│   │                                    → qwen3.5-4b + sdxl-base + qwen3-tts-06b (12 GB-friendly).
+│   ├── docker-compose.yml          #   Compose с profiles (gateway + 26 workers, YAML-якоря).
+│   │                                    Категорийные алиасы: text / image / tts / stt / upscale / embedding / voice-clone.
+│   │                                    Без COMPOSE_PROFILES — поднимается только gateway.
 │   ├── docker-bake.hcl             #   Матрица сборки (1 строка = 1 модель)
 │   ├── .env.example
 │   ├── docker-compose.server.example.yml
 │   ├── workers/                    #   Только requirements.txt per-model
-│   │   ├── qwen3.5-4b/requirements.txt
-│   │   ├── sd35-medium/requirements.txt
-│   │   ├── kokoro-82m/requirements.txt
-│   │   ├── whisper-base/requirements.txt
-│   │   ├── realesrgan-x4/requirements.txt
-│   │   ├── xtts-v2/requirements.txt
-│   │   └── …                       #   21 модель
 │   └── monitoring/                 #   Prometheus + Grafana stack (auto-provisioning)
 │       ├── prometheus.yml
 │       ├── docker-compose.monitoring.yml
@@ -693,7 +707,7 @@ infergate/
 ├── scripts/
 │   ├── diagnose/                   #   Per-model smoke-scripts
 │   └── feature/                    #   End-to-end feature tests (на живых воркерах)
-├── tests/                          #   195 pytest-ов
+├── tests/                          #   313+ pytest-ов (включая ASGITransport e2e против FakeWorker)
 └── pyproject.toml
 ```
 
@@ -837,7 +851,7 @@ pip install pytest-cov
 pytest --cov=app --cov-branch
 ```
 
-**195 pytest-а** (исключая GPU-провайдеры — они проверяются e2e-скриптами против реальных воркеров, см. `scripts/feature/`).
+**313+ pytest-ов** (исключая GPU-провайдеры — они проверяются e2e-скриптами против реальных воркеров, см. `scripts/feature/`). Включает unit-тесты на роутеры, middleware, мониторинг, сервисы, а также интеграционные e2e через `httpx.ASGITransport` + FakeWorker (`tests/test_remote_e2e.py`) — полный HTTP-цикл gateway↔worker без сети.
 
 Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, `cache`, `health`), middleware (auth, rate-limit, access-log), мониторинг (Prometheus-лейблы, request ID), `CacheManager`, `GpuScheduler`, `ProviderManager` (включая hot-reload `reload_model`), `ConfigWatcher`, воркер-эндпоинты (`/generate`, `/synthesize`, `/transcribe`, `/upscale`, `/reload`, `/voice-clone`), конфигурацию, валидацию схем, конкурентность, edge cases.
 
