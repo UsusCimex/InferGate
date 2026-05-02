@@ -10,10 +10,11 @@ from app.monitoring.metrics import (
     REQUEST_DURATION,
     REQUESTS_TOTAL,
 )
+from app.monitoring.request_context import set_request_id
 
 
 class RequestIdMiddleware:
-    """Attach a unique X-Request-ID header and scope.state value to each request."""
+    """Attach a unique X-Request-ID header and propagate it via ContextVar."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -23,10 +24,16 @@ class RequestIdMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_id = uuid.uuid4().hex[:16]
+        # Honour an inbound X-Request-ID for end-to-end tracing across LB/proxy hops.
+        inbound = next(
+            (v for k, v in scope.get("headers", []) if k == b"x-request-id"),
+            None,
+        )
+        request_id = inbound.decode() if inbound else uuid.uuid4().hex[:16]
         if "state" not in scope:
             scope["state"] = {}
         scope["state"]["request_id"] = request_id
+        set_request_id(request_id)
 
         async def send_wrapper(message: dict) -> None:
             if message["type"] == "http.response.start":

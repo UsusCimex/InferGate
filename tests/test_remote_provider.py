@@ -1,6 +1,9 @@
 """Tests for remote provider + provider_manager integration."""
 from __future__ import annotations
 
+import httpx
+import pytest
+
 from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
 from app.services.provider_manager import ProviderManager
 
@@ -79,3 +82,82 @@ def test_mixed_local_and_remote():
     assert "local-text" in manager._registry
     assert "remote-text" in manager._registry
     assert len(manager.list_models()) == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_send_succeeds_after_transient_failure(monkeypatch):
+    """_retry_send must retry ConnectError and succeed once the worker recovers."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_RETRY_BASE_BACKOFF", 0.0)
+
+    attempts = {"n": 0}
+
+    async def factory():
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise httpx.ConnectError("connection refused")
+        # Pretend we got a real response.
+        return httpx.Response(200, content=b"ok")
+
+    resp = await r._retry_send("POST", "/generate", factory)
+    assert resp.status_code == 200
+    assert attempts["n"] == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_send_does_not_retry_non_transient(monkeypatch):
+    """_retry_send must NOT retry ReadError (request likely already executed)."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_RETRY_BASE_BACKOFF", 0.0)
+
+    attempts = {"n": 0}
+
+    async def factory():
+        attempts["n"] += 1
+        raise httpx.ReadError("mid-stream failure")
+
+    with pytest.raises(httpx.ReadError):
+        await r._retry_send("POST", "/generate", factory)
+    assert attempts["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_send_exhausts_attempts(monkeypatch):
+    """When the worker stays unreachable, _retry_send raises after N attempts."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_RETRY_BASE_BACKOFF", 0.0)
+    monkeypatch.setattr(r, "_RETRY_ATTEMPTS", 3)
+
+    attempts = {"n": 0}
+
+    async def factory():
+        attempts["n"] += 1
+        raise httpx.ConnectError("down")
+
+    with pytest.raises(httpx.ConnectError):
+        await r._retry_send("POST", "/generate", factory)
+    assert attempts["n"] == 3
+
+
+def test_remote_request_id_headers_returns_dict_when_set():
+    """_request_id_headers must include X-Request-ID when ContextVar is set."""
+    from app.monitoring import set_request_id
+    from app.providers.remote import _request_id_headers
+
+    set_request_id("abc123")
+    try:
+        assert _request_id_headers() == {"X-Request-ID": "abc123"}
+    finally:
+        set_request_id(None)
+
+
+def test_remote_request_id_headers_empty_when_unset():
+    """_request_id_headers must be empty when no request_id is set."""
+    from app.monitoring import set_request_id
+    from app.providers.remote import _request_id_headers
+
+    set_request_id(None)
+    assert _request_id_headers() == {}

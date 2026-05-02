@@ -154,3 +154,48 @@ async def test_auth_uses_constant_time_compare():
     assert mw._is_valid("key-c") is True
     assert mw._is_valid("key-d") is False
     assert mw._is_valid("") is False
+
+
+@pytest.mark.asyncio
+async def test_request_id_middleware_sets_contextvar_and_header():
+    """RequestIdMiddleware must set X-Request-ID and expose it via ContextVar."""
+    from app.middleware.access_log import AccessLogMiddleware  # unrelated; for completeness
+    from app.monitoring import RequestIdMiddleware, get_request_id
+
+    seen: dict[str, str | None] = {}
+
+    inner_app = FastAPI()
+
+    @inner_app.get("/test")
+    async def test_endpoint():
+        seen["request_id"] = get_request_id()
+        return {"ok": True}
+
+    app = RequestIdMiddleware(inner_app)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/test")
+
+    assert resp.status_code == 200
+    assert "x-request-id" in resp.headers
+    assert seen["request_id"] == resp.headers["x-request-id"]
+    _ = AccessLogMiddleware  # silence unused import in this scope
+
+
+@pytest.mark.asyncio
+async def test_request_id_middleware_honours_inbound_id():
+    """An inbound X-Request-ID must be propagated, not overwritten."""
+    from app.monitoring import RequestIdMiddleware
+
+    inner_app = FastAPI()
+
+    @inner_app.get("/test")
+    async def test_endpoint():
+        return {"ok": True}
+
+    app = RequestIdMiddleware(inner_app)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.get("/test", headers={"X-Request-ID": "trace-abc-123"})
+
+    assert resp.headers["x-request-id"] == "trace-abc-123"

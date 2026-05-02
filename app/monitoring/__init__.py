@@ -18,6 +18,7 @@ from app.monitoring.middleware import (
     RequestIdMiddleware,
     _normalize_path,
 )
+from app.monitoring.request_context import get_request_id, set_request_id
 
 __all__ = [
     "CACHE_HITS",
@@ -33,6 +34,8 @@ __all__ = [
     "RequestIdMiddleware",
     "_normalize_path",
     "generate_latest",
+    "get_request_id",
     "is_prometheus_available",
+    "set_request_id",
     "update_runtime_gauges",
 ]
