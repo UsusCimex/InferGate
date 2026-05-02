@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 
 WORKDIR /app
 
+# Match worker timeout — uv's 30s default is too tight on saturated build hosts.
+ENV UV_HTTP_TIMEOUT=600
+
 COPY requirements/base.txt requirements/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --no-cache-dir --system -r requirements/base.txt
