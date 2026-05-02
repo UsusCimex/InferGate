@@ -864,8 +864,25 @@ Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, 
 1. [ ] **SDXL Refiner** — ensemble `base → refiner` с передачей latents. `SDXLRefinerImageProvider` должен держать две модели одновременно в VRAM (~14 GB суммарно); на 12 GB картах — sequential unload/load base→refiner или CPU offload обоих. Требует нового провайдера или custom-логики в `DiffusersImageProvider`.
 2. [ ] **Multi-GPU** — per-worker `CUDA_VISIBLE_DEVICES`-routing и distributed-LRU в `ProviderManager`. Нужно для multi-GPU машин, где сейчас все воркеры по умолчанию борются за первый GPU.
 3. [ ] **Upscaler tiling** — follow-up к `/v1/images/upscale`. Сейчас вход ограничен `max_input_side=2048` (guard против OOM). Для upscale изображений большего размера нужно tile-разбиение с перекрытием + gradient blending в `SpandrelUpscaleProvider`.
-4. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Для multi-node development/production.
+4. [ ] **Kubernetes Helm chart** — `deploy/helm/` с шаблонами Deployment (gateway + per-worker), ConfigMap для YAML, PVC для `models/` (веса), HPA. Foundation готов: `gpu.worker_url_template` в `server.yaml` уже позволяет DNS-based discovery воркеров без per-model env vars.
 5. [ ] **Web UI** — админ-панель: gallery сгенерированного, история prompt-ов, live-метрики (уже есть JSON `/metrics` и Prometheus — остаётся frontend).
+
+### Производительность инференса
+
+6. [ ] **Batch-инференс embeddings** — `EmbeddingsWorker` собирает входящие запросы в micro-batch (size N или окно T мс) и пакетно прогоняет через модель. Для CLIP / E5 / CLIP4Clip это 3-5× throughput при concurrent-трафике. Требует переписать `worker.py /embed` через `asyncio.Queue` + flush-таймер; gateway-сторона остаётся прежней.
+7. [ ] **Streaming для image generation** — стрим промежуточных шагов через `diffusers.callback_on_step_end` или хотя бы готового PNG через `StreamingResponse` вместо `JSONResponse(b64_json=...)`. Снижает RSS воркера для больших разрешений и даёт клиенту прогресс-индикатор.
+8. [ ] **Cache key canonicalization с applied defaults** — сейчас `cache.make_key` хеширует только параметры, явно переданные клиентом. Если в YAML сменится `default_params.guidance_scale`, кеш вернёт старый результат для тех же `seed + prompt`. Нужно мерджить applied defaults из `model_config` в params до `make_key`.
+
+### Multi-instance gateway
+
+9. [ ] **Distributed rate limit** — `RateLimitMiddleware` хранит sliding window в памяти процесса. При N gateway-инстансах за LB реальный лимит на одного клиента умножается на N. Перевести на Redis-backed counter (можно переиспользовать клиент `RedisCacheBackend`).
+10. [ ] **Distributed config-reload broadcast** — `ConfigWatcher` сейчас локальный: изменение `config/models/*.yaml` на одном поде не доходит до других. Pub/sub через Redis (или NATS) с invalidation-каналом для multi-instance gateway.
+
+### Observability
+
+11. [ ] **OpenTelemetry tracing** — `X-Request-ID` уже пробрасывается gateway↔worker, но spans в Tempo/Jaeger не экспортируются. Подключить `opentelemetry-instrumentation-fastapi` + `opentelemetry-instrumentation-httpx` + OTLP exporter, контроль через env.
+12. [ ] **Структурированный root logger** — сейчас JSON-формат опционален только для access log (`INFERGATE_ACCESS_LOG_JSON`). Под `INFERGATE_JSON_LOGGER=true` обернуть `logging.basicConfig` formatter в JSON, чтобы warning/error из провайдеров тоже шли в Loki / Elastic единым форматом.
+13. [ ] **Connection pool & health-check метрики** — Prometheus-метрики `worker_health_check_duration_seconds` и `httpx_pool_connections_in_use{worker}` для алертинга на медленные воркеры и истощение httpx-пула gateway.
 
 ---
 
