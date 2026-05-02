@@ -11,8 +11,15 @@ from typing import Any
 import httpx
 
 from app.monitoring import get_request_id
+from app.providers._remote_protocol import (
+    JsonEndpoint,
+    MultipartEndpoint,
+    call_json,
+    call_multipart,
+)
 from app.providers.base import (
     AudioEmbeddingProvider,
+    BaseProvider,
     ImageProvider,
     ImageUpscaleProvider,
     MultimodalEmbeddingProvider,
@@ -40,8 +47,6 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-# Per-endpoint timeouts: load is slow (model JIT), generate is bounded by SLO,
-# health/stats are short-poll. Tunable via env without touching code.
 _CONNECT_TIMEOUT = _env_float("GATEWAY_REMOTE_CONNECT_TIMEOUT", 5.0)
 _LOAD_TIMEOUT = _env_float("GATEWAY_REMOTE_LOAD_TIMEOUT", 1800.0)
 _GENERATE_TIMEOUT = _env_float("GATEWAY_REMOTE_GENERATE_TIMEOUT", 300.0)
@@ -71,8 +76,6 @@ def _request_id_headers() -> dict[str, str]:
     return {"X-Request-ID": rid} if rid else {}
 
 
-# Errors safe to retry: nothing was sent on the wire, or the server explicitly
-# signalled it didn't accept the request body.
 _RETRYABLE_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 
@@ -98,6 +101,34 @@ async def _retry_send(
             await asyncio.sleep(backoff)
     assert last_exc is not None
     raise last_exc
+
+
+# Endpoint registry: declarative spec of every worker endpoint exposed by the gateway.
+# Adding a new category-only requires updating this map and adding a thin subclass below.
+GENERATE_TEXT = JsonEndpoint(path="/generate", payload_key="messages")
+GENERATE_IMAGE = JsonEndpoint(path="/generate", payload_key="prompt", response_kind="bytes")
+SYNTHESIZE_TTS = JsonEndpoint(path="/synthesize", payload_key="text", response_kind="bytes")
+EMBED_TEXT = JsonEndpoint(
+    path="/embed", payload_key="input",
+    response_kind="json_field", response_field="embeddings",
+)
+TRANSCRIBE = MultipartEndpoint(path="/transcribe", default_filename="audio.wav")
+UPSCALE = MultipartEndpoint(
+    path="/upscale", default_filename="image.png",
+    content_type="image/png", response_kind="bytes",
+)
+EMBED_AUDIO = MultipartEndpoint(
+    path="/embed-audio", default_filename="audio.wav",
+    response_kind="json_field", response_field="embedding",
+)
+EMBED_IMAGE = MultipartEndpoint(
+    path="/embed-image", default_filename="image.jpg",
+    response_kind="json_field", response_field="embedding",
+)
+EMBED_VIDEO = MultipartEndpoint(
+    path="/embed-video", default_filename="clip.mp4",
+    response_kind="json_field", response_field="embedding",
+)
 
 
 class BaseRemoteMixin:
@@ -233,38 +264,39 @@ class BaseRemoteMixin:
         except httpx.HTTPError:
             return {}
 
-    async def _post_json(self, path: str, payload: dict) -> httpx.Response:
-        client = self._client
-        assert client is not None, "remote provider not loaded"
-        headers = _request_id_headers()
-        resp = await _retry_send(
-            "POST", path,
-            lambda: client.post(path, json=payload, headers=headers),
-        )
-        resp.raise_for_status()
-        return resp
+    def _client_required(self) -> httpx.AsyncClient:
+        if self._client is None:
+            raise RuntimeError(f"Remote provider {self._worker_url} is not loaded")
+        return self._client
 
-    async def _post_files(
-        self, path: str, *, files: dict, data: dict | None = None
-    ) -> httpx.Response:
-        client = self._client
-        assert client is not None, "remote provider not loaded"
-        headers = _request_id_headers()
-        # Don't auto-retry multipart uploads — body is consumed once; build per-attempt.
-        resp = await client.post(path, files=files, data=data, headers=headers)
-        resp.raise_for_status()
-        return resp
+    async def _call_json(self, endpoint: JsonEndpoint, primary: Any, **extra: Any) -> Any:
+        async def _send(factory):
+            return await _retry_send("POST", endpoint.path, factory)
+
+        return await call_json(
+            self._client_required(), endpoint, primary,
+            extra=extra, headers=_request_id_headers(), send=_send,
+        )
+
+    async def _call_multipart(
+        self, endpoint: MultipartEndpoint, file_bytes: bytes,
+        filename: str | None = None, form: dict[str, str] | None = None,
+    ) -> Any:
+        return await call_multipart(
+            self._client_required(), endpoint, file_bytes,
+            filename=filename, form=form, headers=_request_id_headers(),
+        )
 
 
 class RemoteTextProvider(BaseRemoteMixin, TextProvider):
     """Text-generation provider that proxies to a remote worker."""
 
     async def generate(self, messages: list[dict], **params: Any) -> dict:
-        resp = await self._post_json("/generate", {"messages": messages, **params})
-        return resp.json()
+        return await self._call_json(GENERATE_TEXT, messages, **params)
 
     async def generate_stream(self, messages: list[dict], **params: Any) -> AsyncIterator[str]:
-        async with self._client.stream(
+        client = self._client_required()
+        async with client.stream(
             "POST", "/generate",
             json={"messages": messages, "stream": True, **params},
             headers=_request_id_headers(),
@@ -279,92 +311,103 @@ class RemoteImageProvider(BaseRemoteMixin, ImageProvider):
     """Image-generation provider that proxies to a remote worker."""
 
     async def generate(self, prompt: str, **params: Any) -> bytes:
-        resp = await self._post_json("/generate", {"prompt": prompt, **params})
-        return resp.content
+        return await self._call_json(GENERATE_IMAGE, prompt, **params)
 
 
 class RemoteTtsProvider(BaseRemoteMixin, TtsProvider):
     """TTS provider that proxies to a remote worker (JSON or multipart depending on params)."""
 
     async def synthesize(self, text: str, **params: Any) -> bytes:
-        # reference_audio bytes → multipart to /voice-clone; otherwise JSON /synthesize.
         ref = params.pop("reference_audio", None)
-        if ref is not None:
-            filename = str(params.pop("reference_filename", "ref.wav"))
-            form: dict[str, str] = {"input": text}
-            for k, v in params.items():
-                if v is not None:
-                    form[k] = str(v)
-            files = {"reference_audio": (filename, ref, "application/octet-stream")}
-            resp = await self._post_files("/voice-clone", files=files, data=form)
-        else:
-            resp = await self._post_json("/synthesize", {"text": text, **params})
-        return resp.content
+        if ref is None:
+            return await self._call_json(SYNTHESIZE_TTS, text, **params)
+
+        # Voice-clone path: dedicated /voice-clone endpoint, multipart payload.
+        filename = str(params.pop("reference_filename", "ref.wav"))
+        form: dict[str, str] = {"input": text}
+        for k, v in params.items():
+            if v is not None:
+                form[k] = str(v)
+        clone_endpoint = MultipartEndpoint(
+            path="/voice-clone",
+            file_field="reference_audio",
+            default_filename="ref.wav",
+            response_kind="bytes",
+        )
+        return await self._call_multipart(clone_endpoint, ref, filename=filename, form=form)
 
 
 class RemoteSttProvider(BaseRemoteMixin, SttProvider):
     """STT provider that proxies to a remote worker via multipart /transcribe."""
 
     async def transcribe(self, audio: bytes, **params: Any) -> dict:
-        filename = str(params.pop("filename", "audio.wav"))
-        form: dict[str, str] = {
-            k: str(v) for k, v in params.items() if v is not None
-        }
-        files = {"file": (filename, audio, "application/octet-stream")}
-        resp = await self._post_files("/transcribe", files=files, data=form)
-        return resp.json()
+        filename = str(params.pop("filename", TRANSCRIBE.default_filename))
+        form = {k: str(v) for k, v in params.items() if v is not None}
+        return await self._call_multipart(TRANSCRIBE, audio, filename=filename, form=form)
 
 
 class RemoteUpscaleProvider(BaseRemoteMixin, ImageUpscaleProvider):
     """Upscale provider that proxies to a remote worker via multipart /upscale."""
 
     async def upscale(self, image: bytes, **params: Any) -> bytes:
-        files = {"file": ("image.png", image, "image/png")}
-        resp = await self._post_files("/upscale", files=files)
-        return resp.content
+        return await self._call_multipart(UPSCALE, image)
 
 
 class RemoteTextEmbeddingProvider(BaseRemoteMixin, TextEmbeddingProvider):
     """Text-embedding provider that proxies to a remote worker via JSON /embed."""
 
     async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
-        resp = await self._post_json("/embed", {"input": inputs, **params})
-        return resp.json()["embeddings"]
+        return await self._call_json(EMBED_TEXT, inputs, **params)
 
 
 class RemoteAudioEmbeddingProvider(BaseRemoteMixin, AudioEmbeddingProvider):
     """Audio-embedding provider that proxies to a remote worker via multipart /embed-audio."""
 
     async def embed(self, audio: bytes, **params: Any) -> list[float]:
-        filename = str(params.pop("filename", "audio.wav"))
-        files = {"file": (filename, audio, "application/octet-stream")}
-        resp = await self._post_files("/embed-audio", files=files)
-        return resp.json()["embedding"]
+        filename = params.pop("filename", None)
+        return await self._call_multipart(EMBED_AUDIO, audio, filename=filename)
 
 
 class RemoteMultimodalEmbeddingProvider(BaseRemoteMixin, MultimodalEmbeddingProvider):
     """Multimodal text+image embedding provider over JSON /embed and multipart /embed-image."""
 
     async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
-        resp = await self._post_json("/embed", {"input": inputs, **params})
-        return resp.json()["embeddings"]
+        return await self._call_json(EMBED_TEXT, inputs, **params)
 
     async def embed_image(self, image: bytes, **params: Any) -> list[float]:
-        filename = str(params.pop("filename", "image.jpg"))
-        files = {"file": (filename, image, "application/octet-stream")}
-        resp = await self._post_files("/embed-image", files=files)
-        return resp.json()["embedding"]
+        filename = params.pop("filename", None)
+        return await self._call_multipart(EMBED_IMAGE, image, filename=filename)
 
 
 class RemoteVideoEmbeddingProvider(BaseRemoteMixin, VideoEmbeddingProvider):
     """Video+text embedding provider over JSON /embed and multipart /embed-video."""
 
     async def embed(self, inputs: list[str], **params: Any) -> list[list[float]]:
-        resp = await self._post_json("/embed", {"input": inputs, **params})
-        return resp.json()["embeddings"]
+        return await self._call_json(EMBED_TEXT, inputs, **params)
 
     async def embed_video(self, video: bytes, **params: Any) -> list[float]:
-        filename = str(params.pop("filename", "clip.mp4"))
-        files = {"file": (filename, video, "application/octet-stream")}
-        resp = await self._post_files("/embed-video", files=files)
-        return resp.json()["embedding"]
+        filename = params.pop("filename", None)
+        return await self._call_multipart(EMBED_VIDEO, video, filename=filename)
+
+
+# Single source of truth for category → RemoteProvider class. Used by the
+# ProviderManager when resolving worker_url-backed configs.
+CATEGORY_REGISTRY: dict[str, type[BaseProvider]] = {
+    "text": RemoteTextProvider,
+    "image": RemoteImageProvider,
+    "tts": RemoteTtsProvider,
+    "stt": RemoteSttProvider,
+    "upscale": RemoteUpscaleProvider,
+    "embedding-text": RemoteTextEmbeddingProvider,
+    "embedding-audio": RemoteAudioEmbeddingProvider,
+    "embedding-multimodal": RemoteMultimodalEmbeddingProvider,
+    "embedding-video": RemoteVideoEmbeddingProvider,
+}
+
+
+def remote_provider_for(category: str) -> type[BaseProvider]:
+    """Return the RemoteProvider class registered for `category` or raise ValueError."""
+    cls = CATEGORY_REGISTRY.get(category)
+    if cls is None:
+        raise ValueError(f"No remote provider for category '{category}'")
+    return cls

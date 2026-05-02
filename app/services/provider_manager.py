@@ -110,32 +110,9 @@ class ProviderManager:
     @staticmethod
     def _create_remote_provider(config: ModelConfig) -> BaseProvider:
         """Build the RemoteProvider subclass matching `config.category`."""
-        from app.providers.remote import (
-            RemoteAudioEmbeddingProvider,
-            RemoteImageProvider,
-            RemoteMultimodalEmbeddingProvider,
-            RemoteSttProvider,
-            RemoteTextEmbeddingProvider,
-            RemoteTextProvider,
-            RemoteTtsProvider,
-            RemoteUpscaleProvider,
-            RemoteVideoEmbeddingProvider,
-        )
+        from app.providers.remote import remote_provider_for
 
-        category_map: dict[str, type[BaseProvider]] = {
-            "text": RemoteTextProvider,
-            "image": RemoteImageProvider,
-            "tts": RemoteTtsProvider,
-            "stt": RemoteSttProvider,
-            "upscale": RemoteUpscaleProvider,
-            "embedding-text": RemoteTextEmbeddingProvider,
-            "embedding-audio": RemoteAudioEmbeddingProvider,
-            "embedding-multimodal": RemoteMultimodalEmbeddingProvider,
-            "embedding-video": RemoteVideoEmbeddingProvider,
-        }
-        cls = category_map.get(config.category)
-        if cls is None:
-            raise ValueError(f"No remote provider for category '{config.category}'")
+        cls = remote_provider_for(config.category)
         return cls(config)
 
     def get(self, model_id: str) -> BaseProvider:
