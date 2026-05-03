@@ -429,6 +429,12 @@ async def generate(request: Request):
                 {"error": {"message": str(e), "type": "invalid_request"}},
                 status_code=400,
             )
+        except RuntimeError as e:
+            if "CUDA error" in str(e):
+                import sys
+                logger.critical("Unrecoverable CUDA error — worker exiting for restart: %s", e)
+                sys.exit(1)
+            raise
 
         return JSONResponse(
             {"error": {"message": f"Unknown category: {config.category}"}},
