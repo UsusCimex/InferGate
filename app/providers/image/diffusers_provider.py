@@ -118,6 +118,8 @@ class DiffusersImageProvider(ImageProvider):
         logger.info("Loading %s from %s", self.model_id, hub_id)
         loop = asyncio.get_running_loop()
 
+        vae_tiling = self.config.model.get("vae_tiling", False)
+
         def _load():
             pipe = DiffusionPipeline.from_pretrained(hub_id, **kwargs)
             if sequential_offload:
@@ -126,6 +128,8 @@ class DiffusersImageProvider(ImageProvider):
                 pipe.enable_model_cpu_offload()
             else:
                 pipe.to("cuda")
+            if vae_tiling and hasattr(pipe, "enable_vae_tiling"):
+                pipe.enable_vae_tiling()
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
