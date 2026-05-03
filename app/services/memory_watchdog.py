@@ -119,7 +119,7 @@ class MemoryWatchdog:
                     logger.error("MemoryWatchdog: eviction of %s failed: %s", victim, e)
             else:
                 logger.warning(
-                    "MemoryWatchdog: VRAM over threshold but all loaded models are pinned"
+                    "MemoryWatchdog: VRAM over threshold but all loaded models are pinned or busy"
                 )
 
         # Host RAM is advisory — the watchdog owns no host processes.
