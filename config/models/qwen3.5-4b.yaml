@@ -6,13 +6,13 @@ enabled: ${oc.decode:${oc.env:QWEN3_5_4B_ENABLED,true}}
 
 model:
   hub_id: "cyankiwi/Qwen3.5-4B-AWQ-4bit"
-  vram_mb: ${oc.decode:${oc.env:QWEN3_5_4B_VRAM_MB,4000}}
+  vram_mb: ${oc.decode:${oc.env:QWEN3_5_4B_VRAM_MB,6000}}
   torch_dtype: ${oc.env:QWEN3_5_4B_TORCH_DTYPE,float16}
   quantization: ${oc.env:QWEN3_5_4B_QUANTIZATION,compressed-tensors}
   enforce_eager: ${oc.decode:${oc.env:QWEN3_5_4B_ENFORCE_EAGER,true}}
   trust_remote_code: ${oc.decode:${oc.env:QWEN3_5_4B_TRUST_REMOTE_CODE,true}}
   gpu_memory_utilization: ${oc.decode:${oc.env:QWEN3_5_4B_GPU_MEM_UTIL,0.90}}
-  context_length: ${oc.decode:${oc.env:QWEN3_5_4B_CONTEXT_LENGTH,16384}}
+  context_length: ${oc.decode:${oc.env:QWEN3_5_4B_CONTEXT_LENGTH,8192}}
   default_params:
     max_tokens: ${oc.decode:${oc.env:QWEN3_5_4B_MAX_TOKENS,4096}}
     temperature: ${oc.decode:${oc.env:QWEN3_5_4B_TEMPERATURE,0.7}}
