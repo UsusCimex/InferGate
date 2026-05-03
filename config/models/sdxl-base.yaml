@@ -11,6 +11,7 @@ model:
   vram_mb: ${oc.decode:${oc.env:SDXL_BASE_VRAM_MB,7000}}
   cpu_offload: ${oc.decode:${oc.env:SDXL_BASE_CPU_OFFLOAD,false}}
   sequential_cpu_offload: ${oc.decode:${oc.env:SDXL_BASE_SEQUENTIAL_OFFLOAD,false}}
+  vae_hub_id: ${oc.env:SDXL_BASE_VAE_HUB_ID,madebyollin/sdxl-vae-fp16-fix}
   vae_tiling: ${oc.decode:${oc.env:SDXL_BASE_VAE_TILING,true}}
   warmup: ${oc.decode:${oc.env:SDXL_BASE_WARMUP,false}}
   variant: ${oc.env:SDXL_BASE_VARIANT,fp16}

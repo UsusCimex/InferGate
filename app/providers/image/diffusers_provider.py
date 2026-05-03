@@ -184,11 +184,20 @@ class DiffusersImageProvider(ImageProvider):
         loop = asyncio.get_running_loop()
 
         vae_tiling = self.config.model.get("vae_tiling", False)
+        vae_hub_id = self.config.model.get("vae_hub_id")
 
         def _load():
             import torch as _torch
+            from diffusers import AutoencoderKL
 
-            pipe = DiffusionPipeline.from_pretrained(hub_id, **kwargs)
+            pipe_kwargs = dict(kwargs)
+            if vae_hub_id:
+                logger.info("Loading VAE %s for %s", vae_hub_id, self.model_id)
+                pipe_kwargs["vae"] = AutoencoderKL.from_pretrained(
+                    vae_hub_id, torch_dtype=dtype, cache_dir=model_dir
+                )
+
+            pipe = DiffusionPipeline.from_pretrained(hub_id, **pipe_kwargs)
             if sequential_offload:
                 pipe.enable_sequential_cpu_offload()
             elif cpu_offload:
