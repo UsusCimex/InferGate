@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import io
 import logging
 from typing import Any
@@ -59,6 +60,48 @@ _QUANT_BACKENDS = {
     "fp8": _fp8_kwargs,
     "float8": _fp8_kwargs,
 }
+
+
+def _apply_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
+    """Enable VAE tiling with the largest tile that fits in available VRAM.
+
+    Measures free VRAM after the model is on device, then picks the biggest
+    tile_latent_min_size where a single tile's decode fits comfortably.  When
+    free VRAM is large enough for a full 128×128 decode the function enables
+    tiling with threshold=129 (effectively a no-op for ≤1024px images).
+
+    Empirical baseline: decoding a 64×64-latent (512×512px) tile consumes
+    ~900 MB extra; usage scales quadratically with tile side length.
+    """
+    if not (torch.cuda.is_available() and hasattr(pipe, "enable_vae_tiling")):
+        return
+
+    # Half the free VRAM is reserved for UNet activations during inference.
+    free_mb = torch.cuda.mem_get_info()[0] / (1024 ** 2)
+    vae_budget_mb = free_mb * 0.5
+
+    # Base: 64-latent tile ≈ 900 MB.  Scales as tile².
+    _BASE_TILE = 64
+    _BASE_MB = 900.0
+    max_tile = int(_BASE_TILE * (vae_budget_mb / _BASE_MB) ** 0.5)
+
+    if max_tile >= 128:
+        # Full 1024px decode fits — set threshold above 128 to skip tiling.
+        tile_size = 129
+        logger.info(
+            "VAE tiling: free VRAM %.0f MB, full-decode fits (tile_min=%d) for %s",
+            free_mb, tile_size, model_id,
+        )
+    else:
+        tile_size = max(48, max_tile)
+        logger.info(
+            "VAE tiling: free VRAM %.0f MB, budget %.0f MB → tile=%d latents for %s",
+            free_mb, vae_budget_mb, tile_size, model_id,
+        )
+
+    pipe.enable_vae_tiling()
+    if hasattr(pipe, "vae") and hasattr(pipe.vae, "tile_latent_min_size"):
+        pipe.vae.tile_latent_min_size = tile_size
 
 
 @register_provider
@@ -121,6 +164,8 @@ class DiffusersImageProvider(ImageProvider):
         vae_tiling = self.config.model.get("vae_tiling", False)
 
         def _load():
+            import torch as _torch
+
             pipe = DiffusionPipeline.from_pretrained(hub_id, **kwargs)
             if sequential_offload:
                 pipe.enable_sequential_cpu_offload()
@@ -129,13 +174,7 @@ class DiffusersImageProvider(ImageProvider):
             else:
                 pipe.to("cuda")
             if vae_tiling and hasattr(pipe, "enable_vae_tiling"):
-                pipe.enable_vae_tiling()
-                # tile_latent_min_size=112: at 1024px (latent 128) → overlap_size=84
-                # → 2 tiles per dim (not 3), avoiding the 3×3 grid seam artifact.
-                # At 896px (latent 112) condition 112>112 is False → no tiling at all.
-                if hasattr(pipe, "vae") and hasattr(pipe.vae, "tile_latent_min_size"):
-                    pipe.vae.tile_latent_min_size = 112
-                logger.info("VAE tiling enabled for %s", self.model_id)
+                _apply_vae_tiling(pipe, self.model_id, _torch)
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
@@ -277,10 +316,8 @@ class DiffusersImageProvider(ImageProvider):
                 # If a prior CUDA OOM left the context broken, each call may raise;
                 # proceed anyway so the provider is marked unloaded and state stays consistent.
                 for fn in (torch.cuda.synchronize, torch.cuda.empty_cache, torch.cuda.ipc_collect):
-                    try:
+                    with contextlib.suppress(Exception):
                         fn()
-                    except Exception:
-                        pass
             await loop.run_in_executor(None, _cuda_cleanup)
         self._loaded = False
         logger.info("Unloaded %s", self.model_id)
