@@ -62,51 +62,37 @@ _QUANT_BACKENDS = {
 }
 
 
-def _apply_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
-    """Patch VAE decode with a pre-call cache flush; enable tiling only as a fallback.
+def _apply_vae_cache_flush(pipe: Any, torch: Any) -> None:
+    """Patch VAE decode to flush the CUDA allocator cache before each call.
 
-    Root cause of SDXL OOM at decode: after the UNet denoising loop the CUDA
-    allocator retains ~4 GB of freed activation memory in its pool, leaving less
-    than 1 GB nominally free.  The VAE decode then hits OOM even though the
-    model weights themselves fit fine.  Flushing the allocator cache right before
-    vae.decode reclaims that headroom — on a 12 GB card with a 7 GB model this
-    typically frees ~4 GB, enough for a clean full-resolution decode with no tiling
-    artifacts.
-
-    Tiling is kept as a fallback for cases where free VRAM is still insufficient
-    after the flush (smaller cards, larger models).
+    After UNet denoising the CUDA allocator retains ~4 GB of freed activations in
+    its pool, leaving little nominally free VRAM.  Flushing right before vae.decode
+    reclaims that headroom without tiling artifacts.
     """
     if not torch.cuda.is_available() or not hasattr(pipe, "vae"):
         return
+    _orig = pipe.vae.decode
 
-    # Patch vae.decode so every call flushes the allocator pool first.
-    _orig_decode = pipe.vae.decode
-
-    def _flushed_decode(*args: Any, **kwargs: Any) -> Any:
+    def _flushed(*args: Any, **kwargs: Any) -> Any:
         torch.cuda.empty_cache()
-        return _orig_decode(*args, **kwargs)
+        return _orig(*args, **kwargs)
 
-    pipe.vae.decode = _flushed_decode
+    pipe.vae.decode = _flushed
 
-    # Measure free VRAM now (right after model load, before any inference).
-    # After a flush this equals what the VAE decode will have available at runtime.
+
+def _maybe_enable_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
+    """Enable VAE tiling only when free VRAM after load is insufficient for full decode.
+
+    Tiling causes blending artifacts and should be a last resort for cards with
+    very limited headroom.  Do NOT use with fp16-native VAEs on 12 GB+ cards.
+    """
+    if not torch.cuda.is_available() or not hasattr(pipe, "enable_vae_tiling"):
+        return
     torch.cuda.empty_cache()
     free_mb = torch.cuda.mem_get_info()[0] / (1024 ** 2)
-
-    # Empirical peak for full 1024×1024 (128×128 latent) decode ≈ 4000 MB.
-    # 10 % safety margin → threshold 4400 MB.
-    if free_mb >= 4400:
+    if free_mb >= 3000:
         logger.info(
-            "VAE: %.0f MB free after model load — full decode fits, no tiling for %s",
-            free_mb, model_id,
-        )
-        return
-
-    # Not enough room even with flush → fall back to tiling.
-    if not hasattr(pipe, "enable_vae_tiling"):
-        logger.warning(
-            "VAE: %.0f MB free — insufficient for full decode but pipeline has no "
-            "enable_vae_tiling(); consider cpu_offload for %s",
+            "VAE: %.0f MB free — full fp16 decode fits, skipping tiling for %s",
             free_mb, model_id,
         )
         return
@@ -204,8 +190,9 @@ class DiffusersImageProvider(ImageProvider):
                 pipe.enable_model_cpu_offload()
             else:
                 pipe.to("cuda")
-            if vae_tiling and hasattr(pipe, "enable_vae_tiling"):
-                _apply_vae_tiling(pipe, self.model_id, _torch)
+            _apply_vae_cache_flush(pipe, _torch)
+            if vae_tiling:
+                _maybe_enable_vae_tiling(pipe, self.model_id, _torch)
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
