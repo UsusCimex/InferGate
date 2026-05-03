@@ -130,6 +130,11 @@ class DiffusersImageProvider(ImageProvider):
                 pipe.to("cuda")
             if vae_tiling and hasattr(pipe, "enable_vae_tiling"):
                 pipe.enable_vae_tiling()
+                # Some diffusers versions default tile_latent_min_size=128; SDXL latents
+                # are exactly 128×128 so size > min_size is False and tiling never fires.
+                if hasattr(pipe, "vae") and hasattr(pipe.vae, "tile_latent_min_size"):
+                    pipe.vae.tile_latent_min_size = 64
+                logger.info("VAE tiling enabled for %s", self.model_id)
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
@@ -268,9 +273,13 @@ class DiffusersImageProvider(ImageProvider):
         await loop.run_in_executor(None, gc.collect)
         if torch.cuda.is_available():
             def _cuda_cleanup() -> None:
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
+                # If a prior CUDA OOM left the context broken, each call may raise;
+                # proceed anyway so the provider is marked unloaded and state stays consistent.
+                for fn in (torch.cuda.synchronize, torch.cuda.empty_cache, torch.cuda.ipc_collect):
+                    try:
+                        fn()
+                    except Exception:
+                        pass
             await loop.run_in_executor(None, _cuda_cleanup)
         self._loaded = False
         logger.info("Unloaded %s", self.model_id)
