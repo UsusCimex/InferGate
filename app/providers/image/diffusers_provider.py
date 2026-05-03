@@ -130,10 +130,11 @@ class DiffusersImageProvider(ImageProvider):
                 pipe.to("cuda")
             if vae_tiling and hasattr(pipe, "enable_vae_tiling"):
                 pipe.enable_vae_tiling()
-                # Some diffusers versions default tile_latent_min_size=128; SDXL latents
-                # are exactly 128×128 so size > min_size is False and tiling never fires.
+                # tile_latent_min_size=112: at 1024px (latent 128) → overlap_size=84
+                # → 2 tiles per dim (not 3), avoiding the 3×3 grid seam artifact.
+                # At 896px (latent 112) condition 112>112 is False → no tiling at all.
                 if hasattr(pipe, "vae") and hasattr(pipe.vae, "tile_latent_min_size"):
-                    pipe.vae.tile_latent_min_size = 64
+                    pipe.vae.tile_latent_min_size = 112
                 logger.info("VAE tiling enabled for %s", self.model_id)
             return pipe
 

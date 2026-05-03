@@ -19,8 +19,8 @@ model:
   default_params:
     num_inference_steps: ${oc.decode:${oc.env:SDXL_BASE_STEPS,30}}
     guidance_scale: ${oc.decode:${oc.env:SDXL_BASE_CFG,7.0}}
-    width: 1024
-    height: 1024
+    width: ${oc.decode:${oc.env:SDXL_BASE_WIDTH,896}}
+    height: ${oc.decode:${oc.env:SDXL_BASE_HEIGHT,896}}
   lora:
     max_loaded: ${oc.decode:${oc.env:SDXL_BASE_LORA_MAX_LOADED,8}}
     max_per_request: ${oc.decode:${oc.env:SDXL_BASE_LORA_MAX_PER_REQUEST,5}}
