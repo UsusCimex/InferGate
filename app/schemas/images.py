@@ -39,7 +39,7 @@ class ImageGenerationRequest(BaseModel):
     model: str | None = None
     prompt: str = Field(..., min_length=1, max_length=10000)
     n: int = Field(1, ge=1, le=10)
-    size: str = "1024x1024"
+    size: str | None = None
     response_format: str = "b64_json"
     seed: int | None = None
     negative_prompt: str | None = Field(None, max_length=10000)

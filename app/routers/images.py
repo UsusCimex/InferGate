@@ -38,7 +38,9 @@ async def generate_images(
     provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
 
-    params: dict = {"size": body.size}
+    params: dict = {}
+    if body.size is not None:
+        params["size"] = body.size
     if body.seed is not None:
         params["seed"] = body.seed
     if body.negative_prompt is not None:
