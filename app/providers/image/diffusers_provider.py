@@ -63,45 +63,67 @@ _QUANT_BACKENDS = {
 
 
 def _apply_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
-    """Enable VAE tiling with the largest tile that fits in available VRAM.
+    """Patch VAE decode with a pre-call cache flush; enable tiling only as a fallback.
 
-    Measures free VRAM after the model is on device, then picks the biggest
-    tile_latent_min_size where a single tile's decode fits comfortably.  When
-    free VRAM is large enough for a full 128×128 decode the function enables
-    tiling with threshold=129 (effectively a no-op for ≤1024px images).
+    Root cause of SDXL OOM at decode: after the UNet denoising loop the CUDA
+    allocator retains ~4 GB of freed activation memory in its pool, leaving less
+    than 1 GB nominally free.  The VAE decode then hits OOM even though the
+    model weights themselves fit fine.  Flushing the allocator cache right before
+    vae.decode reclaims that headroom — on a 12 GB card with a 7 GB model this
+    typically frees ~4 GB, enough for a clean full-resolution decode with no tiling
+    artifacts.
 
-    Empirical baseline: decoding a 64×64-latent (512×512px) tile consumes
-    ~900 MB extra; usage scales quadratically with tile side length.
+    Tiling is kept as a fallback for cases where free VRAM is still insufficient
+    after the flush (smaller cards, larger models).
     """
-    if not (torch.cuda.is_available() and hasattr(pipe, "enable_vae_tiling")):
+    if not torch.cuda.is_available() or not hasattr(pipe, "vae"):
         return
 
-    # Half the free VRAM is reserved for UNet activations during inference.
-    free_mb = torch.cuda.mem_get_info()[0] / (1024 ** 2)
-    vae_budget_mb = free_mb * 0.5
+    # Patch vae.decode so every call flushes the allocator pool first.
+    _orig_decode = pipe.vae.decode
 
-    # Base: 64-latent tile ≈ 900 MB.  Scales as tile².
+    def _flushed_decode(*args: Any, **kwargs: Any) -> Any:
+        torch.cuda.empty_cache()
+        return _orig_decode(*args, **kwargs)
+
+    pipe.vae.decode = _flushed_decode
+
+    # Measure free VRAM now (right after model load, before any inference).
+    # After a flush this equals what the VAE decode will have available at runtime.
+    torch.cuda.empty_cache()
+    free_mb = torch.cuda.mem_get_info()[0] / (1024 ** 2)
+
+    # Empirical peak for full 1024×1024 (128×128 latent) decode ≈ 4000 MB.
+    # 10 % safety margin → threshold 4400 MB.
+    if free_mb >= 4400:
+        logger.info(
+            "VAE: %.0f MB free after model load — full decode fits, no tiling for %s",
+            free_mb, model_id,
+        )
+        return
+
+    # Not enough room even with flush → fall back to tiling.
+    if not hasattr(pipe, "enable_vae_tiling"):
+        logger.warning(
+            "VAE: %.0f MB free — insufficient for full decode but pipeline has no "
+            "enable_vae_tiling(); consider cpu_offload for %s",
+            free_mb, model_id,
+        )
+        return
+
     _BASE_TILE = 64
     _BASE_MB = 900.0
-    max_tile = int(_BASE_TILE * (vae_budget_mb / _BASE_MB) ** 0.5)
-
-    if max_tile >= 128:
-        # Full 1024px decode fits — set threshold above 128 to skip tiling.
-        tile_size = 129
-        logger.info(
-            "VAE tiling: free VRAM %.0f MB, full-decode fits (tile_min=%d) for %s",
-            free_mb, tile_size, model_id,
-        )
-    else:
-        tile_size = max(48, max_tile)
-        logger.info(
-            "VAE tiling: free VRAM %.0f MB, budget %.0f MB → tile=%d latents for %s",
-            free_mb, vae_budget_mb, tile_size, model_id,
-        )
+    max_tile = int(_BASE_TILE * (free_mb * 0.9 / _BASE_MB) ** 0.5)
+    tile_size = max(48, min(max_tile, 127))
 
     pipe.enable_vae_tiling()
-    if hasattr(pipe, "vae") and hasattr(pipe.vae, "tile_latent_min_size"):
+    if hasattr(pipe.vae, "tile_latent_min_size"):
         pipe.vae.tile_latent_min_size = tile_size
+
+    logger.info(
+        "VAE: %.0f MB free — tiling with tile=%d latents for %s",
+        free_mb, tile_size, model_id,
+    )
 
 
 @register_provider
