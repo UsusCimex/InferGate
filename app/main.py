@@ -44,6 +44,9 @@ async def lifespan(app: FastAPI):
         level=getattr(logging, server_cfg.log_level.value.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    # /stats poller would log a line per worker per tick at httpx INFO.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     warnings.filterwarnings("ignore", category=UserWarning)
     warnings.filterwarnings("ignore", category=FutureWarning)
