@@ -13,6 +13,7 @@ model:
   sequential_cpu_offload: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_SEQUENTIAL_OFFLOAD,true}}
   warmup: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_WARMUP,true}}
   quantization: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_QUANTIZATION,null}}
+  quantize_components: ["transformer", "text_encoder"]
   default_params:
     num_inference_steps: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_STEPS,4}}
     guidance_scale: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_CFG,0.0}}
