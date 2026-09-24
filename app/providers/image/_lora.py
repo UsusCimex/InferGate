@@ -30,7 +30,7 @@ class LoraCache:
             return
 
         if not loras:
-            if hasattr(pipe, "disable_lora"):
+            if self._cache and hasattr(pipe, "disable_lora"):
                 pipe.disable_lora()
             return
 
