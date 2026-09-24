@@ -8,10 +8,16 @@ logger = logging.getLogger(__name__)
 
 # A1111 weight syntax: (word:1.5), (phrase:0.8), (word:-1.2).
 _WEIGHT_RE = re.compile(r"\([^()]+:\s*[-+]?\d+\.?\d*\s*\)")
+_WEIGHT_GROUP_RE = re.compile(r"\(([^()]+?)\s*:\s*([-+]?\d+\.?\d*)\s*\)")
 
 
 def has_weight_syntax(*prompts: str | None) -> bool:
     return any(p and _WEIGHT_RE.search(p) for p in prompts)
+
+
+def strip_weight_syntax(prompt: str) -> str:
+    """Plain-text prompt for models without compel; non-positive weights drop their phrase."""
+    return _WEIGHT_GROUP_RE.sub(lambda m: m.group(1) if float(m.group(2)) > 0 else "", prompt)
 
 
 class CompelAdapter:

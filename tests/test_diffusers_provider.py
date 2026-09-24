@@ -95,3 +95,9 @@ async def test_request_without_scheduler_runs_on_the_default(fake_diffusers, pro
         "DPMSolverSDEScheduler", "EulerDiscreteScheduler", "EulerDiscreteScheduler",
     ]
 
+
+async def test_weights_become_plain_text_without_compel(provider):
+    await provider.generate("(A single bat:1.4), an animal", negative_prompt="(blurry:1.2), text")
+    _, kwargs = provider._pipeline.calls[-1]
+    assert kwargs["prompt"] == "A single bat, an animal"
+    assert kwargs["negative_prompt"] == "blurry, text"

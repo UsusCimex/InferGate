@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from app.providers.base import ImageProvider
-from app.providers.image._compel import CompelAdapter, has_weight_syntax
+from app.providers.image._compel import CompelAdapter, has_weight_syntax, strip_weight_syntax
 from app.providers.image._highres_fix import apply_highres_fix
 from app.providers.image._lora import LoraCache
 from app.providers.image._schedulers import resolve_scheduler
@@ -384,6 +384,10 @@ class DiffusersImageProvider(ImageProvider):
         lora_cfg = self.config.model.get("lora") or {}
 
         negative_prompt = defaults.get("negative_prompt") or ""
+        if not self._compel.available and has_weight_syntax(prompt, negative_prompt):
+            prompt = strip_weight_syntax(prompt)
+            if negative_prompt:
+                negative_prompt = defaults["negative_prompt"] = strip_weight_syntax(negative_prompt)
         use_compel = self._compel.available and has_weight_syntax(prompt, negative_prompt)
 
         def _gen():
@@ -432,12 +436,13 @@ class DiffusersImageProvider(ImageProvider):
                     "image": latents,
                     "denoising_start": float(refiner_switch_at),
                 }
-                for k in ("num_inference_steps", "guidance_scale", "generator",
-                          "negative_prompt"):
+                for k in ("num_inference_steps", "guidance_scale", "generator"):
                     if k in defaults:
                         ref_kwargs[k] = defaults[k]
-                # Refiner uses the plain prompt; compel prompt_embeds aren't supported here.
-                return self._refiner(prompt=prompt, **ref_kwargs).images[0]
+                if negative_prompt:
+                    ref_kwargs["negative_prompt"] = strip_weight_syntax(negative_prompt)
+                # The refiner has no compel adapter and reads prompts as plain text.
+                return self._refiner(prompt=strip_weight_syntax(prompt), **ref_kwargs).images[0]
 
             if use_compel:
                 return self._pipeline(**defaults).images[0]
