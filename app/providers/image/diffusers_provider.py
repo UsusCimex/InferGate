@@ -11,7 +11,7 @@ from app.providers.base import ImageProvider
 from app.providers.image._compel import CompelAdapter, has_weight_syntax
 from app.providers.image._highres_fix import apply_highres_fix
 from app.providers.image._lora import LoraCache
-from app.providers.image._schedulers import maybe_swap_scheduler
+from app.providers.image._schedulers import resolve_scheduler
 from app.providers.image._textual_inversion import TextualInversionRegistry
 from app.providers.registry import register_provider
 
@@ -119,6 +119,7 @@ class DiffusersImageProvider(ImageProvider):
     def __init__(self, config):
         super().__init__(config)
         self._pipeline = None
+        self._default_scheduler = None
         self._compel = CompelAdapter(self.model_id)
         self._lora = LoraCache(self.model_id)
         self._ti = TextualInversionRegistry(self.model_id)
@@ -196,6 +197,7 @@ class DiffusersImageProvider(ImageProvider):
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)
+        self._default_scheduler = self._pipeline.scheduler
         if self.config.model.get("compel", True):
             self._compel.init(self._pipeline)
 
@@ -326,6 +328,7 @@ class DiffusersImageProvider(ImageProvider):
                 self._pipeline.maybe_free_model_hooks()
             del self._pipeline
             self._pipeline = None
+        self._default_scheduler = None
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, gc.collect)
@@ -355,7 +358,7 @@ class DiffusersImageProvider(ImageProvider):
         defaults.pop("response_format", None)
         defaults.pop("n", None)
 
-        scheduler_name = defaults.pop("scheduler", None)
+        scheduler = resolve_scheduler(self._default_scheduler, defaults.pop("scheduler", None))
         # LoRAs apply before compel: compel reads live text-encoder weights.
         loras = defaults.pop("loras", None)
         textual_inversions = defaults.pop("textual_inversions", None)
@@ -384,7 +387,7 @@ class DiffusersImageProvider(ImageProvider):
         use_compel = self._compel.available and has_weight_syntax(prompt, negative_prompt)
 
         def _gen():
-            maybe_swap_scheduler(self._pipeline, scheduler_name)
+            self._pipeline.scheduler = scheduler
             self._lora.apply(self._pipeline, loras, lora_cfg, model_dir)
             self._ti.apply(self._pipeline, textual_inversions, model_dir)
             if seed is not None:

@@ -19,10 +19,15 @@ _SCHEDULERS: dict[str, str | tuple[str, dict[str, Any]]] = {
 }
 
 
-def maybe_swap_scheduler(pipeline: Any, name: str | None) -> None:
-    """Replace `pipeline.scheduler` with the named alternative in-place."""
+def resolve_scheduler(default: Any, name: str | None) -> Any:
+    """Per-request scheduler: `default`, or the named one built from `default`'s config."""
     if not name:
-        return
+        return default
+    if type(default).__name__.startswith("FlowMatch"):
+        raise ValueError(
+            f"scheduler '{name}' does not apply to flow-matching models; "
+            "omit it to keep the model's own sampler"
+        )
     entry = _SCHEDULERS.get(name.lower())
     if entry is None:
         raise ValueError(
@@ -37,4 +42,4 @@ def maybe_swap_scheduler(pipeline: Any, name: str | None) -> None:
         raise ValueError(
             f"Scheduler class '{cls_name}' not in current diffusers version"
         ) from e
-    pipeline.scheduler = cls.from_config(pipeline.scheduler.config, **extra)
+    return cls.from_config(default.config, **extra)
