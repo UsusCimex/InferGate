@@ -33,8 +33,8 @@ Self-hosted OpenAI-совместимый AI-шлюз для локальных 
 Каждая модель работает в своём контейнере с собственными зависимостями. Docker Compose profiles позволяют выбрать, какие модели запускать.
 
 ```bash
-git clone https://github.com/UsusCimex/infergate.git
-cd infergate
+git clone https://github.com/UsusCimex/InferGate.git
+cd InferGate
 
 # 1. Подготовить окружение (HF_TOKEN, профили, опциональные тюнинги)
 cp deploy/.env.example deploy/.env
@@ -877,7 +877,7 @@ docker compose -f deploy/docker-compose.yml \
 docker compose ... exec caddy cat /data/caddy/pki/authorities/local/root.crt
 ```
 
-В Comput / любом OpenAI-клиенте остаётся только сменить `baseUrl` с `http://host:8000/v1/` на `https://infergate.example.com/v1/` — никакой код-правки в gateway/worker не требуется.
+В PictoLex / любом OpenAI-клиенте остаётся только сменить `baseUrl` с `http://host:8000/v1/` на `https://infergate.example.com/v1/` — никакой код-правки в gateway/worker не требуется.
 
 ---
 
