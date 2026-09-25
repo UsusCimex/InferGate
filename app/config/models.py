@@ -35,6 +35,7 @@ class ModelMetadata(BaseModel):
 class ModelCapabilities(BaseModel):
     """Per-model feature flags enforced at the API boundary."""
     voice_clone_only: bool = False
+    vision: bool = False
 
 
 class ModelConfig(BaseModel):

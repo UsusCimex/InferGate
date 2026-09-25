@@ -10,6 +10,12 @@ from typing import Any
 
 from app.providers.base import TextProvider
 from app.providers.registry import register_provider
+from app.providers.text._chat_images import (
+    decode_data_url,
+    image_urls,
+    text_of,
+    with_system_instruction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +42,11 @@ class VllmTextProvider(TextProvider):
         quantization = self.config.model.get("quantization", None)
         kv_cache_dtype = self.config.model.get("kv_cache_dtype", "auto")
         trust_remote_code = self.config.model.get("trust_remote_code", False)
+        multimodal = {
+            key: self.config.model[key]
+            for key in ("limit_mm_per_prompt", "mm_processor_kwargs")
+            if key in self.config.model
+        }
 
         engine_args = AsyncEngineArgs(
             model=hub_id,
@@ -47,6 +58,7 @@ class VllmTextProvider(TextProvider):
             enforce_eager=enforce_eager,
             quantization=quantization,
             kv_cache_dtype=kv_cache_dtype,
+            **multimodal,
         )
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
 
@@ -104,17 +116,11 @@ class VllmTextProvider(TextProvider):
             top_p=top_p,
         )
 
-        messages = list(messages)
         if response_format == "json_object":
-            if messages and messages[0].get("role") == "system":
-                messages[0] = {
-                    **messages[0],
-                    "content": messages[0]["content"] + "\nRespond with valid JSON only.",
-                }
-            else:
-                messages.insert(0, {"role": "system", "content": "Respond with valid JSON only."})
+            messages = with_system_instruction(messages, "Respond with valid JSON only.")
 
-        prompt = self._build_prompt(messages, thinking=thinking)
+        images = await asyncio.to_thread(self._decode_images, messages)
+        prompt = self._build_prompt(messages, thinking=thinking, images=images)
         request_id = str(uuid.uuid4())
 
         output_text = ""
@@ -169,17 +175,11 @@ class VllmTextProvider(TextProvider):
             top_p=top_p,
         )
 
-        messages = list(messages)
         if response_format == "json_object":
-            if messages and messages[0].get("role") == "system":
-                messages[0] = {
-                    **messages[0],
-                    "content": messages[0]["content"] + "\nRespond with valid JSON only.",
-                }
-            else:
-                messages.insert(0, {"role": "system", "content": "Respond with valid JSON only."})
+            messages = with_system_instruction(messages, "Respond with valid JSON only.")
 
-        prompt = self._build_prompt(messages, thinking=thinking)
+        images = await asyncio.to_thread(self._decode_images, messages)
+        prompt = self._build_prompt(messages, thinking=thinking, images=images)
         request_id = str(uuid.uuid4())
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
@@ -236,9 +236,21 @@ class VllmTextProvider(TextProvider):
         except Exception as e:
             logger.debug("Failed to abort vLLM request %s: %s", request_id, e)
 
-    def _build_prompt(self, messages: list[dict], thinking: bool = True):
-        """Build a vLLM TokensPrompt from chat messages (native template or ChatML fallback)."""
-        from vllm import TokensPrompt
+    @staticmethod
+    def _decode_images(messages: list[dict]) -> list:
+        return [decode_data_url(url) for url in image_urls(messages)]
+
+    def _build_prompt(self, messages: list[dict], thinking: bool = True, images: list | None = None):
+        """Build a vLLM prompt from chat messages (native template or ChatML fallback)."""
+        from vllm import TextPrompt, TokensPrompt
+
+        if images:
+            text = None
+            if self._tokenizer and hasattr(self._tokenizer, "apply_chat_template"):
+                text = self._apply_template(messages, thinking, tokenize=False)
+            if text is None:
+                raise ValueError(f"model '{self.model_id}' could not render images in its chat template")
+            return TextPrompt(prompt=text, multi_modal_data={"image": images})
 
         if self._tokenizer and hasattr(self._tokenizer, "apply_chat_template"):
             token_ids = self._apply_template(messages, thinking)
@@ -250,9 +262,9 @@ class VllmTextProvider(TextProvider):
             return TokensPrompt(prompt_token_ids=self._tokenizer.encode(text))
         return text
 
-    def _apply_template(self, messages: list[dict], thinking: bool) -> list[int] | None:
+    def _apply_template(self, messages: list[dict], thinking: bool, tokenize: bool = True):
         """Apply the tokenizer's chat template; returns None if it can't be applied."""
-        kwargs: dict[str, Any] = {"tokenize": True, "add_generation_prompt": True}
+        kwargs: dict[str, Any] = {"tokenize": tokenize, "add_generation_prompt": True}
         if not thinking:
             kwargs["enable_thinking"] = False
         try:
@@ -273,7 +285,7 @@ class VllmTextProvider(TextProvider):
         parts = []
         for msg in messages:
             role = msg.get("role", "user")
-            content = msg.get("content", "")
+            content = text_of(msg.get("content", ""))
             parts.append(f"<|im_start|>{role}\n{content}<|im_end|>")
         if thinking:
             parts.append("<|im_start|>assistant\n")

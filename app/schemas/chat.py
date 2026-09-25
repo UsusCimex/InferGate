@@ -1,12 +1,55 @@
 from __future__ import annotations
 
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+MAX_IMAGE_URL_CHARS = 64_000_000
+
+
+class TextPart(BaseModel):
+    """Text part of a multimodal message."""
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text"]
+    text: str
+
+
+class ImageURL(BaseModel):
+    """Inline image as a data URL."""
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(..., max_length=MAX_IMAGE_URL_CHARS)
+    detail: str | None = None
+
+
+class ImageURLPart(BaseModel):
+    """Image part of a multimodal message."""
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["image_url"]
+    image_url: ImageURL
+
+
+ContentPart = Annotated[TextPart | ImageURLPart, Field(discriminator="type")]
 
 
 class ChatMessage(BaseModel):
+    """Chat request message: plain text or a list of text and image parts."""
     model_config = ConfigDict(extra="forbid")
 
     role: str
+    content: str | list[ContentPart]
+
+    def image_urls(self) -> list[str]:
+        if isinstance(self.content, str):
+            return []
+        return [part.image_url.url for part in self.content if isinstance(part, ImageURLPart)]
+
+
+class AssistantMessage(BaseModel):
+    """Chat response message."""
+    role: str = "assistant"
     content: str
 
 
@@ -31,7 +74,7 @@ class ChatCompletionRequest(BaseModel):
 
 class ChatChoice(BaseModel):
     index: int = 0
-    message: ChatMessage
+    message: AssistantMessage
     finish_reason: str = "stop"
 
 

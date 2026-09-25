@@ -13,6 +13,13 @@ model:
   trust_remote_code: ${oc.decode:${oc.env:QWEN3_5_4B_TRUST_REMOTE_CODE,true}}
   gpu_memory_utilization: ${oc.decode:${oc.env:QWEN3_5_4B_GPU_MEM_UTIL,0.90}}
   context_length: ${oc.decode:${oc.env:QWEN3_5_4B_CONTEXT_LENGTH,8192}}
+  limit_mm_per_prompt:
+    image: 4
+    video: 0
+  mm_processor_kwargs:
+    size:
+      longest_edge: 1048576
+      shortest_edge: 65536
   default_params:
     max_tokens: ${oc.decode:${oc.env:QWEN3_5_4B_MAX_TOKENS,4096}}
     temperature: ${oc.decode:${oc.env:QWEN3_5_4B_TEMPERATURE,0.7}}
@@ -31,4 +38,7 @@ queue:
 metadata:
   license: Apache-2.0
   description: "Compact Qwen model, AWQ 4-bit quantized for 12 GB GPUs"
-  tags: ["compact", "multilingual", "quantized"]
+  tags: ["compact", "multilingual", "quantized", "vision"]
+
+capabilities:
+  vision: true

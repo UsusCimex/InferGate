@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
+from app.config import ModelConfig, UploadLimitsConfig
 from app.dependencies import (
     get_cache_manager,
     get_defaults,
     get_gpu_scheduler,
     get_provider_manager,
+    get_upload_limits,
 )
 from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prometheus_available
 from app.schemas.chat import ChatCompletionRequest
@@ -20,6 +22,30 @@ from app.schemas.chat import ChatCompletionRequest
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _image_error(urls: list[str], config: ModelConfig, limits: UploadLimitsConfig) -> JSONResponse | None:
+    if not config.capabilities.vision:
+        return JSONResponse(
+            {"error": {"message": f"model '{config.id}' does not accept images",
+                       "type": "vision_not_supported"}},
+            status_code=400,
+        )
+    # base64 inflates bytes by 4/3; the margin covers the data URL header.
+    max_chars = limits.max_image_mb * 1024 * 1024 * 4 // 3 + 64
+    for url in urls:
+        if not url.startswith("data:image/"):
+            return JSONResponse(
+                {"error": {"message": "images must be base64 data:image URLs", "type": "invalid_image"}},
+                status_code=400,
+            )
+        if len(url) > max_chars:
+            return JSONResponse(
+                {"error": {"message": f"image exceeds {limits.max_image_mb}MB limit",
+                           "type": "upload_too_large"}},
+                status_code=413,
+            )
+    return None
 
 
 @router.post("/v1/chat/completions")
@@ -30,15 +56,20 @@ async def chat_completions(
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
+    limits=Depends(get_upload_limits),
 ):
     model_id = body.model or defaults.get("text")
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)
 
+    config = manager.get_config(model_id)
+    image_urls = [url for message in body.messages for url in message.image_urls()]
+    if image_urls and (error := _image_error(image_urls, config, limits)):
+        return error
+
     start = time.monotonic()
     provider = await manager.ensure_loaded(model_id)
     t_loaded = time.monotonic()
-    config = manager.get_config(model_id)
 
     params = {}
     if body.temperature is not None:
@@ -52,8 +83,9 @@ async def chat_completions(
     if body.thinking is not None:
         params["thinking"] = body.thinking
 
+    # exclude_none: the Qwen templates treat any part with an "image_url" key as an image.
+    messages = [m.model_dump(exclude_none=True) for m in body.messages]
     if body.stream:
-        messages = [m.model_dump() for m in body.messages]
         return StreamingResponse(
             provider.generate_stream(messages, **params),
             media_type="text/event-stream",
@@ -66,7 +98,7 @@ async def chat_completions(
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
-    cache_key = cache.make_key(model_id, {"messages": [m.model_dump() for m in body.messages], **params})
+    cache_key = cache.make_key(model_id, {"messages": messages, **params}) if should_cache else ""
     cache_status = "DISABLED"
 
     if should_cache:
@@ -97,7 +129,6 @@ async def chat_completions(
 
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
-    messages = [m.model_dump() for m in body.messages]
 
     inference_start = time.monotonic()
     async with manager.active_request(model_id):
