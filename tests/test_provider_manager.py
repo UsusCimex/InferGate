@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
@@ -556,6 +558,57 @@ async def test_reload_remote_calls_worker_endpoint(services):
     assert len(fake.reload_calls) == 1
     assert fake.reload_calls[0].display_name == "renamed"
     assert fake.config.display_name == "renamed"
+
+
+class _ProbedRemoteProvider:
+    """Answers the worker monitor's probes from a script; stops the monitor when it runs out."""
+    def __init__(self, config, health: list[bool]):
+        self.config = config
+        self._health = list(health)
+        self._loaded = True
+        self.unload_calls = 0
+
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    async def check_health(self) -> bool:
+        if not self._health:
+            raise asyncio.CancelledError
+        return self._health.pop(0)
+
+    async def unload(self) -> None:
+        self.unload_calls += 1
+        self._loaded = False
+
+
+async def _run_worker_monitor(manager, health: list[bool], monkeypatch) -> _ProbedRemoteProvider:
+    monkeypatch.setattr("app.services.provider_manager._WORKER_MONITOR_INTERVAL", 0)
+    cfg = _make_test_config()
+    cfg.worker_url = "http://worker-test:8001"
+    provider = _ProbedRemoteProvider(cfg, health)
+    manager._registry["test-image"] = provider
+    manager._loaded_order["test-image"] = None
+    with pytest.raises(asyncio.CancelledError):
+        await manager._monitor_workers()
+    return provider
+
+
+@pytest.mark.asyncio
+async def test_worker_monitor_keeps_worker_that_misses_a_few_probes(services, monkeypatch):
+    """A loaded worker busy with a heavy request keeps its slot and in-flight connections."""
+    manager = services["manager"]
+    provider = await _run_worker_monitor(manager, [False, False, True, True], monkeypatch)
+    assert provider.unload_calls == 0
+    assert "test-image" in manager.loaded_models()
+
+
+@pytest.mark.asyncio
+async def test_worker_monitor_drops_worker_after_consecutive_misses(services, monkeypatch):
+    """Three misses in a row mean the worker is gone: unload it and free its slot."""
+    manager = services["manager"]
+    provider = await _run_worker_monitor(manager, [True, False, False, False], monkeypatch)
+    assert provider.unload_calls == 1
+    assert "test-image" not in manager.loaded_models()
 
 
 # ── Eviction planning / admission control ───────────────────────────

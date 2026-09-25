@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 _WORKER_MONITOR_INTERVAL = 10
 _WORKER_MAX_BACKOFF = 300
+# A worker busy preprocessing a heavy request can miss a 3 s probe; only a run of misses means it's gone.
+_WORKER_DISCONNECT_MISSES = 3
 
 
 def resolve_worker_url(model_id: str, template: str | None = None) -> str | None:
@@ -214,8 +216,9 @@ class ProviderManager:
                     fail_counts[model_id] = 0
                     next_probe[model_id] = now + _WORKER_MONITOR_INTERVAL
                 else:
+                    fail_counts[model_id] += 1
                     # Drop loaded-state on disconnect so the planner doesn't reserve its VRAM.
-                    if provider.is_loaded():
+                    if provider.is_loaded() and fail_counts[model_id] >= _WORKER_DISCONNECT_MISSES:
                         logger.warning(
                             "Worker disconnected: %s (%s) — marking unavailable",
                             model_id, provider.config.worker_url,
@@ -226,8 +229,8 @@ class ProviderManager:
                             await provider.unload()
                         async with self._state_lock:
                             self._loaded_order.pop(model_id, None)
-                    reachable.discard(model_id)
-                    fail_counts[model_id] += 1
+                    if not provider.is_loaded():
+                        reachable.discard(model_id)
                     delay = min(
                         _WORKER_MONITOR_INTERVAL * (2 ** (fail_counts[model_id] - 1)),
                         _WORKER_MAX_BACKOFF,
