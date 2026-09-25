@@ -312,6 +312,10 @@ class BaseRemoteMixin:
                     f"Worker {self._worker_url} load failed: "
                     f"{state.get('error', 'unknown')}"
                 )
+            if status == "idle":
+                # The worker restarted after our POST /load and forgot the load it had started.
+                with contextlib.suppress(httpx.HTTPError):
+                    await client.post("/load", timeout=_quick_timeout(), headers=_request_id_headers())
 
     async def unload(self) -> None:
         """Best-effort /unload + close the HTTP client."""

@@ -560,6 +560,44 @@ async def test_e2e_async_load_polling_succeeds(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_e2e_load_reissued_after_worker_restart(monkeypatch):
+    """Worker restarted mid-load reports idle → gateway posts /load again and waits for ready."""
+    from app.providers import remote as r
+
+    monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0])
+    app = FastAPI()
+    calls = {"load": 0, "status": 0}
+    statuses = [{"status": "idle"}, {"status": "loading"}, {"status": "ready"}]
+
+    @app.get("/health")
+    async def _h():
+        return {"status": "ok"}
+
+    @app.post("/load")
+    async def _l():
+        calls["load"] += 1
+        return JSONResponse({"status": "loading", "load_state": {"status": "loading"}}, status_code=202)
+
+    @app.get("/load/status")
+    async def _s():
+        state = statuses[min(calls["status"], len(statuses) - 1)]
+        calls["status"] += 1
+        return state
+
+    transport = ASGITransport(app=app)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(base_url=self._worker_url, timeout=timeout, transport=transport)
+
+    monkeypatch.setattr(r.BaseRemoteMixin, "_build_client", _build)
+
+    provider = r.RemoteTextProvider(_make_remote_config("text"))
+    await provider.load("/tmp")
+    assert provider.is_loaded()
+    assert calls["load"] == 2
+
+
+@pytest.mark.asyncio
 async def test_e2e_async_load_failure_propagates(monkeypatch):
     """FakeWorker reports failed → gateway raises RuntimeError carrying error."""
     from app.providers import remote as r
