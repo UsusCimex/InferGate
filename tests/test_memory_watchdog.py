@@ -87,16 +87,34 @@ async def test_watchdog_noop_below_threshold():
 @pytest.mark.asyncio
 async def test_watchdog_cannot_evict_when_all_pinned(caplog):
     """Over threshold + all pinned → warning, no eviction."""
-    providers = {"pinned": _StubProvider(vram_used_mb=11500, vram_total_mb=12000)}
-    manager = _StubManager(providers, pinned={"pinned"})
+    providers = {
+        "pinned-a": _StubProvider(vram_used_mb=11500, vram_total_mb=12000),
+        "pinned-b": _StubProvider(vram_used_mb=11500, vram_total_mb=12000),
+    }
+    manager = _StubManager(providers, pinned={"pinned-a", "pinned-b"})
     wd = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.9, ram_threshold=0.99)
 
     with caplog.at_level("WARNING"):
         summary = await wd.scan_once()
     assert summary["vram_over_threshold"] is True
     assert summary["evicted"] is None
-    assert providers["pinned"].unload_calls == 0
+    assert all(p.unload_calls == 0 for p in providers.values())
     assert any("all loaded models are pinned" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_watchdog_keeps_lone_model_that_reserves_the_gpu(caplog):
+    """vLLM reserves ~90% of VRAM up front: a single loaded model over threshold stays loaded."""
+    providers = {"vllm": _StubProvider(vram_used_mb=11850, vram_total_mb=12227)}
+    manager = _StubManager(providers)
+    wd = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.92, ram_threshold=0.99)
+
+    with caplog.at_level("WARNING"):
+        summary = await wd.scan_once()
+    assert summary["vram_over_threshold"] is True
+    assert summary["evicted"] is None
+    assert providers["vllm"].unload_calls == 0
+    assert not any("VRAM" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio

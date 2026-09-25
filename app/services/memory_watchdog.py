@@ -104,6 +104,9 @@ class MemoryWatchdog:
 
         if agg_total > 0 and agg_used >= agg_total * self._vram_threshold:
             summary["vram_over_threshold"] = True
+        # A lone model can't be crowding out another one, and engines like vLLM reserve most of
+        # the GPU up front: evicting it would only force a reload on the next request.
+        if summary["vram_over_threshold"] and len(loaded) > 1:
             logger.warning(
                 "MemoryWatchdog: VRAM %d/%d MB (%.0f%%) — over threshold %.0f%%; evicting LRU",
                 agg_used, agg_total, 100 * agg_used / agg_total,
