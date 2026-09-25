@@ -103,6 +103,15 @@ stream = client.chat.completions.create(
 for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")
 
+# Вопрос по картинке (модели с capabilities.vision, например qwen3.5-4b); только data: URL
+response = client.chat.completions.create(
+    model="qwen3.5-4b",
+    messages=[{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}},
+        {"type": "text", "text": "Что изображено?"},
+    ]}],
+)
+
 # Изображение
 response = client.images.generate(
     model="sdxl-base",
@@ -315,7 +324,7 @@ curl http://localhost:8000/v1/images/generations \
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| `POST` | `/v1/chat/completions` | Генерация текста (+ streaming) |
+| `POST` | `/v1/chat/completions` | Генерация текста (+ streaming, картинки в `content` для моделей с `vision`) |
 | `POST` | `/v1/images/generations` | Генерация изображений (+ img2img/inpaint через base64) |
 | `POST` | `/v1/images/edits` | img2img / inpaint (multipart, OpenAI-style) |
 | `POST` | `/v1/audio/speech` | Синтез речи (JSON) |
@@ -540,7 +549,7 @@ GPU_VRAM_HEADROOM_MB=2000      # Резерв под activation spikes
 ```
 
 **Слой 3: MemoryWatchdog** (фоновая задача)
-Опрашивает `GET /stats` на каждом загруженном воркере (`torch.cuda.mem_get_info` + `psutil.virtual_memory`). При превышении порога — аварийно вытесняет LRU. Ловит леаки и подзанижения `vram_mb` в YAML'ах, которые статический бюджет не видит.
+Опрашивает `GET /stats` на каждом загруженном воркере (`torch.cuda.mem_get_info` + `psutil.virtual_memory`). При превышении порога — аварийно вытесняет LRU. Ловит леаки и подзанижения `vram_mb` в YAML'ах, которые статический бюджет не видит. Единственную загруженную модель не трогает: она никого не вытесняет, а vLLM заранее резервирует `gpu_memory_utilization` (≈ 90 %) видеопамяти, так что порог у него превышен всегда.
 ```
 GPU_WATCHDOG_INTERVAL_SECONDS=15   # 0 = off (default)
 GPU_WATCHDOG_VRAM_THRESHOLD=0.92   # evict LRU когда live VRAM ≥ 92%
@@ -741,6 +750,8 @@ WORKER_URL_SD35_MEDIUM=http://worker-sd35-medium:8001
 Формула: `WORKER_URL_` + model ID в верхнем регистре, `-` и `.` заменяются на `_`.
 
 При наличии env var `ProviderManager` создаёт `RemoteProvider`, который проксирует HTTP к воркеру. Без env var — модель загружается локально (для разработки без Docker).
+
+Gateway раз в 10 с опрашивает `/health` каждого воркера (таймаут 3 с). Загруженную модель он считает потерянной только после трёх пропусков подряд: воркер, занятый тяжёлым запросом (например, первой картинкой после загрузки vLLM), может не ответить на одну проверку, и его запросы не должны обрываться. Если перезапущенный воркер отвечает на опрос загрузки `idle`, gateway повторяет `POST /load`.
 
 ### Запуск worker вручную
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InferGate is a self-hosted OpenAI-compatible API gateway for local AI models. It serves image generation (FLUX, Stable Diffusion via diffusers), text generation (Qwen, Llama via vLLM), and text-to-speech (Kokoro, Fish Speech) through a unified REST API that any OpenAI SDK client can use by changing `base_url`.
+InferGate is a self-hosted OpenAI-compatible API gateway for local AI models. It serves 26 models in six categories through a unified REST API that any OpenAI SDK client can use by changing `base_url`: image generation (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image, Hunyuan-DiT, Janus-Pro, Meissonic), text generation via vLLM (Qwen, Llama; image input for models with `capabilities.vision`), text-to-speech and voice cloning (Kokoro, XTTS, Qwen3-TTS, OpenAudio), speech-to-text (Whisper), upscaling (Real-ESRGAN) and embeddings (E5, CLIP, SigLIP, CLAP, CLIP4Clip).
 
 ## Commands
 
@@ -70,11 +70,15 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 
 ### Core Services (app/services/)
 
-- `provider_manager.py` — Model registry, loading/unloading, OrderedDict LRU, per-model + state locks, shutdown timeouts
+- `provider_manager.py` — Model registry, loading/unloading, OrderedDict LRU, per-model + state locks, shutdown timeouts; the worker monitor probes `/health` every 10 s and drops a loaded worker only after 3 consecutive misses
 - `gpu_scheduler.py` — Request queue with asyncio.Lock-protected counters and concurrency limits
 - `cache_manager.py` — Per-model caching with SQLite WAL metadata, atomic writes, miss tracking
 - `config_watcher.py` — Polls `config/models/*.yaml` and calls back on change → `reload_model` + scheduler concurrency update
-- `memory_watchdog.py` — Background task that polls per-worker VRAM + host RAM; emergency-evicts LRU when usage overshoots declared budgets
+- `memory_watchdog.py` — Background task that polls per-worker VRAM + host RAM; evicts the LRU model when live VRAM crosses the threshold and more than one model is loaded (vLLM reserves most of the GPU up front)
+
+### Chat with images
+
+`/v1/chat/completions` accepts OpenAI-style content parts (`text`, `image_url` with a base64 `data:image/...` URL) for models whose YAML sets `capabilities.vision: true`; other models answer 400 `vision_not_supported`. `app/providers/text/_chat_images.py` decodes the images and `VllmTextProvider` passes them as `multi_modal_data`; per-prompt limits come from `limit_mm_per_prompt` / `mm_processor_kwargs` in the model YAML.
 
 ### Configuration
 
@@ -91,7 +95,7 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 ## Tech Stack
 
 - Python 3.11+, FastAPI with Depends DI, uvicorn
-- vLLM (text, with streaming SSE support), diffusers (image), kokoro/fish-speech (TTS)
+- vLLM (text and vision chat, with streaming SSE support), diffusers (image, nf4 via bitsandbytes on 12 GB cards), kokoro / coqui-tts / qwen-tts / fish-speech (TTS), faster-whisper (STT), spandrel (upscale)
 - PyTorch with CUDA 12.6
 - aiosqlite (cache metadata with WAL), pydantic (validation with Field constraints), ruff + pyright (linting + type checking)
 - Docker with multi-layer build caching, uv package manager, non-root user
