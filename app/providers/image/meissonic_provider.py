@@ -20,6 +20,20 @@ _GPU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 _VENDOR_PATH = "/app/_meissonic"
 
 
+def _flush_cache_before_decode(vqvae: Any, torch: Any) -> None:
+    """Release the activations the transformer steps leave cached before the VQ decode.
+
+    Otherwise the 1024² decode runs out of memory on a 12 GB card.
+    """
+    original = vqvae.decode
+
+    def decode(*args: Any, **kwargs: Any) -> Any:
+        torch.cuda.empty_cache()
+        return original(*args, **kwargs)
+
+    vqvae.decode = decode
+
+
 @register_provider
 class MeissonicImageProvider(ImageProvider):
     """Masked-token T2I provider for MeissonFlow/Meissonic."""
@@ -51,6 +65,7 @@ class MeissonicImageProvider(ImageProvider):
         hub_id = self.config.model["hub_id"]
         dtype_name = self.config.model.get("torch_dtype", "float16")
         dtype = getattr(torch, dtype_name)
+        cpu_offload = self.config.model.get("cpu_offload", False)
 
         # Blackwell (sm_120): eagerly init CUDA before first alloc to avoid cudaErrorNotReady.
         if torch.cuda.is_available():
@@ -82,7 +97,11 @@ class MeissonicImageProvider(ImageProvider):
                 transformer=transformer,
                 scheduler=scheduler,
             )
-            pipe.to("cuda")
+            if cpu_offload:
+                pipe.enable_model_cpu_offload()
+            else:
+                pipe.to("cuda")
+            _flush_cache_before_decode(pipe.vqvae, torch)
             return pipe
 
         self._pipeline = await loop.run_in_executor(_GPU_EXECUTOR, _load)

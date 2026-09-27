@@ -33,7 +33,7 @@ wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT" || {
     echo "  → If 'Meissonic source not found': POST_INSTALL git clone failed."
     echo "    Check worker build logs for 'git clone' errors."
     echo "  → If OOM: Meissonic needs ~10GB at fp16 for 1024². Close other"
-    echo "    GPU users or set MEISSONIC_WIDTH/HEIGHT to 512."
+    echo "    GPU users, set MEISSONIC_CPU_OFFLOAD=true or MEISSONIC_WIDTH/HEIGHT to 512."
     exit 1
 }
 
