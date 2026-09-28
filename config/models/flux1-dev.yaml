@@ -11,6 +11,7 @@ model:
   vram_mb: ${oc.decode:${oc.env:FLUX1_DEV_VRAM_MB,11000}}
   cpu_offload: ${oc.decode:${oc.env:FLUX1_DEV_CPU_OFFLOAD,false}}
   sequential_cpu_offload: ${oc.decode:${oc.env:FLUX1_DEV_SEQUENTIAL_OFFLOAD,true}}
+  page_text_encoders: ${oc.decode:${oc.env:FLUX1_DEV_PAGE_TEXT_ENCODERS,false}}
   warmup: ${oc.decode:${oc.env:FLUX1_DEV_WARMUP,true}}
   quantization: ${oc.decode:${oc.env:FLUX1_DEV_QUANTIZATION,null}}
   default_params:

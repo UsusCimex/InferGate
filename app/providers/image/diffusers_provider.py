@@ -80,6 +80,30 @@ def _apply_vae_cache_flush(pipe: Any, torch: Any) -> None:
     pipe.vae.decode = _flushed
 
 
+def _page_text_encoders(pipe: Any, torch: Any) -> None:
+    """Keep the text encoders in RAM and on the GPU only while they encode.
+
+    FLUX.1-dev in nf4 on a 12 GB card needs this: with the T5 encoder resident the
+    denoising steps spill into shared memory, and whole-model offload takes over 16 GB of RAM.
+    """
+    encoders = [m for name, m in pipe.components.items()
+                if name.startswith("text_encoder") and isinstance(m, torch.nn.Module)]
+    denoiser = getattr(pipe, "transformer", None) or pipe.unet
+
+    def page_in(module: Any, *_: Any) -> None:
+        module.to("cuda")
+
+    def page_out(*_: Any) -> None:
+        for encoder in encoders:
+            encoder.to("cpu")
+
+    for encoder in encoders:
+        encoder.to("cpu")
+        encoder.register_forward_pre_hook(page_in)
+    denoiser.register_forward_pre_hook(page_out)
+    torch.cuda.empty_cache()
+
+
 def _maybe_enable_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
     """Enable VAE tiling only when free VRAM after load is insufficient for full decode.
 
@@ -166,6 +190,7 @@ class DiffusersImageProvider(ImageProvider):
 
         cpu_offload = self.config.model.get("cpu_offload", False)
         sequential_offload = self.config.model.get("sequential_cpu_offload", False)
+        page_text_encoders = self.config.model.get("page_text_encoders", False)
 
         logger.info("Loading %s from %s", self.model_id, hub_id)
         loop = asyncio.get_running_loop()
@@ -191,6 +216,8 @@ class DiffusersImageProvider(ImageProvider):
                 pipe.enable_model_cpu_offload()
             else:
                 pipe.to("cuda")
+                if page_text_encoders:
+                    _page_text_encoders(pipe, _torch)
             _apply_vae_cache_flush(pipe, _torch)
             if vae_tiling:
                 _maybe_enable_vae_tiling(pipe, self.model_id, _torch)
