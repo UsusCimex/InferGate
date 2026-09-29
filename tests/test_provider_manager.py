@@ -562,9 +562,10 @@ async def test_reload_remote_calls_worker_endpoint(services):
 
 class _ProbedRemoteProvider:
     """Answers the worker monitor's probes from a script; stops the monitor when it runs out."""
-    def __init__(self, config, health: list[bool]):
+    def __init__(self, config, health: list[bool], worker_status: str = "ready"):
         self.config = config
         self._health = list(health)
+        self._worker_status = worker_status
         self._loaded = True
         self.unload_calls = 0
 
@@ -576,16 +577,20 @@ class _ProbedRemoteProvider:
             raise asyncio.CancelledError
         return self._health.pop(0)
 
+    async def load_status(self) -> str:
+        return self._worker_status
+
     async def unload(self) -> None:
         self.unload_calls += 1
         self._loaded = False
 
 
-async def _run_worker_monitor(manager, health: list[bool], monkeypatch) -> _ProbedRemoteProvider:
+async def _run_worker_monitor(manager, health: list[bool], monkeypatch,
+                              worker_status: str = "ready") -> _ProbedRemoteProvider:
     monkeypatch.setattr("app.services.provider_manager._WORKER_MONITOR_INTERVAL", 0)
     cfg = _make_test_config()
     cfg.worker_url = "http://worker-test:8001"
-    provider = _ProbedRemoteProvider(cfg, health)
+    provider = _ProbedRemoteProvider(cfg, health, worker_status)
     manager._registry["test-image"] = provider
     manager._loaded_order["test-image"] = None
     with pytest.raises(asyncio.CancelledError):
@@ -607,6 +612,15 @@ async def test_worker_monitor_drops_worker_after_consecutive_misses(services, mo
     """Three misses in a row mean the worker is gone: unload it and free its slot."""
     manager = services["manager"]
     provider = await _run_worker_monitor(manager, [True, False, False, False], monkeypatch)
+    assert provider.unload_calls == 1
+    assert "test-image" not in manager.loaded_models()
+
+
+@pytest.mark.asyncio
+async def test_worker_monitor_drops_worker_that_restarted_without_its_model(services, monkeypatch):
+    """A recreated worker answers /health but is idle: free its slot so the next request loads it again."""
+    manager = services["manager"]
+    provider = await _run_worker_monitor(manager, [True], monkeypatch, worker_status="idle")
     assert provider.unload_calls == 1
     assert "test-image" not in manager.loaded_models()
 

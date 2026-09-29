@@ -215,6 +215,17 @@ class ProviderManager:
                         reachable.add(model_id)
                     fail_counts[model_id] = 0
                     next_probe[model_id] = now + _WORKER_MONITOR_INTERVAL
+                    if (provider.is_loaded() and hasattr(provider, "load_status")
+                            and await provider.load_status() in ("idle", "failed")):
+                        # A recreated worker answers /health but has lost its model.
+                        logger.warning(
+                            "Worker restarted: %s (%s) — model no longer loaded",
+                            model_id, provider.config.worker_url,
+                        )
+                        with contextlib.suppress(Exception):
+                            await provider.unload()
+                        async with self._state_lock:
+                            self._loaded_order.pop(model_id, None)
                 else:
                     fail_counts[model_id] += 1
                     # Drop loaded-state on disconnect so the planner doesn't reserve its VRAM.

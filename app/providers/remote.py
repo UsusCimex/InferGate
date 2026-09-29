@@ -348,6 +348,20 @@ class BaseRemoteMixin:
         finally:
             httpx_logger.setLevel(prev_level)
 
+    async def load_status(self) -> str | None:
+        """The worker's load state ("idle", "loading", "ready", "failed"), or None when it does not answer."""
+        httpx_logger = logging.getLogger("httpx")
+        prev_level = httpx_logger.level
+        httpx_logger.setLevel(logging.WARNING)
+        try:
+            async with httpx.AsyncClient(base_url=self._worker_url, timeout=httpx.Timeout(3.0)) as client:
+                resp = await client.get("/load/status")
+            return resp.json().get("status") if resp.status_code == 200 else None
+        except (httpx.HTTPError, ValueError):
+            return None
+        finally:
+            httpx_logger.setLevel(prev_level)
+
     async def reload(self, new_config: Any) -> str:
         """POST a new config to the worker's /reload; returns its action string."""
         if self._client is None:
