@@ -47,7 +47,7 @@ async def metrics(
         import torch
         if torch.cuda.is_available():
             gpu_vram_used = round(torch.cuda.memory_allocated() / (1024 * 1024))
-            gpu_vram_total = round(torch.cuda.get_device_properties(0).total_mem / (1024 * 1024))
+            gpu_vram_total = round(torch.cuda.get_device_properties(0).total_memory / (1024 * 1024))
     except ImportError:
         pass
 
