@@ -48,29 +48,32 @@ x-env: &env
   # run on Ampere/Ada without CPU offload.
   PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-garbage_collection_threshold:0.8,max_split_size_mb:512}
 
+# Every worker image ships python3; the pytorch-based ones have no curl.
+x-hc-probe: &hc-probe ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5)"]
+
 x-hc-text: &hc-text
-  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  test: *hc-probe
   interval: 30s
   timeout: 10s
   retries: 5
   start_period: 180s
 
 x-hc-image: &hc-image
-  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  test: *hc-probe
   interval: 30s
   timeout: 10s
   retries: 10
   start_period: 600s
 
 x-hc-tts: &hc-tts
-  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  test: *hc-probe
   interval: 15s
   timeout: 5s
   retries: 3
   start_period: 30s
 
 x-hc-tts-gpu: &hc-tts-gpu
-  test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+  test: *hc-probe
   interval: 30s
   timeout: 10s
   retries: 5
