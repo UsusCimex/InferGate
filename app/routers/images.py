@@ -43,7 +43,8 @@ async def generate_images(
         params["size"] = body.size
     if body.seed is not None:
         params["seed"] = body.seed
-    if body.negative_prompt is not None:
+    # A blank negative prompt means "none": pipelines without CFG (FLUX.2 klein) reject the argument.
+    if body.negative_prompt:
         params["negative_prompt"] = body.negative_prompt
     if body.num_inference_steps is not None:
         params["num_inference_steps"] = body.num_inference_steps

@@ -44,6 +44,26 @@ async def test_image_generation(client):
 
 
 @pytest.mark.asyncio
+async def test_blank_negative_prompt_is_not_forwarded(client, monkeypatch):
+    from tests.conftest import FakeImageProvider
+
+    seen: dict = {}
+    original = FakeImageProvider.generate
+
+    async def spy(self, prompt, **params):
+        seen.update(params)
+        return await original(self, prompt, **params)
+
+    monkeypatch.setattr(FakeImageProvider, "generate", spy)
+    resp = await client.post(
+        "/v1/images/generations",
+        json={"model": "test-image", "prompt": "A red circle", "negative_prompt": ""},
+    )
+    assert resp.status_code == 200
+    assert "negative_prompt" not in seen
+
+
+@pytest.mark.asyncio
 async def test_image_cache_with_seed(client):
     payload = {
         "model": "test-image",
