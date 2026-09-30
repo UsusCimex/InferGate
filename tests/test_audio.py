@@ -53,6 +53,27 @@ async def test_tts_language_routed_into_cache_key(client):
     assert r2.headers["x-infergate-cache"] == "MISS"
 
 
+@pytest.mark.asyncio
+async def test_tts_seed_routed_into_cache_key(client):
+    base = {"model": "test-tts", "input": "Seeded"}
+
+    r1 = await client.post("/v1/audio/speech", json={**base, "seed": 1})
+    assert r1.headers["x-infergate-cache"] == "MISS"
+    r2 = await client.post("/v1/audio/speech", json={**base, "seed": 2})
+    assert r2.headers["x-infergate-cache"] == "MISS"
+    r3 = await client.post("/v1/audio/speech", json={**base, "seed": 1})
+    assert r3.headers["x-infergate-cache"] == "HIT"
+
+
+@pytest.mark.asyncio
+async def test_tts_rejects_negative_seed(client):
+    resp = await client.post(
+        "/v1/audio/speech", json={"model": "test-tts", "input": "x", "seed": -1}
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["param"] == "seed"
+
+
 # ── Transcription ──────────────────────────────────────────────────────
 
 _FAKE_AUDIO = b"RIFF\x00\x00\x00\x00WAVEfmt " + b"\x00" * 40  # pseudo-WAV
@@ -305,3 +326,19 @@ async def test_voice_clone_different_references_bust_cache(client):
         data=data,
     )
     assert r2.headers["x-infergate-cache"] == "MISS"  # different voice → different key
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_seed_routed_into_cache_key(client):
+    data = {"input": "same text", "model": "test-tts"}
+
+    async def post(seed: str):
+        return await client.post(
+            "/v1/audio/speech/voice-clone",
+            files={"reference_audio": ("ref.wav", _FAKE_AUDIO, "audio/wav")},
+            data={**data, "seed": seed},
+        )
+
+    assert (await post("1")).headers["x-infergate-cache"] == "MISS"
+    assert (await post("2")).headers["x-infergate-cache"] == "MISS"
+    assert (await post("1")).headers["x-infergate-cache"] == "HIT"

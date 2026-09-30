@@ -134,15 +134,16 @@ async def tts_worker():
 
 
 @pytest.mark.asyncio
-async def test_voice_clone_forwards_language(tts_worker):
+async def test_voice_clone_forwards_language_and_seed(tts_worker):
     client, provider = tts_worker
     resp = await client.post(
         "/voice-clone",
         files={"reference_audio": ("ref.wav", b"RIFF" + b"\x00" * 40, "audio/wav")},
-        data={"input": "Hello", "reference_text": "Hi", "language": "English"},
+        data={"input": "Hello", "reference_text": "Hi", "language": "English", "seed": "7"},
     )
     assert resp.status_code == 200
     assert provider.last_params["language"] == "English"
+    assert provider.last_params["seed"] == 7
     assert provider.last_params["reference_text"] == "Hi"
 
 
@@ -155,7 +156,7 @@ async def test_voice_clone_omits_unset_optional_params(tts_worker):
         data={"input": "Hello"},
     )
     assert resp.status_code == 200
-    assert not {"language", "reference_text"} & provider.last_params.keys()
+    assert not {"language", "seed", "reference_text"} & provider.last_params.keys()
 
 
 @pytest.mark.asyncio

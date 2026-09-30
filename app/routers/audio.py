@@ -66,6 +66,8 @@ async def create_speech(
     }
     if body.language is not None:
         params["language"] = body.language
+    if body.seed is not None:
+        params["seed"] = body.seed
 
     # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
@@ -305,6 +307,7 @@ async def create_speech_voice_clone(
     response_format: str = Form("mp3"),
     speed: float = Form(1.0, ge=0.25, le=4.0),
     language: str | None = Form(None, max_length=32),
+    seed: int | None = Form(None, ge=0, le=2**32 - 1),
     manager=Depends(get_provider_manager),
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
@@ -331,6 +334,7 @@ async def create_speech_voice_clone(
         "reference_filename": reference_audio.filename or "ref.wav",
         "reference_text": reference_text,
         "language": language,
+        "seed": seed,
     }
     params = {k: v for k, v in params.items() if v is not None}
 
@@ -342,6 +346,8 @@ async def create_speech_voice_clone(
         "speed": speed, "response_format": response_format,
         "language": language or "",
     }
+    if seed is not None:
+        cache_params["seed"] = seed
     should_cache = not no_cache and cache.should_cache(cache_cfg, cache_params)
     cache_key = cache.make_key(model_id, cache_params)
     cache_status = "DISABLED"

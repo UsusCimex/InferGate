@@ -13,6 +13,7 @@ class AudioSpeechRequest(BaseModel):
     response_format: str = "mp3"
     speed: float = Field(1.0, ge=0.25, le=4.0)
     language: str | None = Field(None, max_length=32)
+    seed: int | None = Field(None, ge=0, le=2**32 - 1)
 
 
 class TranscriptionSegment(BaseModel):
