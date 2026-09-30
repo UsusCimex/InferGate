@@ -141,6 +141,7 @@ services:
       - WORKER_URL_REALESRGAN_X4=http://worker-realesrgan-x4:8001
       - WORKER_URL_XTTS_V2=http://worker-xtts-v2:8001
       - WORKER_URL_QWEN3_TTS_06B=http://worker-qwen3-tts-06b:8001
+      - WORKER_URL_VOXCPM2=http://worker-voxcpm2:8001
       - WORKER_URL_MULTILINGUAL_E5_BASE=http://worker-multilingual-e5-base:8001
       - WORKER_URL_CLAP_HTSAT_FUSED=http://worker-clap-htsat-fused:8001
       - WORKER_URL_SIGLIP_BASE_MULTILINGUAL=http://worker-siglip-base-multilingual:8001
@@ -462,6 +463,30 @@ services:
     environment: *env
     healthcheck: *hc-tts-gpu
 
+  worker-voxcpm2:
+    <<: *gpu
+    profiles: ["tts", "voxcpm2"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: build-essential
+        WORKER_REQUIREMENTS: deploy/workers/voxcpm2/requirements.txt
+        POST_INSTALL: uv pip install --no-cache-dir --system --no-deps voxcpm==2.0.3
+    volumes:
+      - ../config/models/voxcpm2.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+      - voxcpm2_compile_cache:/app/compile_cache
+    env_file: *env-file
+    environment:
+      <<: *env
+      TORCHINDUCTOR_CACHE_DIR: /app/compile_cache
+      TQDM_DISABLE: "1"
+      # VoxCPM builds the model in fp32 on the CPU first; with glibc's adaptive threshold the freed
+      # 8 GB stays in the heap and the second reload runs into mem_limit.
+      MALLOC_MMAP_THRESHOLD_: "65536"
+    healthcheck: *hc-tts-gpu
+
   # ─── STT workers ─────────────────────────────────────────────────────
   worker-whisper-base:
     <<: *cpu-worker
@@ -582,3 +607,4 @@ services:
 
 volumes:
   cache_data:
+  voxcpm2_compile_cache:

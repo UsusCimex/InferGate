@@ -1,0 +1,9 @@
+# voxcpm itself comes from POST_INSTALL with --no-deps: its declared deps add gradio,
+# funasr and modelscope for the web demo and training, which inference never imports.
+transformers==4.57.3
+huggingface_hub>=0.34,<1.0
+einops>=0.8.0
+librosa>=0.10.0
+soundfile>=0.12.0
+safetensors>=0.4.0
+pyloudnorm>=0.1.1
