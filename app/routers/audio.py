@@ -56,6 +56,23 @@ async def create_speech(
             status_code=400,
         )
 
+    voices = config.capabilities.voices
+    if voices and body.voice != "default" and body.voice not in voices:
+        return JSONResponse(
+            {
+                "error": {
+                    "message": (
+                        f"unknown voice '{body.voice}' for model '{model_id}'; "
+                        f"use one of: {', '.join(voices)}"
+                    ),
+                    "type": "invalid_request",
+                    "param": "voice",
+                    "voices": voices,
+                }
+            },
+            status_code=400,
+        )
+
     start = time.monotonic()
     provider = await manager.ensure_loaded(model_id)
 
