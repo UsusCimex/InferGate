@@ -59,11 +59,11 @@ Defaults в `config/models/*.yaml` заточены под 12GB GPU (nf4-ква�
 |---------|--------|
 | `text` | qwen3.5-4b (enabled) |
 | `image` | sdxl-base (enabled) |
-| `tts` | kokoro-82m (enabled, CPU, работает без reference_audio) |
+| `tts` | kokoro-82m (enabled, CPU, работает без reference_audio) + voxcpm2 (GPU, 4 пресета-рассказчика) |
 | `stt` | whisper-base (enabled) |
 | `upscale` | realesrgan-x4 (enabled) |
 | `voice-clone` | qwen3-tts-06b + xtts-v2 (xtts-v2 disabled — CPML license opt-in). Voice cloning — отдельный профиль, потому что `qwen3-tts-06b` имеет `voice_clone_only: true` и требует reference_audio. |
-| `qwen3.5-4b`, `sdxl-base`, `qwen3-tts-06b`, `kokoro-82m`, `whisper-base`, `realesrgan-x4`, `xtts-v2` | Индивидуальные |
+| `qwen3.5-4b`, `sdxl-base`, `qwen3-tts-06b`, `kokoro-82m`, `voxcpm2`, `whisper-base`, `realesrgan-x4`, `xtts-v2` | Индивидуальные |
 | `qwen3.5-9b`, `qwen3-8b`, `llama3.1-8b`, `sd35-medium`, `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image`, `hunyuan-dit`, `z-image-turbo`, `janus-pro-1b`, `janus-pro-7b`, `meissonic`, `openaudio-s1-mini`, `xtts-v2` | Disabled по умолчанию, запуск через индивидуальный profile |
 
 ### Локальная разработка
@@ -148,6 +148,11 @@ curl http://localhost:8000/v1/images/generations \
 curl http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
   -d '{"model": "kokoro-82m", "input": "Hello, world!"}' -o speech.mp3
+
+# Озвучка пресетом VoxCPM2 (vox_clara | vox_arthur | vox_lily | vox_daniel), mp3 48 кГц
+curl http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model": "voxcpm2", "input": "Once upon a time...", "voice": "vox_clara"}' -o tale.mp3
 
 # Озвучка с выбором языка и формата (мультиязычная Qwen3-TTS — требует
 # reference-аудио, см. блок voice-clone ниже)
@@ -307,6 +312,7 @@ curl http://localhost:8000/v1/images/generations \
 | **OpenAudio S1 Mini** | TTS | fish-speech | 4 GB | Apache 2.0 |
 | **Qwen3-TTS 0.6B** | Voice-cloning TTS (10 языков) | qwen-tts | 2.5 GB (bf16) | Apache 2.0 |
 | **XTTS v2** | Voice-cloning TTS (17 языков) | coqui-tts | 2 GB (fp16) | CPML (non-commercial) |
+| **VoxCPM2** | TTS: 4 пресета-рассказчика + voice cloning (48 кГц) | voxcpm | 8 GB (bf16, torch.compile) | Apache 2.0 |
 | **Whisper Base** | STT | faster-whisper (CT2) | CPU (int8, ~90 MB) | MIT |
 | **Real-ESRGAN 4×** | Upscale | spandrel | 1.5 GB (fp16) | BSD-3-Clause |
 
@@ -376,9 +382,10 @@ curl http://localhost:8000/v1/images/generations \
 | Параметр | Диапазон |
 |----------|----------|
 | `speed` | 0.25 – 4.0 |
-| `voice` | str (зависит от модели) |
+| `voice` | str (зависит от модели; у `voxcpm2` — только пресеты из `capabilities.voices`, иначе 400) |
 | `response_format` | `mp3` (default), `wav`, `flac`, `opus` |
 | `language` | ISO-имя языка для мультиязычных моделей (`qwen3-tts-06b`: `English`, `Russian`, `Chinese`, `Japanese`, `Korean`, `German`, `French`, `Portuguese`, `Spanish`, `Italian`). Игнорируется одноязычными моделями. |
+| `seed` | 0 – 2³²−1, входит в ключ кэша; `voxcpm2` без него берёт 42, поэтому повторный запрос совпадает байт в байт |
 
 ### Заголовки ответов
 
@@ -478,6 +485,7 @@ queue:
 | `tts` | `FishSpeechTtsProvider` | OpenAudio / Fish Speech |
 | `tts` | `Qwen3TtsProvider` | Qwen3-TTS (voice cloning, 10 языков) |
 | `tts` | `XttsProvider` | Coqui XTTS v2 (voice cloning, 17 языков) |
+| `tts` | `VoxCpm2TtsProvider` | VoxCPM2 (пресеты голосов из `voxcpm2_voices/`, voice cloning, 48 кГц) |
 | `stt` | `WhisperProvider` | faster-whisper (CTranslate2) |
 | `upscale` | `SpandrelImageProvider` | spandrel (Real-ESRGAN / SwinIR / …) |
 
@@ -675,7 +683,9 @@ infergate/
 │   │   │   ├── kokoro.py
 │   │   │   ├── fish_speech.py      # OpenAudio S1 / Fish Speech
 │   │   │   ├── qwen3_tts.py        # Qwen3-TTS 0.6B (10 языков, voice-clone-only)
-│   │   │   └── xtts.py             # Coqui XTTS v2 (17 языков, voice cloning)
+│   │   │   ├── xtts.py             # Coqui XTTS v2 (17 языков, voice cloning)
+│   │   │   ├── voxcpm2.py          # VoxCPM2 (пресеты-рассказчики, voice cloning, 48 кГц)
+│   │   │   └── voxcpm2_voices/     # референсы пресетов: <id>.wav (16 кГц) + <id>.txt (точная расшифровка)
 │   │   ├── stt/
 │   │   │   └── whisper_provider.py # faster-whisper (CTranslate2)
 │   │   ├── upscale/
@@ -698,11 +708,11 @@ infergate/
 │       └── uploads.py              # read_with_limit() — streaming upload size guard
 ├── config/
 │   ├── server.yaml
-│   └── models/                     # 1 YAML = 1 модель (26 файлов)
+│   └── models/                     # 1 YAML = 1 модель (27 файлов)
 ├── deploy/
 │   ├── Dockerfile.gateway          #   Лёгкий gateway (~500 MB)
 │   ├── Dockerfile.worker           #   Единый параметризованный Dockerfile для всех воркеров
-│   ├── docker-compose.yml          #   Compose с profiles (gateway + 26 workers, YAML-якоря).
+│   ├── docker-compose.yml          #   Compose с profiles (gateway + 27 workers, YAML-якоря).
 │   │                                    Категорийные алиасы: text / image / tts / stt / upscale / embedding / voice-clone.
 │   │                                    Без COMPOSE_PROFILES — поднимается только gateway.
 │   ├── docker-bake.hcl             #   Матрица сборки (1 строка = 1 модель)
@@ -733,6 +743,7 @@ Client → Gateway (500MB, без GPU)
            ├→ worker-kokoro-82m       (kokoro, CPU)         — TTS         (default)
            ├→ worker-qwen3-tts-06b    (qwen-tts, GPU)       — voice cloning
            ├→ worker-xtts-v2          (coqui-tts, GPU)      — voice cloning
+           ├→ worker-voxcpm2          (voxcpm, GPU)         — TTS-рассказчики + voice cloning
            ├→ worker-whisper-base     (faster-whisper, CPU) — STT
            ├→ worker-realesrgan-x4    (spandrel, GPU)       — upscale
            └→ ...
@@ -896,7 +907,7 @@ pytest --cov=app --cov-branch
 
 Pytest покрывает: роутеры (`chat`, `images`, `audio`, `models`, `cache`, `health`), middleware (auth, rate-limit, access-log), мониторинг (Prometheus-лейблы, request ID), `CacheManager`, `GpuScheduler`, `ProviderManager` (включая hot-reload `reload_model`), `ConfigWatcher`, воркер-эндпоинты (`/generate`, `/synthesize`, `/transcribe`, `/upscale`, `/reload`, `/voice-clone`), конфигурацию, валидацию схем, конкурентность, edge cases.
 
-**E2e feature-скрипты** (`scripts/feature/*.sh`) — прогоняются на живых Docker-контейнерах и закрывают то, что нельзя через моки: `sd35-lora.sh`, `img2img.sh`, `hot-reload-config.sh`, `worker-reload.sh`, `stt-whisper.sh`, `upscale.sh`, `voice-clone-xtts.sh`, `grafana-provisioning.sh`, `lora-hot-load.sh`, `textual-inversion.sh`, `highres-fix.sh`, `scheduler-swap.sh`, `token-weighting.sh`, `per-request-tunables.sh`, `error-forwarding.sh`.
+**E2e feature-скрипты** (`scripts/feature/*.sh`) — прогоняются на живых Docker-контейнерах и закрывают то, что нельзя через моки: `sd35-lora.sh`, `img2img.sh`, `hot-reload-config.sh`, `worker-reload.sh`, `stt-whisper.sh`, `upscale.sh`, `voice-clone-xtts.sh`, `tts-voxcpm2.sh`, `grafana-provisioning.sh`, `lora-hot-load.sh`, `textual-inversion.sh`, `highres-fix.sh`, `scheduler-swap.sh`, `token-weighting.sh`, `per-request-tunables.sh`, `error-forwarding.sh`.
 
 ---
 

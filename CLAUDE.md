@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InferGate is a self-hosted OpenAI-compatible API gateway for local AI models. It serves 26 models in six categories through a unified REST API that any OpenAI SDK client can use by changing `base_url`: image generation (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image, Hunyuan-DiT, Janus-Pro, Meissonic), text generation via vLLM (Qwen, Llama; image input for models with `capabilities.vision`), text-to-speech and voice cloning (Kokoro, XTTS, Qwen3-TTS, OpenAudio), speech-to-text (Whisper), upscaling (Real-ESRGAN) and embeddings (E5, CLIP, SigLIP, CLAP, CLIP4Clip).
+InferGate is a self-hosted OpenAI-compatible API gateway for local AI models. It serves 27 models in six categories through a unified REST API that any OpenAI SDK client can use by changing `base_url`: image generation (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image, Hunyuan-DiT, Janus-Pro, Meissonic), text generation via vLLM (Qwen, Llama; image input for models with `capabilities.vision`), text-to-speech and voice cloning (Kokoro, VoxCPM2, XTTS, Qwen3-TTS, OpenAudio), speech-to-text (Whisper), upscaling (Real-ESRGAN) and embeddings (E5, CLIP, SigLIP, CLAP, CLIP4Clip).
 
 ## Commands
 
@@ -95,7 +95,7 @@ Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority q
 ## Tech Stack
 
 - Python 3.11+, FastAPI with Depends DI, uvicorn
-- vLLM (text and vision chat, with streaming SSE support), diffusers (image, nf4 via bitsandbytes on 12 GB cards), kokoro / coqui-tts / qwen-tts / fish-speech (TTS), faster-whisper (STT), spandrel (upscale)
+- vLLM (text and vision chat, with streaming SSE support), diffusers (image, nf4 via bitsandbytes on 12 GB cards), kokoro / voxcpm / coqui-tts / qwen-tts / fish-speech (TTS), faster-whisper (STT), spandrel (upscale)
 - PyTorch with CUDA 12.6
 - aiosqlite (cache metadata with WAL), pydantic (validation with Field constraints), ruff + pyright (linting + type checking)
 - Docker with multi-layer build caching, uv package manager, non-root user
