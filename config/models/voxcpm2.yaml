@@ -1,0 +1,38 @@
+id: voxcpm2
+display_name: "VoxCPM2 (preset narrators + voice clone, 48 kHz)"
+category: tts
+provider_class: VoxCpm2TtsProvider
+enabled: ${oc.decode:${oc.env:VOXCPM2_ENABLED,true}}
+
+model:
+  hub_id: "openbmb/VoxCPM2"
+  device: ${oc.env:VOXCPM2_DEVICE,cuda}
+  vram_mb: ${oc.decode:${oc.env:VOXCPM2_VRAM_MB,8000}}
+  optimize: ${oc.decode:${oc.env:VOXCPM2_OPTIMIZE,true}}
+  default_params:
+    voice: ${oc.env:VOXCPM2_VOICE,vox_daniel}
+    output_format: ${oc.env:VOXCPM2_OUTPUT_FORMAT,mp3}
+    seed: ${oc.decode:${oc.env:VOXCPM2_SEED,42}}
+    cfg_value: ${oc.decode:${oc.env:VOXCPM2_CFG_VALUE,2.0}}
+    inference_timesteps: ${oc.decode:${oc.env:VOXCPM2_INFERENCE_TIMESTEPS,10}}
+    loudness_lufs: ${oc.decode:${oc.env:VOXCPM2_LOUDNESS_LUFS,-25.0}}
+    peak_dbfs: ${oc.decode:${oc.env:VOXCPM2_PEAK_DBFS,-1.0}}
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: ${oc.env:VOXCPM2_PRIORITY,high}
+  timeout_seconds: ${oc.decode:${oc.env:VOXCPM2_TIMEOUT,180}}
+  max_concurrent: ${oc.decode:${oc.env:VOXCPM2_MAX_CONCURRENT,1}}
+
+metadata:
+  license: "Apache-2.0"
+  description: "VoxCPM2 2B — four preset English narrators cloned from bundled clips, plus voice cloning from an uploaded clip; 48 kHz"
+  tags: ["voxcpm2", "voice-clone", "narration", "openbmb"]
+
+capabilities:
+  voices: ["vox_clara", "vox_arthur", "vox_lily", "vox_daniel"]
