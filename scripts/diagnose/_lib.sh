@@ -40,9 +40,10 @@ show_download_progress() {
 }
 
 # ── wait for worker ready ────────────────────────────────────────────────
-# Polls gateway logs every 5s for "Worker ready: <model_id> ... model is now
-# available". Every 30s also prints the HF cache dir size so long downloads
-# are observable. Fails fast on known fatal patterns in worker logs.
+# Polls gateway logs every 5s for "Worker reachable: <model_id>"; the model
+# itself loads on the first request. Every 30s also prints the HF cache dir
+# size so long downloads are observable. Fails fast on known fatal patterns
+# in worker logs.
 #
 # Requires: $COMPOSE array set in caller scope.
 # Usage:
@@ -64,8 +65,8 @@ wait_for_worker() {
 
         local gateway_logs
         gateway_logs=$("${COMPOSE[@]}" logs --no-color gateway 2>&1 || true)
-        if grep -q "Worker ready: ${model_id}.*model is now available" <<<"$gateway_logs"; then
-            ok "Gateway marks $model_id as available"
+        if grep -qF "Worker reachable: ${model_id} (" <<<"$gateway_logs"; then
+            ok "Gateway reaches $model_id; the model loads on the first request"
             return 0
         fi
 
