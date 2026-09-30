@@ -468,6 +468,7 @@ async def voice_clone(
     reference_text: str | None = Form(None),
     speed: float = Form(1.0),
     output_format: str = Form("mp3"),
+    language: str | None = Form(None),
 ):
     """Synthesise speech in the voice of `reference_audio` (multipart upload)."""
     async with request.app.state.reload_lock:
@@ -479,8 +480,8 @@ async def voice_clone(
             "reference_audio": ref,
             "reference_filename": reference_audio.filename or "ref.wav",
         }
-        if reference_text is not None:
-            params["reference_text"] = reference_text
+        optional = {"reference_text": reference_text, "language": language}
+        params.update({k: v for k, v in optional.items() if v is not None})
         try:
             audio_bytes = await provider.synthesize(input, **params)
             return Response(content=audio_bytes, media_type="application/octet-stream")

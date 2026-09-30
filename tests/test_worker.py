@@ -8,7 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
-from tests.conftest import FakeImageProvider, FakeTextProvider
+from tests.conftest import FakeImageProvider, FakeTextProvider, FakeTtsProvider
 
 
 def _make_config(category: str, provider_class: str) -> ModelConfig:
@@ -106,6 +106,56 @@ async def image_worker():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://worker") as ac:
         yield ac
+
+
+class _RecordingTtsProvider(FakeTtsProvider):
+    async def synthesize(self, text, **params):
+        self.last_params = params
+        return await super().synthesize(text, **params)
+
+
+@pytest_asyncio.fixture
+async def tts_worker():
+    """Worker app serving a preloaded fake TTS model that records its synthesize params."""
+    from fastapi import FastAPI
+
+    from app.worker import voice_clone
+
+    app = FastAPI()
+    provider = _RecordingTtsProvider(_make_config("tts", "FakeTtsProvider"))
+    await provider.load(".")
+    app.state.provider = provider
+    app.state.reload_lock = asyncio.Lock()
+    app.add_api_route("/voice-clone", voice_clone, methods=["POST"])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://worker") as ac:
+        yield ac, provider
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_forwards_language(tts_worker):
+    client, provider = tts_worker
+    resp = await client.post(
+        "/voice-clone",
+        files={"reference_audio": ("ref.wav", b"RIFF" + b"\x00" * 40, "audio/wav")},
+        data={"input": "Hello", "reference_text": "Hi", "language": "English"},
+    )
+    assert resp.status_code == 200
+    assert provider.last_params["language"] == "English"
+    assert provider.last_params["reference_text"] == "Hi"
+
+
+@pytest.mark.asyncio
+async def test_voice_clone_omits_unset_optional_params(tts_worker):
+    client, provider = tts_worker
+    resp = await client.post(
+        "/voice-clone",
+        files={"reference_audio": ("ref.wav", b"RIFF" + b"\x00" * 40, "audio/wav")},
+        data={"input": "Hello"},
+    )
+    assert resp.status_code == 200
+    assert not {"language", "reference_text"} & provider.last_params.keys()
 
 
 @pytest.mark.asyncio
