@@ -1,104 +1,45 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+InferGate is a self-hosted OpenAI-compatible gateway for local models: images (diffusers, Janus-Pro, Meissonic), text via vLLM (with image input for `capabilities.vision` models), TTS and voice cloning, speech-to-text (faster-whisper), upscaling (spandrel) and embeddings. A light FastAPI gateway proxies to one Docker worker container per model. 27 model configs live in `config/models/`; the main client is the PictoLex Android app (`../Comput`).
 
-## Project Overview
+## Docs
 
-InferGate is a self-hosted OpenAI-compatible API gateway for local AI models. It serves 27 models in six categories through a unified REST API that any OpenAI SDK client can use by changing `base_url`: image generation (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image, Hunyuan-DiT, Janus-Pro, Meissonic), text generation via vLLM (Qwen, Llama; image input for models with `capabilities.vision`), text-to-speech and voice cloning (Kokoro, VoxCPM2, XTTS, Qwen3-TTS, OpenAudio), speech-to-text (Whisper), upscaling (Real-ESRGAN) and embeddings (E5, CLIP, SigLIP, CLAP, CLIP4Clip).
+User docs are in Russian under `docs/`: `api.md` (endpoints, fields, headers, errors), `models.md` (catalog, Compose profiles, providers, adding a model), `configuration.md` (`server.yaml`, model YAML, env vars, memory safety), `architecture.md` (gateway/worker, request flow, manager, scheduler, cache), `deployment.md` (Compose, images, TLS, monitoring), `testing.md`, `roadmap.md` (known issues and plans). Update the matching doc in the same commit as the behaviour change. Path-scoped rules live in `.claude/rules/`.
 
 ## Commands
 
 ```bash
-# Install (all dependencies including GPU + TTS + dev)
-pip install -e ".[all]"
-
-# Run dev server with hot-reload
-uvicorn app.main:app --reload
-
-# Run tests
-pytest
-
-# Run a single test file
+pip install -e ".[dev]"                      # gateway + test deps (".[all]" adds torch/vLLM; Linux + CUDA only)
+pytest                                       # no GPU, no network
 pytest tests/test_chat.py
-
-# Lint
-ruff check app/
-
-# Docker — per-model isolated containers (gateway + workers with profiles)
-docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
-
-# Start specific models only
-docker compose -f deploy/docker-compose.yml --profile qwen3.5-4b --profile kokoro-82m up -d
-
-# Start all model categories
-docker compose -f deploy/docker-compose.yml --profile text --profile image --profile tts up -d
-
-# Gateway only (for external/remote workers)
-docker compose -f deploy/docker-compose.yml up -d
-
-# With monitoring
-docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.monitoring.yml --profile text up -d
-
-# Run a single worker locally for development
+ruff check app/ tests/                       # what CI runs (Python 3.11 and 3.12)
+uvicorn app.main:app --reload                # gateway; without WORKER_URL_* models load in-process
 WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml uvicorn app.worker:app --port 8001
 
-# Download model weights
-docker compose -f deploy/docker-compose.yml run --rm worker-qwen3-5-4b python scripts/download_models.py --all
+docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
+docker compose -f deploy/docker-compose.yml --profile flux2-klein-4b up -d
+docker buildx bake -f deploy/docker-bake.hcl worker-flux2-klein-4b
+python scripts/download_models.py --models flux2-klein-4b   # prefetch weights on the host (HF_TOKEN in env)
 ```
 
-## Architecture
+## Architecture in brief
 
-### Request Flow
+Request flow: router (`app/routers/`) → capability checks → `ProviderManager.ensure_loaded` (LRU by declared `vram_mb`, budget, pinned models, per-model locks) → cache lookup → `GpuScheduler.submit` inside `active_request` → provider (`RemoteProvider` → worker HTTP) → cache put, `X-InferGate-*` headers, Prometheus metrics. Streaming chat bypasses scheduler, cache and metrics.
 
-Client request → FastAPI router (`app/routers/`) → GPU Scheduler (priority queue + asyncio.Lock) → Provider Manager (loads model if needed, LRU eviction with per-model locks) → Provider (`app/providers/`) → Response (with optional cache)
+- Worker discovery: YAML `worker_url` → env `WORKER_URL_<ID>` → `gpu.worker_url_template` → otherwise a local in-process provider.
+- Workers start empty and load on demand (`POST /load` → 202, poll `/load/status`); the gateway's monitor probes `/health` every 10 s, drops a loaded model after 3 misses and frees the slot of a worker that restarted idle.
+- Services are built in the FastAPI lifespan (`app/main.py`), kept on `app.state` and injected with `Depends()` from `app/dependencies.py`.
+- Providers subclass the ABCs in `app/providers/base.py`, register with `@register_provider` and must sit in `app/providers/{image,text,tts,stt,upscale,embedding}/`. Every category also has a gateway-side remote class in `app/providers/remote.py` (`CATEGORY_REGISTRY`) and a worker endpoint in `app/worker.py` — keep the three in step.
+- Cache: `CacheManager` facade over `LocalCacheBackend` (SQLite WAL + files) or `RedisCacheBackend`; strategies `always` / `seed_only` / `never` per model.
+- Middleware is pure ASGI (request id, Prometheus, access log, optional API key and rate limit).
 
-### Key Architectural Patterns
+## Invariants that are easy to break
 
-**Plugin-based providers**: Abstract bases in `app/providers/base.py` (`ImageProvider`, `TextProvider`, `TtsProvider`). New providers register via `@register_provider` decorator in `app/providers/registry.py`. Adding a model that uses an existing provider = just add a YAML file in `config/models/`.
-
-**Per-model deployment**: Each model runs in its own isolated container with its own Dockerfile and dependencies (`deploy/workers/<model-id>/`). `ProviderManager` resolves worker URLs from environment variables (`WORKER_URL_<MODEL_ID>`) and creates `RemoteProvider` instances (from `app/providers/remote.py`) that proxy HTTP requests to standalone worker containers (`app/worker.py`). Gateway image is lightweight (~500MB, `deploy/Dockerfile.gateway`). Docker Compose profiles control which models to deploy (`--profile text`, `--profile kokoro-82m`, etc.).
-
-**FastAPI Depends DI**: Services initialized during FastAPI lifespan in `app/main.py`, stored on `app.state`, accessed by routers via `Depends()` from `app/dependencies.py`. Supports `dependency_overrides` for testing.
-
-**GPU memory management**: `ProviderManager` maintains an OrderedDict-based LRU cache of loaded models with O(1) touch/evict. Per-model locks allow concurrent model access while serializing per-model operations. Pinned models (configured in `server.yaml`) are never evicted.
-
-**Request scheduling**: `GpuScheduler` provides per-model concurrency semaphores with asyncio.Lock-protected counters and configurable timeouts.
-
-**Multi-strategy caching**: `CacheManager` uses disk storage + SQLite (WAL mode) metadata. Atomic writes (temp file → DB commit → rename). Strategies per model: `always`, `seed_only` (images with fixed seed), `never`. LRU eviction with TTL support. Accurate miss tracking via `cache_stats` table.
-
-**Pure ASGI middleware**: All middleware (AccessLog, RateLimit, ApiKey) implemented as pure ASGI for ~20-40% lower overhead vs BaseHTTPMiddleware.
-
-### Core Services (app/services/)
-
-- `provider_manager.py` — Model registry, loading/unloading, OrderedDict LRU, per-model + state locks, shutdown timeouts; the worker monitor probes `/health` every 10 s and drops a loaded worker only after 3 consecutive misses
-- `gpu_scheduler.py` — Request queue with asyncio.Lock-protected counters and concurrency limits
-- `cache_manager.py` — Per-model caching with SQLite WAL metadata, atomic writes, miss tracking
-- `config_watcher.py` — Polls `config/models/*.yaml` and calls back on change → `reload_model` + scheduler concurrency update
-- `memory_watchdog.py` — Background task that polls per-worker VRAM + host RAM; evicts the LRU model when live VRAM crosses the threshold and more than one model is loaded (vLLM reserves most of the GPU up front)
-
-### Chat with images
-
-`/v1/chat/completions` accepts OpenAI-style content parts (`text`, `image_url` with a base64 `data:image/...` URL) for models whose YAML sets `capabilities.vision: true`; other models answer 400 `vision_not_supported`. `app/providers/text/_chat_images.py` decodes the images and `VllmTextProvider` passes them as `multi_modal_data`; per-prompt limits come from `limit_mm_per_prompt` / `mm_processor_kwargs` in the model YAML.
-
-### Configuration
-
-- `config/server.yaml` — Global settings (auth, GPU slots, cache, CORS, rate limits, defaults)
-- `config/models/*.yaml` — One file per model defining: hub_id, VRAM requirements, torch_dtype, trust_remote_code, default params, cache strategy, queue priority
-
-### Custom Response Headers
-
-- `X-InferGate-Cache`: HIT|MISS|DISABLED|SKIP
-- `X-InferGate-Model`: actual model ID used
-- `X-InferGate-Generation-Ms`: latency in milliseconds
-- `X-InferGate-Queue-Position`: position in GPU scheduler queue
-
-## Tech Stack
-
-- Python 3.11+, FastAPI with Depends DI, uvicorn
-- vLLM (text and vision chat, with streaming SSE support), diffusers (image, nf4 via bitsandbytes on 12 GB cards), kokoro / voxcpm / coqui-tts / qwen-tts / fish-speech (TTS), faster-whisper (STT), spandrel (upscale)
-- PyTorch with CUDA 12.6
-- aiosqlite (cache metadata with WAL), pydantic (validation with Field constraints), ruff + pyright (linting + type checking)
-- Docker with multi-layer build caching, uv package manager, non-root user
+- **Code is baked into the Docker images**: a change in `app/` reaches running workers only after rebuilding their image. `config/models/*.yaml` and the weights folder are bind-mounted and apply immediately (YAML through `ConfigWatcher`).
+- **`deploy/.env` holds `HF_TOKEN`**: never print it or commit it; show only filtered lines. A worker must be recreated to see a changed `.env`.
+- **Adding a model** touches five places: the YAML, `deploy/workers/<id>/requirements.txt`, a `docker-bake.hcl` row, a `worker-<id>` service in `docker-compose.yml`, and `WORKER_URL_<ID>` on the gateway service. Env names are `<ID>_<FIELD>` with every non-alphanumeric character turned into `_`; service names turn dots into dashes.
+- **`scripts/diagnose/*.sh` and several `scripts/feature/*.sh` rewrite `deploy/.env`** (profiles, quantization flags) without restoring it — check `.env` after running them.
+- **PictoLex depends on the model ids, the `voice-clone` tag, `capabilities.voices` of `voxcpm2`, the TTS `seed` and the `X-InferGate-*` headers.** Renaming or dropping any of them breaks the app.
 
 ## Code Style
 
@@ -108,7 +49,7 @@ Single canonical style — do not diverge.
 - **Type hints**: PEP 604 / PEP 585 only — `dict[str, X]`, `list[X]`, `str | None`. Never `Dict`/`List`/`Optional` from `typing`.
 - **Privacy**: single underscore `_foo` for module/class internals; double underscore only for deliberate name-mangling.
 - **Line length**: 100 (`tool.ruff.line-length`). `E501` is ignored — format-first, wrap when it reads better.
-- **Lint**: ruff with `E, W, F, I, UP, B, SIM, ASYNC, C4, T20, RUF`. No `print` in production code (`T20`). `ruff check app/` must be clean before commit.
+- **Lint**: ruff with `E, W, F, I, UP, B, SIM, ASYNC, C4, T20, RUF`. No `print` in production code (`T20`). `ruff check app/ tests/` must be clean before commit.
 - **Types**: `pyright` in `basic` mode (`tool.pyright`); new code should not introduce `pyright` errors.
 - **Async**: prefer asyncio primitives (`asyncio.Lock`, `asyncio.Semaphore`) over threading. Wrap blocking filesystem/CPU work with `asyncio.to_thread`.
 
@@ -140,23 +81,15 @@ Everything else is deleted. Specifically forbidden:
 - Release-date / license / provenance prose in docstrings.
 - Comments on YAML configs and `pyproject.toml`. Those files are read by operators who understand their keys; a comment is noise.
 
-### Antipatterns from this repo (do not reintroduce)
-
-- `# Drop T5 text encoder for SD 3.5 to save ~9.5 GB VRAM` above `kwargs["text_encoder_3"] = None` → the key name and YAML flag already say this.
-- `# Cache check` above a cache-check block → obvious from the code.
-- `"""Provider for Fish Speech / OpenAudio TTS models."""` followed by 8 more lines about licenses and performance → one line.
-- Module docstrings like `"""YAML configuration loaders with OmegaConf env-var interpolation."""` that introduce the file before any code → delete.
-- Comments in `config/models/*.yaml` describing env vars and model quirks → delete; the keys are self-documenting.
-
 If a would-be comment can't fit in one dense line that a reader genuinely needs, the code probably needs a better name or a more obvious structure instead.
 
 ## Testing
 
-Tests use fake providers (`FakeImageProvider`, `FakeTextProvider`, `FakeTtsProvider`) defined in `tests/conftest.py`. The `services` fixture provides a fully initialized service layer via `app.state`; the `client` fixture provides an async FastAPI test client via httpx. Tests are async (pytest-asyncio). Includes concurrency tests for scheduler, cache, and model loading.
+Fake providers for every category live in `tests/conftest.py`; the `services` fixture builds manager, scheduler and cache on them, and `client` is an httpx `AsyncClient` over the app with `services` on `app.state` (no middleware). Tests are async (`asyncio_mode=auto`). Gateway↔worker behaviour is tested in `tests/test_remote_e2e.py` against a fake worker over `ASGITransport`, and the real worker handlers in `tests/test_worker.py`. GPU behaviour is checked by `scripts/feature/*.sh` against live containers.
 
 ## Git Conventions
 
-- Do NOT add `Co-Authored-By` lines to commit messages.
+- Commit straight to `main` (fast-forward), no PRs. Do NOT add `Co-Authored-By` lines to commit messages.
 
 ### Commit Messages
 
