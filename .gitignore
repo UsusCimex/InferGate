@@ -9,7 +9,9 @@ venv/
 *.egg
 .ruff_cache/
 .pytest_cache/
-.claude/
+.claude/*
+!.claude/rules/
+CLAUDE.local.md
 models/*
 !models/.gitkeep
 cache/*
@@ -19,6 +21,11 @@ cache/*
 *.bin
 *.onnx
 .coverage
+.tmp/
+
+# Host copies of the deploy examples
+deploy/Caddyfile
+deploy/docker-compose.server.yml
 
 # Smoke-test artifacts from scripts/diagnose/* and scripts/feature/*
 *_diag.png
