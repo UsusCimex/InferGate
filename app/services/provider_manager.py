@@ -454,19 +454,17 @@ class ProviderManager:
                 return plan
 
     def _find_lru_victim(self, excluded: set[str] | None = None) -> str | None:
-        """Return the LRU evictable model, first honouring reservations, then ignoring them."""
+        """Return the LRU evictable GPU model, first honouring reservations, then ignoring them."""
         excluded = excluded or set()
-        for model_id in self._loaded_order:
-            if model_id in excluded:
-                continue
+        # A model on the CPU frees no VRAM: evicting it would only force a reload.
+        candidates = [m for m in self._loaded_order if m not in excluded and self._is_gpu_model(m)]
+        for model_id in candidates:
             if not self._evictable(model_id):
                 continue
             if self._would_violate_reservation(model_id, excluded=excluded):
                 continue
             return model_id
-        for model_id in self._loaded_order:
-            if model_id in excluded:
-                continue
+        for model_id in candidates:
             if self._evictable(model_id):
                 return model_id
         return None

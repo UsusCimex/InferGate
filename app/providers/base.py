@@ -21,6 +21,8 @@ class BaseProvider(ABC):
     @property
     def vram_mb(self) -> int:
         """GPU VRAM required by this model in megabytes (0 means CPU-only)."""
+        if str(self.config.model.get("device", "")).startswith("cpu"):
+            return 0
         return self.config.model.get("vram_mb", 0)
 
     @abstractmethod

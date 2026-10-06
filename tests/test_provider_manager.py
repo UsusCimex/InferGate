@@ -221,6 +221,32 @@ async def test_byte_budget_lru_evicts_on_oversubscription(services):
 
 
 @pytest.mark.asyncio
+async def test_cpu_model_takes_no_vram_budget(services):
+    """device: cpu zeroes the declared vram_mb, whatever the YAML says."""
+    provider = services["manager"].get("test-embed-multi")
+    assert provider.vram_mb == 1000
+    provider.config.model["device"] = "cpu"
+    assert provider.vram_mb == 0
+
+
+@pytest.mark.asyncio
+async def test_byte_budget_never_evicts_a_cpu_model(services):
+    """Evicting a model on the CPU frees no VRAM, so the LRU walk skips it."""
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 2500
+    manager._vram_headroom_mb = 0
+    manager.get("test-embed-multi").config.model["device"] = "cpu"
+
+    await manager.ensure_loaded("test-embed-multi")
+    await manager.ensure_loaded("test-image")
+    await manager.ensure_loaded("test-text")
+    assert manager._plan_eviction(1000) == ["test-image"]
+
+    await manager.ensure_loaded("test-tts")
+    assert set(manager.loaded_models()) == {"test-embed-multi", "test-text", "test-tts"}
+
+
+@pytest.mark.asyncio
 async def test_byte_budget_respects_headroom(services):
     """vram_headroom_mb carves a gap out of the top — pinned + active
     usage may not push past (budget - headroom)."""

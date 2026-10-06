@@ -9,9 +9,13 @@ from app.services.memory_watchdog import MemoryWatchdog
 class _StubProvider:
     """Minimal provider that reports preset stats, enough for the watchdog
     aggregation + eviction logic."""
-    def __init__(self, vram_used_mb: int, vram_total_mb: int, loaded: bool = True):
+    def __init__(
+        self, vram_used_mb: int, vram_total_mb: int, loaded: bool = True,
+        declared_mb: int | None = None,
+    ):
         self._vram_used = vram_used_mb
         self._vram_total = vram_total_mb
+        self._declared = vram_used_mb if declared_mb is None else declared_mb
         self._loaded = loaded
         self.unload_calls = 0
 
@@ -20,7 +24,7 @@ class _StubProvider:
 
     @property
     def vram_mb(self) -> int:
-        return self._vram_used
+        return self._declared
 
     async def get_stats(self) -> dict:
         return {"vram_used_mb": self._vram_used, "vram_total_mb": self._vram_total}
@@ -115,6 +119,22 @@ async def test_watchdog_keeps_lone_model_that_reserves_the_gpu(caplog):
     assert summary["evicted"] is None
     assert providers["vllm"].unload_calls == 0
     assert not any("VRAM" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_watchdog_keeps_cpu_models_next_to_a_lone_gpu_model():
+    """A CPU model beside vLLM frees no VRAM, so the sweep evicts nothing."""
+    providers = {
+        "clip-on-cpu": _StubProvider(vram_used_mb=11700, vram_total_mb=12227, declared_mb=0),
+        "vllm": _StubProvider(vram_used_mb=11700, vram_total_mb=12227),
+    }
+    manager = _StubManager(providers)
+    wd = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.92, ram_threshold=0.99)
+
+    summary = await wd.scan_once()
+    assert summary["vram_over_threshold"] is True
+    assert summary["evicted"] is None
+    assert all(p.unload_calls == 0 for p in providers.values())
 
 
 @pytest.mark.asyncio
