@@ -81,6 +81,8 @@ class ProviderManager:
         self._category_reservations = dict(category_reservations or {})
         self._worker_url_template = worker_url_template
         self._state_lock = asyncio.Lock()
+        # Notified under _state_lock when a request ends or a model is unloaded, so a load waiting for room re-plans.
+        self._room_freed = asyncio.Condition(self._state_lock)
         self._model_locks: dict[str, asyncio.Lock] = {}
         self._monitor_task: asyncio.Task | None = None
         # Models with active_count > 0 must never be evicted mid-request.
@@ -265,9 +267,12 @@ class ProviderManager:
                     self._touch_lru(model_id)
                 return provider
 
-            async with self._state_lock:
-                if self._is_gpu_model(model_id):
-                    await self._make_room(incoming_vram_mb=provider.vram_mb)
+            if self._is_gpu_model(model_id):
+                async with self._room_freed:
+                    await self._make_room(
+                        incoming_vram_mb=provider.vram_mb,
+                        wait_s=provider.config.queue.timeout_seconds,
+                    )
 
             try:
                 await provider.load(self._model_dir)
@@ -294,6 +299,7 @@ class ProviderManager:
             await provider.unload()
             async with self._state_lock:
                 self._loaded_order.pop(model_id, None)
+                self._room_freed.notify_all()
 
     async def reload_model(self, config: ModelConfig) -> bool:
         """Re-register a model with a new config; returns True when something changed."""
@@ -394,9 +400,23 @@ class ProviderManager:
             if self._is_gpu_model(m) and m in self._registry
         )
 
-    async def _make_room(self, incoming_vram_mb: int = 0) -> None:
-        """Evict models to fit `incoming_vram_mb` in the VRAM budget."""
+    async def _make_room(self, incoming_vram_mb: int = 0, wait_s: float = 0) -> None:
+        """Evict models to fit `incoming_vram_mb` in the VRAM budget; the caller holds `_room_freed`.
+
+        When only models with in-flight requests stand in the way, waits up to `wait_s` for those requests to end.
+        """
         plan = self._plan_eviction(incoming_vram_mb)
+        if plan is None and self._effective_budget() > 0 and wait_s > 0 \
+                and self._plan_eviction(incoming_vram_mb, busy_evictable=True) is not None:
+            logger.info("Waiting up to %ss for in-flight requests to free room for %d MB", wait_s, incoming_vram_mb)
+            deadline = asyncio.get_running_loop().time() + wait_s
+            while plan is None:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    break
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._room_freed.wait(), remaining)
+                plan = self._plan_eviction(incoming_vram_mb)
         if plan is None:
             effective_budget = self._effective_budget()
             if effective_budget > 0:
@@ -423,8 +443,11 @@ class ProviderManager:
             return 0
         return self._max_vram_budget_mb - self._vram_headroom_mb
 
-    def _plan_eviction(self, incoming_vram_mb: int) -> list[str] | None:
-        """Return the ordered LRU eviction plan, [] if it already fits, None if infeasible."""
+    def _plan_eviction(self, incoming_vram_mb: int, busy_evictable: bool = False) -> list[str] | None:
+        """Return the ordered LRU eviction plan, [] if it already fits, None if infeasible.
+
+        `busy_evictable` plans as if the in-flight requests had ended, to tell a wait from a dead end.
+        """
         effective_budget = self._effective_budget()
         excluded: set[str] = set()
         plan: list[str] = []
@@ -445,7 +468,7 @@ class ProviderManager:
         if fits():
             return []
         while True:
-            victim = self._find_lru_victim(excluded=excluded)
+            victim = self._find_lru_victim(excluded=excluded, busy_evictable=busy_evictable)
             if victim is None:
                 return None
             plan.append(victim)
@@ -453,26 +476,26 @@ class ProviderManager:
             if fits():
                 return plan
 
-    def _find_lru_victim(self, excluded: set[str] | None = None) -> str | None:
+    def _find_lru_victim(self, excluded: set[str] | None = None, busy_evictable: bool = False) -> str | None:
         """Return the LRU evictable GPU model, first honouring reservations, then ignoring them."""
         excluded = excluded or set()
         # A model on the CPU frees no VRAM: evicting it would only force a reload.
         candidates = [m for m in self._loaded_order if m not in excluded and self._is_gpu_model(m)]
         for model_id in candidates:
-            if not self._evictable(model_id):
+            if not self._evictable(model_id, busy_evictable):
                 continue
             if self._would_violate_reservation(model_id, excluded=excluded):
                 continue
             return model_id
         for model_id in candidates:
-            if self._evictable(model_id):
+            if self._evictable(model_id, busy_evictable):
                 return model_id
         return None
 
-    def _evictable(self, model_id: str) -> bool:
+    def _evictable(self, model_id: str, busy_evictable: bool = False) -> bool:
         if model_id in self._pinned:
             return False
-        return self._active_counts.get(model_id, 0) == 0
+        return busy_evictable or self._active_counts.get(model_id, 0) == 0
 
     def _would_violate_reservation(
         self, model_id: str, excluded: set[str] | None = None
@@ -509,6 +532,7 @@ class ProviderManager:
                     self._active_counts.pop(model_id, None)
                 else:
                     self._active_counts[model_id] = current - 1
+                self._room_freed.notify_all()
 
     def active_request_count(self, model_id: str) -> int:
         """Number of in-flight requests for this model (dirty-read, observability only)."""

@@ -278,7 +278,52 @@ async def test_byte_budget_raises_when_all_pinned(services):
     # Loading test-text (1000 MB) would push total to 2000 > 1500, but
     # the only loaded model is pinned so LRU can't help.
     with pytest.raises(InsufficientResourcesError, match="Cannot fit"):
-        await manager.ensure_loaded("test-text")
+        await asyncio.wait_for(manager.ensure_loaded("test-text"), 5)
+
+
+@pytest.mark.asyncio
+async def test_a_load_waits_for_the_request_of_a_busy_model_instead_of_failing(services):
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 1500
+    manager._vram_headroom_mb = 0
+    await manager.ensure_loaded("test-image")
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def busy_request():
+        async with manager.active_request("test-image"):
+            started.set()
+            await release.wait()
+
+    busy = asyncio.create_task(busy_request())
+    await started.wait()
+    load = asyncio.create_task(manager.ensure_loaded("test-text"))
+    await asyncio.sleep(0.05)
+    assert not load.done()
+
+    release.set()
+    await asyncio.wait_for(load, 5)
+    await busy
+
+    assert manager.get("test-text").is_loaded()
+    assert not manager.get("test-image").is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_a_load_gives_up_when_the_busy_model_outlasts_its_queue_timeout(services):
+    from app.services.provider_manager import InsufficientResourcesError
+
+    manager = services["manager"]
+    manager._max_vram_budget_mb = 1500
+    manager._vram_headroom_mb = 0
+    manager.get("test-text").config.queue.timeout_seconds = 1
+    await manager.ensure_loaded("test-image")
+
+    async with manager.active_request("test-image"):
+        with pytest.raises(InsufficientResourcesError, match="Cannot fit"):
+            await asyncio.wait_for(manager.ensure_loaded("test-text"), 5)
+
+    assert manager.get("test-image").is_loaded()
+    assert not manager.get("test-text").is_loaded()
 
 
 @pytest.mark.asyncio

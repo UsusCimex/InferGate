@@ -130,7 +130,7 @@
 | 413 | `upload_too_large` (лимиты `upload_limits`: картинка 20 МБ, аудио 25 МБ, видео 200 МБ, апскейл 50 МБ) |
 | 422 | `invalid_request` — ошибка валидации, `param` называет поле |
 | 429 | `rate_limit_exceeded` |
-| 503 | `worker_not_ready` (контейнер модели не запущен), `insufficient_resources` (модель не помещается в бюджет VRAM), `queue_full`, `model_not_ready` |
+| 503 | `worker_not_ready` (контейнер модели не запущен), `insufficient_resources` (модель не помещается в бюджет VRAM: мешают закреплённые модели или запросы других моделей не закончились за `queue.timeout_seconds`), `queue_full`, `model_not_ready` |
 | 504 | `timeout` |
 
 Ошибки воркера, которые шлюз не распознал, передаются как есть (`upstream_error`). Часть ошибок роутеров приходит без `type`.
