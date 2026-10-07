@@ -35,7 +35,6 @@ async def generate_images(
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)
 
     start = time.monotonic()
-    provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
 
     params: dict = {}
@@ -100,6 +99,7 @@ async def generate_images(
     elif no_cache:
         cache_status = "SKIP"
 
+    provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 
@@ -225,7 +225,6 @@ async def upscale_image(
         return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)
 
     start = time.monotonic()
-    provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
 
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
@@ -251,6 +250,7 @@ async def upscale_image(
     elif no_cache:
         cache_status = "SKIP"
 
+    provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 

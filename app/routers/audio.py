@@ -74,7 +74,6 @@ async def create_speech(
         )
 
     start = time.monotonic()
-    provider = await manager.ensure_loaded(model_id)
 
     params = {
         "voice": body.voice,
@@ -117,6 +116,7 @@ async def create_speech(
         cache_status = "SKIP"
 
     # Generate
+    provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 
@@ -220,7 +220,6 @@ async def create_transcription(
         return JSONResponse({"error": {"message": "Empty audio file"}}, status_code=400)
 
     start = time.monotonic()
-    provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
 
     params = {
@@ -255,6 +254,7 @@ async def create_transcription(
     elif no_cache:
         cache_status = "SKIP"
 
+    provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 
@@ -341,7 +341,6 @@ async def create_speech_voice_clone(
         return JSONResponse({"error": {"message": "Empty reference_audio"}}, status_code=400)
 
     start = time.monotonic()
-    provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
 
     params = {
@@ -392,6 +391,7 @@ async def create_speech_voice_clone(
     elif no_cache:
         cache_status = "SKIP"
 
+    provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 

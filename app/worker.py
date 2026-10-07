@@ -431,9 +431,10 @@ async def generate(request: Request):
             )
         except RuntimeError as e:
             if "CUDA error" in str(e):
-                import sys
                 logger.critical("Unrecoverable CUDA error — worker exiting for restart: %s", e)
-                sys.exit(1)
+                logging.shutdown()
+                # sys.exit inside a request only raises SystemExit into uvicorn; the container must die to restart.
+                os._exit(1)
             raise
 
         return JSONResponse(

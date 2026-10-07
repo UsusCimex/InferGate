@@ -486,3 +486,40 @@ async def test_reload_serialises_with_generate(text_worker):
     assert r_resp.status_code == 200
     # Both land successfully — the lock serialised them correctly.
     assert r_resp.json()["action"] == "noop"  # same config
+
+
+@pytest.mark.asyncio
+async def test_a_cuda_error_ends_the_worker_process_so_docker_restarts_it(monkeypatch):
+    from fastapi import FastAPI
+
+    import app.worker as worker_module
+
+    class Exited(Exception):
+        pass
+
+    def fake_exit(code):
+        raise Exited(code)
+
+    monkeypatch.setattr(worker_module.os, "_exit", fake_exit)
+    monkeypatch.setattr(worker_module.logging, "shutdown", lambda: None)
+
+    config = _make_config("image", "FakeImageProvider")
+    provider = FakeImageProvider(config)
+    await provider.load(".")
+
+    async def broken_generate(prompt, **params):
+        raise RuntimeError("CUDA error: an illegal memory access was encountered")
+
+    provider.generate = broken_generate
+    app = FastAPI()
+    app.state.provider = provider
+    app.state.config = config
+    app.state.reload_lock = asyncio.Lock()
+    app.add_api_route("/generate", worker_module.generate, methods=["POST"])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://worker") as client:
+        with pytest.raises(Exited) as exited:
+            await client.post("/generate", json={"prompt": "cat"})
+
+    assert exited.value.args == (1,)
+

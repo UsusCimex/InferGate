@@ -68,8 +68,6 @@ async def chat_completions(
         return error
 
     start = time.monotonic()
-    provider = await manager.ensure_loaded(model_id)
-    t_loaded = time.monotonic()
 
     params = {}
     if body.temperature is not None:
@@ -86,6 +84,7 @@ async def chat_completions(
     # exclude_none: the Qwen templates treat any part with an "image_url" key as an image.
     messages = [m.model_dump(exclude_none=True) for m in body.messages]
     if body.stream:
+        provider = await manager.ensure_loaded(model_id)
         return StreamingResponse(
             provider.generate_stream(messages, **params),
             media_type="text/event-stream",
@@ -127,6 +126,10 @@ async def chat_completions(
     elif no_cache:
         cache_status = "SKIP"
 
+    load_start = time.monotonic()
+    provider = await manager.ensure_loaded(model_id)
+    t_loaded = time.monotonic()
+
     timeout = config.queue.timeout_seconds
     priority = config.queue.priority
 
@@ -144,7 +147,7 @@ async def chat_completions(
         await cache.put(cache_key, json.dumps(result).encode(), model_id, cache_cfg)
 
     t_done = time.monotonic()
-    load_ms = int((t_loaded - start) * 1000)
+    load_ms = int((t_loaded - load_start) * 1000)
     inference_ms = int((t_done - inference_start) * 1000)
     total_ms = int((t_done - start) * 1000)
     overhead_ms = total_ms - inference_ms - load_ms

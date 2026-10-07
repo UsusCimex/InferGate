@@ -82,8 +82,10 @@ def _parse_poll_backoff() -> list[float]:
 _LOAD_POLL_BACKOFF = _parse_poll_backoff()
 
 
-def _generate_timeout() -> httpx.Timeout:
-    return httpx.Timeout(connect=_CONNECT_TIMEOUT, read=_GENERATE_TIMEOUT, write=10.0, pool=10.0)
+def _generate_timeout(queue_timeout_s: float = 0.0) -> httpx.Timeout:
+    """The scheduler's per-model queue timeout must fire first, so the read wait is never shorter."""
+    read = max(_GENERATE_TIMEOUT, queue_timeout_s)
+    return httpx.Timeout(connect=_CONNECT_TIMEOUT, read=read, write=10.0, pool=10.0)
 
 
 def _load_timeout() -> httpx.Timeout:
@@ -183,7 +185,8 @@ class BaseRemoteMixin:
         - POST /load returns 202 → background load running; we poll GET /load/status
           until "ready"/"failed" or `_LOAD_TIMEOUT` deadline.
         """
-        self._client = self._build_client(_generate_timeout())
+        queue = getattr(self.config, "queue", None)
+        self._client = self._build_client(_generate_timeout(float(getattr(queue, "timeout_seconds", 0) or 0)))
 
         httpx_logger = logging.getLogger("httpx")
         prev_level = httpx_logger.level
@@ -426,9 +429,9 @@ class RemoteTextProvider(BaseRemoteMixin, TextProvider):
             headers=_request_id_headers(),
         ) as resp:
             resp.raise_for_status()
+            # Blank lines end SSE events: dropping them merges every event into one.
             async for line in resp.aiter_lines():
-                if line.strip():
-                    yield line + "\n"
+                yield line + "\n"
 
 
 class RemoteImageProvider(BaseRemoteMixin, ImageProvider):

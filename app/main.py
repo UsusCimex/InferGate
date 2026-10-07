@@ -168,18 +168,10 @@ def create_app() -> FastAPI:
     # Stash so lifespan() doesn't re-parse YAML on every startup.
     app.state.server_config = server_cfg
 
-    app.add_middleware(AccessLogMiddleware)
-    app.add_middleware(PrometheusMiddleware)
-    app.add_middleware(RequestIdMiddleware)
-
-    # CORS before auth so preflight requests pass without an API key.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=server_cfg.cors.allow_origins,
-        allow_methods=server_cfg.cors.allow_methods,
-        allow_headers=server_cfg.cors.allow_headers,
-        allow_credentials=True,
-    )
+    # Starlette runs the middleware added last first. From the outside in: request id (so a 401 or 429
+    # carries it), access log, metrics, CORS (a preflight passes without a key), rate limit, auth.
+    if server_cfg.auth.enabled and server_cfg.auth.api_keys:
+        app.add_middleware(ApiKeyMiddleware, api_keys=server_cfg.auth.api_keys)
 
     if server_cfg.rate_limit.enabled:
         app.add_middleware(
@@ -187,8 +179,16 @@ def create_app() -> FastAPI:
             requests_per_minute=server_cfg.rate_limit.requests_per_minute,
         )
 
-    if server_cfg.auth.enabled and server_cfg.auth.api_keys:
-        app.add_middleware(ApiKeyMiddleware, api_keys=server_cfg.auth.api_keys)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=server_cfg.cors.allow_origins,
+        allow_methods=server_cfg.cors.allow_methods,
+        allow_headers=server_cfg.cors.allow_headers,
+        allow_credentials=True,
+    )
+    app.add_middleware(PrometheusMiddleware)
+    app.add_middleware(AccessLogMiddleware)
+    app.add_middleware(RequestIdMiddleware)
 
     @app.exception_handler(ModelNotFoundError)
     async def model_not_found_handler(request, exc):
@@ -213,6 +213,13 @@ def create_app() -> FastAPI:
     async def timeout_handler(request, exc):
         return JSONResponse(
             {"error": {"message": str(exc), "type": "timeout"}}, status_code=504
+        )
+
+    @app.exception_handler(httpx.TimeoutException)
+    async def worker_timeout_handler(request, exc):
+        return JSONResponse(
+            {"error": {"message": f"worker did not answer in time: {exc}", "type": "timeout"}},
+            status_code=504,
         )
 
     @app.exception_handler(QueueFullError)

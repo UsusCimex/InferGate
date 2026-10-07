@@ -96,7 +96,7 @@ metadata:
 
 Выгрузка на CPU: у `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image` и `sd35-medium` по умолчанию включена послойная выгрузка (`sequential_cpu_offload`), и она проверяется раньше обычной. Чтобы отключить выгрузку, нужно выставить и `<ID>_SEQUENTIAL_OFFLOAD=false`, и `<ID>_CPU_OFFLOAD=false`. На 12 ГБ послойная выгрузка стоит минут на картинку — FLUX.2 klein, FLUX.1-dev и Z-Image там работают в nf4 без неё (подсказки в `.env.example`).
 
-`GATEWAY_REMOTE_GENERATE_TIMEOUT` ограничивает любой запрос к воркеру 300 секундами, даже если `queue.timeout_seconds` модели больше; для медленных моделей его поднимают.
+`GATEWAY_REMOTE_GENERATE_TIMEOUT` — наименьшее ожидание ответа воркера: шлюз ждёт не меньше `queue.timeout_seconds` модели, чтобы первым срабатывал тайм-аут очереди. Воркер, не ответивший вовремя, даёт клиенту 504.
 
 ## Защита памяти
 
