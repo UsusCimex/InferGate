@@ -2,7 +2,7 @@
 
 Self-hosted OpenAI-совместимый шлюз к локальным моделям: генерация и правка картинок, текст (в том числе с картинками во входе), озвучка и клонирование голоса, распознавание речи, апскейл, эмбеддинги. Клиент OpenAI API переключается на InferGate сменой `base_url`.
 
-Каждая модель работает в своём Docker-контейнере со своими зависимостями. Лёгкий шлюз на FastAPI загружает модели по требованию, вытесняет давно не использованные по бюджету видеопамяти, ставит запросы в очередь и кэширует ответы. Основной клиент — Android-приложение PictoLex.
+Каждая модель работает в своём Docker-контейнере со своими зависимостями. Шлюз на FastAPI загружает модели по требованию, вытесняет давно не использованные по бюджету видеопамяти, ставит запросы в очередь и кэширует ответы. Основной клиент: Android-приложение PictoLex.
 
 ## Модели
 
@@ -12,10 +12,10 @@ Self-hosted OpenAI-совместимый шлюз к локальным мод�
 | Текст (vLLM) | Qwen 3.5 4B (с картинками во входе), Qwen 3.5 9B, Qwen 3 8B, Llama 3.1 8B |
 | Озвучка | Kokoro 82M, VoxCPM2 (четыре рассказчика и клонирование голоса), Qwen3-TTS 0.6B и XTTS v2 (клонирование), OpenAudio S1 Mini |
 | Распознавание | Whisper Base (faster-whisper) |
-| Апскейл | Real-ESRGAN ×4 |
+| Апскейл | Real-ESRGAN x4 |
 | Эмбеддинги | Multilingual E5, CLIP, SigLIP, CLAP, CLIP4Clip |
 
-Модель с существующим провайдером добавляется YAML-файлом, строкой в матрице сборки и сервисом Compose — без кода Python. Полный каталог, профили и VRAM — [docs/models.md](docs/models.md).
+Модель с существующим провайдером добавляется YAML-файлом, строкой в матрице сборки и сервисом Compose, без кода Python. Каталог, профили и VRAM: [docs/models.md](docs/models.md).
 
 ## Быстрый старт
 
@@ -27,7 +27,7 @@ docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
 curl http://localhost:8000/health
 ```
 
-Профиль — категория (`text`, `image`, `tts`, `stt`, `upscale`, `voice-clone`, `embedding`) или id модели (`flux2-klein-4b`). Значения по умолчанию в `config/models/*.yaml` рассчитаны на видеокарту 12 ГБ; под другое железо меняются переменные в `deploy/.env`. Swagger — `http://localhost:8000/docs`.
+Профиль: категория (`text`, `image`, `tts`, `stt`, `upscale`, `voice-clone`, `embedding`) или id модели (`flux2-klein-4b`). Умолчания в `config/models/*.yaml` рассчитаны на видеокарту 12 ГБ, под другое железо меняются переменные в `deploy/.env`. Swagger: `http://localhost:8000/docs`.
 
 ```python
 from openai import OpenAI
@@ -60,8 +60,8 @@ ruff check app/ tests/
 uvicorn app.main:app --reload
 ```
 
-Python 3.11+. Стиль кода, комментариев и сообщений коммитов — в [CLAUDE.md](CLAUDE.md).
+Python 3.11+. Стиль кода и коммитов: [CLAUDE.md](CLAUDE.md).
 
 ## Лицензия
 
-MIT. У моделей свои лицензии — см. [docs/models.md](docs/models.md).
+MIT. Лицензии моделей: [docs/models.md](docs/models.md).

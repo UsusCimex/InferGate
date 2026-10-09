@@ -4,7 +4,7 @@ InferGate is a self-hosted OpenAI-compatible gateway for local models: images (d
 
 ## Docs
 
-User docs are in Russian under `docs/`: `api.md` (endpoints, fields, headers, errors), `models.md` (catalog, Compose profiles, providers, adding a model), `configuration.md` (`server.yaml`, model YAML, env vars, memory safety), `architecture.md` (gateway/worker, request flow, manager, scheduler, cache), `deployment.md` (Compose, images, TLS, monitoring), `testing.md`, `roadmap.md` (known issues and plans). Update the matching doc in the same commit as the behaviour change. Path-scoped rules live in `.claude/rules/`.
+User docs are in Russian under `docs/`: `api.md` (endpoints, fields, headers, errors), `models.md` (catalog, Compose profiles, providers, adding a model), `configuration.md` (`server.yaml`, model YAML, env vars, memory safety), `architecture.md` (gateway and worker, request flow, manager, scheduler, cache), `deployment.md` (Compose, images, TLS, monitoring), `testing.md`, `roadmap.md` (known issues and plans). Update the matching doc in the same commit as the behaviour change. Path-scoped rules live in `.claude/rules/`.
 
 ## Commands
 
@@ -24,13 +24,13 @@ python scripts/download_models.py --models flux2-klein-4b   # prefetch weights o
 
 ## Architecture in brief
 
-Request flow: router (`app/routers/`) → capability checks → cache lookup (a hit never loads the model) → `ProviderManager.ensure_loaded` (LRU by declared `vram_mb`, budget, pinned models, per-model locks) → `GpuScheduler.submit` inside `active_request` → provider (`RemoteProvider` → worker HTTP) → cache put, `X-InferGate-*` headers, Prometheus metrics. Streaming chat bypasses scheduler, cache and metrics.
+A request goes through the router (`app/routers/`), the capability checks, the cache lookup (a hit never loads the model), `ProviderManager.ensure_loaded` (LRU by declared `vram_mb`, budget, pinned models, per-model locks), `GpuScheduler.submit` inside `active_request`, the provider (`RemoteProvider` calls the worker over HTTP), then the cache put, `X-InferGate-*` headers and Prometheus metrics. Streaming chat bypasses scheduler, cache and metrics.
 
-- Worker discovery: YAML `worker_url` → env `WORKER_URL_<ID>` → `gpu.worker_url_template` → otherwise a local in-process provider.
-- Workers start empty and load on demand (`POST /load` → 202, poll `/load/status`); the gateway's monitor probes `/health` every 10 s, drops a loaded model after 3 misses and frees the slot of a worker that restarted idle.
+- Worker discovery order: YAML `worker_url`, env `WORKER_URL_<ID>`, `gpu.worker_url_template`, otherwise a local in-process provider.
+- Workers start empty and load on demand (`POST /load` answers 202, then poll `/load/status`); the gateway's monitor probes `/health` every 10 s, drops a loaded model after 3 misses and frees the slot of a worker that restarted idle.
 - Services are built in the FastAPI lifespan (`app/main.py`), kept on `app.state` and injected with `Depends()` from `app/dependencies.py`.
-- Providers subclass the ABCs in `app/providers/base.py`, register with `@register_provider` and must sit in `app/providers/{image,text,tts,stt,upscale,embedding}/`. Every category also has a gateway-side remote class in `app/providers/remote.py` (`CATEGORY_REGISTRY`) and a worker endpoint in `app/worker.py` — keep the three in step.
-- Cache: `CacheManager` facade over `LocalCacheBackend` (SQLite WAL + files) or `RedisCacheBackend`; strategies `always` / `seed_only` / `never` per model.
+- Providers subclass the ABCs in `app/providers/base.py`, register with `@register_provider` and must sit in `app/providers/{image,text,tts,stt,upscale,embedding}/`. Every category also has a gateway-side remote class in `app/providers/remote.py` (`CATEGORY_REGISTRY`) and a worker endpoint in `app/worker.py`; keep the three in step.
+- Cache: `CacheManager` facade over `LocalCacheBackend` (SQLite WAL + files) or `RedisCacheBackend`; strategies `always`, `seed_only`, `never` per model.
 - Middleware is pure ASGI (request id, Prometheus, access log, optional API key and rate limit).
 
 ## Invariants that are easy to break
@@ -38,81 +38,44 @@ Request flow: router (`app/routers/`) → capability checks → cache lookup (a 
 - **Code is baked into the Docker images**: a change in `app/` reaches running workers only after rebuilding their image. `config/models/*.yaml` and the weights folder are bind-mounted and apply immediately (YAML through `ConfigWatcher`).
 - **`deploy/.env` holds `HF_TOKEN`**: never print it or commit it; show only filtered lines. A worker must be recreated to see a changed `.env`.
 - **Adding a model** touches five places: the YAML, `deploy/workers/<id>/requirements.txt`, a `docker-bake.hcl` row, a `worker-<id>` service in `docker-compose.yml`, and `WORKER_URL_<ID>` on the gateway service. Env names are `<ID>_<FIELD>` with every non-alphanumeric character turned into `_`; service names turn dots into dashes.
-- **`scripts/diagnose/*.sh` and several `scripts/feature/*.sh` rewrite `deploy/.env`** (profiles, quantization flags) without restoring it — check `.env` after running them.
+- **`scripts/diagnose/*.sh` and several `scripts/feature/*.sh` rewrite `deploy/.env`** (profiles, quantization flags) without restoring it; check `.env` after running them.
 - **PictoLex depends on the model ids, the `voice-clone` tag, `capabilities.voices` of `voxcpm2`, the TTS `seed` and the `X-InferGate-*` headers.** Renaming or dropping any of them breaks the app.
 
-## Code Style
+## Code style
 
-Single canonical style — do not diverge.
+- **Imports**: `from __future__ import annotations` first in every module, sorted by ruff (`I`), first-party is `app`.
+- **Type hints**: PEP 604 and PEP 585 only (`dict[str, X]`, `list[X]`, `str | None`), never `Dict`, `List` or `Optional`.
+- **Privacy**: `_foo` for module and class internals; double underscore only for deliberate name mangling.
+- **Lint**: ruff with `E, W, F, I, UP, B, SIM, ASYNC, C4, T20, RUF`, line length 100 with `E501` ignored, no `print` in production code. `ruff check app/ tests/` must be clean before a commit.
+- **Types**: `pyright` in `basic` mode; new code adds no `pyright` errors.
+- **Async**: asyncio primitives (`asyncio.Lock`, `asyncio.Semaphore`) over threading; blocking filesystem or CPU work goes through `asyncio.to_thread`.
 
-- **Imports**: `from __future__ import annotations` first line in every module. Imports sorted by ruff (`I`), first-party = `app`.
-- **Type hints**: PEP 604 / PEP 585 only — `dict[str, X]`, `list[X]`, `str | None`. Never `Dict`/`List`/`Optional` from `typing`.
-- **Privacy**: single underscore `_foo` for module/class internals; double underscore only for deliberate name-mangling.
-- **Line length**: 100 (`tool.ruff.line-length`). `E501` is ignored — format-first, wrap when it reads better.
-- **Lint**: ruff with `E, W, F, I, UP, B, SIM, ASYNC, C4, T20, RUF`. No `print` in production code (`T20`). `ruff check app/ tests/` must be clean before commit.
-- **Types**: `pyright` in `basic` mode (`tool.pyright`); new code should not introduce `pyright` errors.
-- **Async**: prefer asyncio primitives (`asyncio.Lock`, `asyncio.Semaphore`) over threading. Wrap blocking filesystem/CPU work with `asyncio.to_thread`.
+## Comments
 
-## Comment Policy
+Default to no comment.
 
-Comments exist to help a future reader understand a class, method, or inline gotcha without diving into the implementation — nothing more. Minimal information, informative, rare. These rules are strict.
+- Docstrings: one line for classes, schemas and public functions (endpoints, provider ABCs, service entry points), saying what it does and, when the signature does not, what it returns or raises. None for private or trivial helpers and for modules.
+- Inline `#` only for a non-obvious invariant, a workaround with its cause, a line whose removal silently breaks something, or `# noqa: XYZ` with a short reason.
+- Forbidden: restating the code, section dividers, past bugs, PRs, incidents and dates, "chosen over X" rationale, licence or provenance prose, comments in model YAMLs and `pyproject.toml`.
 
-### Docstrings
+If a comment does not fit one dense line, rename or restructure instead.
 
-- **Classes / DTOs / Pydantic schemas**: one-line docstring stating the purpose. No multi-paragraph blurbs, no field-by-field lists, no "chosen over X because…" rationale. If a field is non-obvious, rename it.
-- **Public methods and functions** (router endpoints, provider ABCs, public service entry points): one-line docstring stating what it does (and, when not obvious from the signature, what it returns or raises). Never restate parameter names.
-- **Private / trivial helpers** (`_foo`, short getters, wrappers): no docstring. The name and type hints are the documentation.
-- **Modules**: no module-level docstring. The filename + first class/function is enough.
+## Text style
 
-### Inline `#` comments
-
-Only legitimate reasons to keep one:
-
-1. A **WHY** for a non-obvious invariant (e.g. ordering that exists for crash-safety, parameter-priority subtlety).
-2. A **workaround** with its root cause (e.g. `# snapshot_download first — HF AutoModel skips speech_tokenizer/`).
-3. A **footgun warning** where removing the line below would silently break something.
-4. A `# noqa: XYZ` with a one-phrase reason.
-
-Everything else is deleted. Specifically forbidden:
-- Restating WHAT the next line does.
-- Section dividers (`# ── Section ──`).
-- References to past bugs, PRs, incidents, dates — that belongs in `git log`.
-- "Chosen over X because Y" in docstrings (marketing, not contract).
-- Release-date / license / provenance prose in docstrings.
-- Comments on YAML configs and `pyproject.toml`. Those files are read by operators who understand their keys; a comment is noise.
-
-If a would-be comment can't fit in one dense line that a reader genuinely needs, the code probably needs a better name or a more obvious structure instead.
+Docs, comments, logs, error messages and commit messages: the necessary minimum, no intros, no restating the code. Keyboard characters only: a hyphen for em and en dashes, no arrows (not even `->` in prose), straight quotes, three dots for the ellipsis character, `x`, `~`, `>=` and `<=` for the math signs. Model prompts and parsed formats (SRT `-->`) stay as they are.
 
 ## Testing
 
-Fake providers for every category live in `tests/conftest.py`; the `services` fixture builds manager, scheduler and cache on them, and `client` is an httpx `AsyncClient` over the app with `services` on `app.state` (no middleware). Tests are async (`asyncio_mode=auto`). Gateway↔worker behaviour is tested in `tests/test_remote_e2e.py` against a fake worker over `ASGITransport`, and the real worker handlers in `tests/test_worker.py`. GPU behaviour is checked by `scripts/feature/*.sh` against live containers.
+Fake providers for every category live in `tests/conftest.py`; the `services` fixture builds manager, scheduler and cache on them, and `client` is an httpx `AsyncClient` over the app with `services` on `app.state` (no middleware). Tests are async (`asyncio_mode=auto`). Gateway and worker behaviour is tested in `tests/test_remote_e2e.py` against a fake worker over `ASGITransport`, and the real worker handlers in `tests/test_worker.py`. GPU behaviour is checked by `scripts/feature/*.sh` against live containers.
 
-## Git Conventions
+## Git
 
-- Commit straight to `main` (fast-forward), no PRs. Do NOT add `Co-Authored-By` lines to commit messages.
+Commit straight to `main` (fast-forward), no PRs. Never add `Co-Authored-By` or other trailers.
 
-### Commit Messages
-
-Every commit starts with one tag:
-
-- `[*]` — fix, logic change, feature behaviour
-- `[+]` — addition (new module, file, endpoint, dependency, test)
-- `[-]` — removal (deleted code, dropped feature)
-- `[r]` — refactor (rename, move, restructure; no behaviour change)
-
-Format:
-
-- **Title**: `[tag] <one short sentence>`. End with `:` only if a body follows.
-- **Body** (optional): dashed bullet list (`- ...`), one brief point per bullet.
-- **Atomicity**: one commit = one focused change. Split, don't pad the message.
-
-Example:
+Every commit title starts with a tag: `[*]` fix, logic or behaviour change; `[+]` addition (module, file, endpoint, dependency, test); `[-]` removal; `[r]` refactor without behaviour change. The title is one short sentence and ends with `:` only if a body follows; the body is a list of short `- ` bullets. One commit, one focused change.
 
     [*] Lazy-load models on first request:
     - drop eager provider.load() from worker lifespan
     - /health used only for probe
-    - remote and local share the same _make_room() path
 
     [-] Legacy FishSpeech provider
-
-    [r] Move schedulers/compel/lora into submodules
