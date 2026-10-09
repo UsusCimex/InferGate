@@ -1,2 +1,4 @@
 kokoro>=0.9.0
 soundfile>=0.12.0
+# Without the bound, huggingface-hub 2 pushes uv back to transformers 4.12, which needs Rust to build.
+transformers>=5.5,<6
