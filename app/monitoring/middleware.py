@@ -79,6 +79,8 @@ def _normalize_path(path: str) -> str:
         return "/cache/stats/{model_id}"
     if path.startswith("/cache/entry/"):
         return "/cache/entry/{key}"
+    if path.startswith("/ui/images/"):
+        return "/ui/images/{key}"
     # Keep /cache/<model_id> distinct from /cache (wipe-all).
     if path.startswith("/cache/"):
         return "/cache/{model_id}"

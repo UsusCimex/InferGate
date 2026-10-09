@@ -14,6 +14,9 @@ except ImportError:  # pragma: no cover (optional dependency)
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PREFIX = "infergate:cache"
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+# Last used entries that recent_images looks through: the LRU set mixes images with audio.
+_RECENT_SCAN = 200
 
 
 def _decode(value: Any) -> Any:
@@ -248,6 +251,42 @@ class RedisCacheBackend(CacheBackend):
             },
             "per_model": per_model,
         }
+
+    async def recent_images(self, limit: int) -> list[dict]:
+        """Newest PNG entries among the last used ones: Redis keeps no index by creation time."""
+        if not self._initialized:
+            return []
+        keys = [_decode(m) for m in await self._client.zrevrange(self._lru_key(), 0, _RECENT_SCAN - 1)]
+        if not keys:
+            return []
+        pipe = self._client.pipeline(transaction=False)
+        for key in keys:
+            pipe.getrange(self._data_key(key), 0, len(_PNG_SIGNATURE) - 1)
+            pipe.hgetall(self._meta_key(key))
+        replies = await pipe.execute()
+        now = time.time()
+        images: list[dict] = []
+        for key, head, meta_raw in zip(keys, replies[::2], replies[1::2], strict=True):
+            meta = _decode_keys(meta_raw)
+            ttl = meta.get("ttl_expires")
+            if head != _PNG_SIGNATURE or not meta or (ttl is not None and float(_decode(ttl)) < now):
+                continue
+            images.append({
+                "key": key,
+                "model_id": _decode(meta.get("model_id")),
+                "size_bytes": int(_decode(meta.get("size_bytes", 0))),
+                "created_at": float(_decode(meta.get("created_at", 0))),
+            })
+        images.sort(key=lambda image: image["created_at"], reverse=True)
+        return images[:limit]
+
+    async def peek(self, key: str) -> bytes | None:
+        if not self._initialized:
+            return None
+        ttl = await self._client.hget(self._meta_key(key), "ttl_expires")
+        if ttl is not None and float(_decode(ttl)) < time.time():
+            return None
+        return await self._client.get(self._data_key(key))
 
     async def _model_stats(self, model_id: str) -> dict:
         members = await self._client.zrange(self._model_lru_key(model_id), 0, -1)

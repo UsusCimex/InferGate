@@ -26,6 +26,8 @@
 | `GET` | `/health`, `/v1/health` | `{"status": "ok"}`, состояние воркеров не проверяется |
 | `GET` | `/metrics` | JSON-снимок: очередь, загруженные модели, доля попаданий в кэш, uptime |
 | `GET` | `/metrics/prometheus` | метрики для Prometheus |
+| `GET` | `/ui` | [веб-страница](deployment.md#веб-страница), есть при `ui.enabled` вместе с `auth.enabled` и ключами, открывается без ключа |
+| `GET` | `/ui/history`, `/ui/gallery`, `/ui/images/{key}` | данные страницы: запросы картинок к этому шлюзу (новые первыми), последние PNG из кэша с их запросом, PNG из кэша без учёта попадания |
 | `GET` | `/docs`, `/redoc`, `/openapi.json` | документация FastAPI |
 
 ## Текст

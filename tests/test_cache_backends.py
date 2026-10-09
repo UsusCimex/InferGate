@@ -171,6 +171,37 @@ async def test_contract_stats_global_shape(backend: CacheBackend):
     assert "m" in stats["per_model"]
 
 
+@pytest.mark.asyncio
+async def test_contract_recent_images_lists_live_pngs_newest_first(backend: CacheBackend):
+    cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
+    png = b"\x89PNG\r\n\x1a\n" + b"pixels"
+    await backend.put("old", png, "m1", cfg)
+    await backend.put("wav", b"RIFF" + b"\x00" * 8, "m1", cfg)
+    await backend.put("new", png, "m2", cfg)
+    await backend.put("gone", png, "m2", {**cfg, "ttl_hours": 0})
+    await backend.get("old")
+
+    images = await backend.recent_images(10)
+
+    assert [(i["key"], i["model_id"], i["size_bytes"]) for i in images] == [
+        ("new", "m2", len(png)), ("old", "m1", len(png)),
+    ]
+    assert images[0]["created_at"] >= images[1]["created_at"]
+    assert [i["key"] for i in await backend.recent_images(1)] == ["new"]
+
+
+@pytest.mark.asyncio
+async def test_contract_peek_reads_without_a_hit(backend: CacheBackend):
+    cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
+    await backend.put("k", b"data", "m", cfg)
+    await backend.put("expired", b"data", "m", {**cfg, "ttl_hours": 0})
+
+    assert await backend.peek("k") == b"data"
+    assert await backend.peek("expired") is None
+    assert await backend.peek("missing") is None
+    assert (await backend.stats("m"))["hit_count"] == 0
+
+
 def test_factory_default_is_local(tmp_path):
     backend = make_cache_backend({
         "enabled": True,

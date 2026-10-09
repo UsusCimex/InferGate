@@ -14,6 +14,7 @@ from app.dependencies import (
     get_defaults,
     get_gpu_scheduler,
     get_priority,
+    get_prompt_history,
     get_provider_manager,
     get_upload_limits,
 )
@@ -34,6 +35,7 @@ async def generate_images(
     defaults=Depends(get_defaults),
     priority=Depends(get_priority),
     allowed_repos=Depends(get_allowed_adapter_repos),
+    history=Depends(get_prompt_history),
 ):
     model_id = body.model or defaults.get("image")
     if not model_id:
@@ -98,6 +100,8 @@ async def generate_images(
             )
             if is_prometheus_available():
                 CACHE_HITS.labels(model_id=model_id).inc()
+            if history is not None:
+                history.record(_history_entry(body, model_id, "HIT", elapsed, cache_key))
             return JSONResponse(
                 resp.model_dump(),
                 headers={
@@ -138,6 +142,10 @@ async def generate_images(
             data_list.append(ImageData(b64_json=b64))
 
     elapsed = int((time.monotonic() - start) * 1000)
+    if history is not None:
+        history.record(_history_entry(
+            body, model_id, cache_status, elapsed, cache_key if should_cache else None,
+        ))
     resp = ImageGenerationResponse(created=int(time.time()), data=data_list)
     return JSONResponse(
         resp.model_dump(),
@@ -173,6 +181,7 @@ async def edit_images(
     limits=Depends(get_upload_limits),
     priority=Depends(get_priority),
     allowed_repos=Depends(get_allowed_adapter_repos),
+    history=Depends(get_prompt_history),
 ):
     """Multipart img2img/inpaint: delegates to the same path as /v1/images/generations."""
     image_bytes = await read_with_limit(image, limits.max_image_mb * 1024 * 1024)
@@ -210,7 +219,7 @@ async def edit_images(
     return await generate_images(
         body=body, request=request,
         manager=manager, scheduler=scheduler_dep, cache=cache, defaults=defaults,
-        priority=priority, allowed_repos=allowed_repos,
+        priority=priority, allowed_repos=allowed_repos, history=history,
     )
 
 
@@ -288,6 +297,27 @@ async def upscale_image(
     elapsed = int((time.monotonic() - start) * 1000)
     return _upscale_response(png_bytes, response_format, model_id, elapsed, cache_status,
                               scheduler.last_position)
+
+
+def _history_entry(
+    body: ImageGenerationRequest, model_id: str, cache_status: str, elapsed_ms: int,
+    image_key: str | None,
+) -> dict:
+    """A row of the web page's prompt history; `image_key` points at the cached result."""
+    return {
+        "created": time.time(),
+        "model": model_id,
+        "prompt": body.prompt,
+        "negative_prompt": body.negative_prompt,
+        "size": body.size,
+        "seed": body.seed,
+        "steps": body.num_inference_steps,
+        "n": body.n,
+        "edit": body.image is not None,
+        "cache": cache_status,
+        "generation_ms": elapsed_ms,
+        "image": image_key,
+    }
 
 
 def _blocked_adapter_repos(body: ImageGenerationRequest, allowed: list[str]) -> list[str]:

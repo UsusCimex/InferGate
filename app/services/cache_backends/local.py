@@ -47,6 +47,9 @@ class LocalCacheBackend(CacheBackend):
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_model ON cache_entries(model_id)"
         )
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_created ON cache_entries(created_at)"
+        )
         await self._db.execute("""
             CREATE TABLE IF NOT EXISTS cache_stats (
                 model_id TEXT PRIMARY KEY,
@@ -245,6 +248,36 @@ class LocalCacheBackend(CacheBackend):
             },
             "per_model": per_model,
         }
+
+    async def recent_images(self, limit: int) -> list[dict]:
+        if not self._db:
+            return []
+        async with self._db.execute(
+            """SELECT key, model_id, size_bytes, created_at FROM cache_entries
+               WHERE file_path LIKE '%.png' AND (ttl_expires IS NULL OR ttl_expires > ?)
+               ORDER BY created_at DESC, rowid DESC LIMIT ?""",
+            (time.time(), limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [
+            {"key": key, "model_id": model_id, "size_bytes": size, "created_at": created}
+            for key, model_id, size, created in rows
+        ]
+
+    async def peek(self, key: str) -> bytes | None:
+        if not self._db:
+            return None
+        async with self._db.execute(
+            "SELECT file_path, ttl_expires FROM cache_entries WHERE key = ?", (key,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None or (row[1] and time.time() > row[1]):
+            return None
+        try:
+            async with aiofiles.open(row[0], "rb") as f:
+                return await f.read()
+        except FileNotFoundError:
+            return None
 
     async def _model_stats(self, model_id: str) -> dict:
         if not self._db:

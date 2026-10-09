@@ -82,6 +82,12 @@ class ConfigSyncConfig(BaseModel):
     channel: str = "infergate:config"
 
 
+class UiConfig(BaseModel):
+    """Web page at /ui: live metrics, cached images and the image prompts of this instance."""
+    enabled: bool = False
+    history_size: int = Field(200, ge=1, le=10000)
+
+
 class UploadLimitsConfig(BaseModel):
     """Per-endpoint upload size caps, applied via streaming read-with-limit."""
     max_image_mb: int = Field(20, ge=1)
@@ -103,3 +109,4 @@ class ServerConfig(BaseModel):
     rate_limit: RateLimitConfig = RateLimitConfig()
     upload_limits: UploadLimitsConfig = UploadLimitsConfig()
     config_sync: ConfigSyncConfig = ConfigSyncConfig()
+    ui: UiConfig = UiConfig()

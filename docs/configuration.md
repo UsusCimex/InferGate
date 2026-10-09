@@ -7,7 +7,7 @@
 | Ключ | По умолчанию | Назначение |
 |---|---|---|
 | `log_level` | `info` | уровень журнала шлюза |
-| `auth.enabled`, `auth.api_keys` | `false`, `[]` | проверка `Authorization: Bearer <key>`, работает только с непустым списком ключей; `/health`, `/v1/health` и документация FastAPI открыты всегда |
+| `auth.enabled`, `auth.api_keys` | `false`, `[]` | проверка `Authorization: Bearer <key>`, работает только с непустым списком ключей; `/health`, `/v1/health`, документация FastAPI и сама страница `/ui` открыты всегда |
 | `gpu.max_loaded_models` | 3 (`GPU_MAX_LOADED_MODELS`) | сколько GPU-моделей (с `vram_mb > 0`) держать загруженными |
 | `gpu.max_vram_budget_mb`, `gpu.vram_headroom_mb` | 0, 0 (`GPU_MAX_VRAM_BUDGET_MB`, `GPU_VRAM_HEADROOM_MB`) | бюджет объявленной VRAM каждой GPU, 0 выключает его. Для 12 ГБ 10000, для 24 ГБ 22000, для 48 ГБ 44000 |
 | `gpu.vram_budgets_mb` | `{}` | свой бюджет отдельных GPU: `{1: 22000}`; GPU без записи получают `max_vram_budget_mb` |
@@ -32,6 +32,8 @@
 | `upload_limits.*` | картинка 20, аудио 25, видео 200, апскейл 50 МБ | предел загружаемых файлов (413) |
 | `config_sync.enabled` | `false` (`CONFIG_SYNC_ENABLED`) | рассылка правок YAML моделей другим шлюзам через Redis pub/sub ([ниже](#yaml-модели)) |
 | `config_sync.redis_url`, `channel` | `cache.redis_url`, `infergate:config` | адрес Redis и канал рассылки |
+| `ui.enabled` | `false` (`UI_ENABLED`) | [веб-страница](deployment.md#веб-страница) `/ui` и история запросов картинок в памяти шлюза; только вместе с `auth.enabled` и ключами, иначе шлюз пишет предупреждение и страницу не включает |
+| `ui.history_size` | 200 | сколько последних запросов картинок помнит история |
 
 Адрес и порт задаёт команда uvicorn в `Dockerfile.gateway`. Неизвестный ключ шлюз пропускает и пишет о нём в журнал.
 

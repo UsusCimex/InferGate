@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.services.cache_manager import CacheManager
     from app.services.embedding_batcher import EmbeddingBatcher
     from app.services.gpu_scheduler import GpuScheduler
+    from app.services.prompt_history import PromptHistory
     from app.services.provider_manager import ProviderManager
 
 
@@ -29,6 +30,11 @@ def get_cache_manager(request: Request) -> CacheManager:
 
 def get_embedding_batcher(request: Request) -> EmbeddingBatcher:
     return request.app.state.embedding_batcher
+
+
+def get_prompt_history(request: Request) -> PromptHistory | None:
+    """None when the web page is off: image routes then keep no history."""
+    return getattr(request.app.state, "prompt_history", None)
 
 
 def get_defaults(request: Request) -> dict[str, str]:

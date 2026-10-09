@@ -116,5 +116,6 @@ def test_path_normalization():
     assert _normalize_path("/cache/stats") == "/cache/stats"
     assert _normalize_path("/cache/stats/some-model") == "/cache/stats/{model_id}"
     assert _normalize_path("/cache/entry/abc123") == "/cache/entry/{key}"
+    assert _normalize_path("/ui/images/" + "a" * 64) == "/ui/images/{key}"
     assert _normalize_path("/cache/kokoro-82m") == "/cache/{model_id}"  # per-model purge
     assert _normalize_path("/cache/sd35-medium") == "/cache/{model_id}"

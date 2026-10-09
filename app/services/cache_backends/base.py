@@ -49,3 +49,11 @@ class CacheBackend(ABC):
 
     @abstractmethod
     async def stats(self, model_id: str | None = None) -> dict: ...
+
+    @abstractmethod
+    async def recent_images(self, limit: int) -> list[dict]:
+        """Up to `limit` live PNG entries, newest first: key, model_id, size_bytes, created_at."""
+
+    @abstractmethod
+    async def peek(self, key: str) -> bytes | None:
+        """Cached bytes for `key` without counting a hit or touching the LRU order."""

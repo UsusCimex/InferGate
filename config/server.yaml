@@ -59,3 +59,7 @@ rate_limit:
 
 config_sync:
   enabled: ${oc.decode:${oc.env:CONFIG_SYNC_ENABLED,false}}
+
+ui:
+  enabled: ${oc.decode:${oc.env:UI_ENABLED,false}}
+  history_size: 200

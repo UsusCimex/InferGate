@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import load_model_configs, load_server_config
+from app.config import ServerConfig, load_model_configs, load_server_config
 from app.middleware import (
     AccessLogMiddleware,
     ApiKeyMiddleware,
@@ -24,13 +24,14 @@ from app.middleware import (
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
 from app.monitoring.logs import configure_logging
 from app.monitoring.tracing import configure_tracing
-from app.routers import admin, audio, cache, chat, embeddings, health, images, models
+from app.routers import admin, audio, cache, chat, embeddings, health, images, models, ui
 from app.services.cache_manager import CacheManager
 from app.services.config_sync import ConfigSync
 from app.services.config_watcher import ConfigWatcher
 from app.services.embedding_batcher import EmbeddingBatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
 from app.services.memory_watchdog import MemoryWatchdog
+from app.services.prompt_history import PromptHistory
 from app.services.provider_manager import (
     InsufficientResourcesError,
     ModelNotFoundError,
@@ -85,6 +86,7 @@ async def lifespan(app: FastAPI):
     app.state.gpu_scheduler = scheduler
     app.state.cache_manager = cache_mgr
     app.state.embedding_batcher = EmbeddingBatcher()
+    app.state.prompt_history = _prompt_history(server_cfg)
     app.state.defaults = defaults
     app.state.upload_limits = server_cfg.upload_limits
     app.state.allowed_adapter_repos = server_cfg.adapters.allowed_repos
@@ -176,6 +178,23 @@ async def lifespan(app: FastAPI):
     logger.info("InferGate stopped")
 
 
+def _auth_on(server_cfg: ServerConfig) -> bool:
+    return server_cfg.auth.enabled and bool(server_cfg.auth.api_keys)
+
+
+def _prompt_history(server_cfg: ServerConfig) -> PromptHistory | None:
+    """History for /ui, which is served only behind API keys: it shows every client's prompts."""
+    if not server_cfg.ui.enabled:
+        return None
+    if not _auth_on(server_cfg):
+        logger.warning(
+            "ui.enabled is ignored: /ui needs auth.enabled with api_keys, "
+            "otherwise anyone who reaches the gateway sees every client's prompts and images"
+        )
+        return None
+    return PromptHistory(server_cfg.ui.history_size)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="InferGate",
@@ -192,7 +211,7 @@ def create_app() -> FastAPI:
 
     # Starlette runs the middleware added last first. From the outside in: request id (so a 401 or 429
     # carries it), access log, metrics, CORS (a preflight passes without a key), rate limit, auth.
-    if server_cfg.auth.enabled and server_cfg.auth.api_keys:
+    if _auth_on(server_cfg):
         app.add_middleware(ApiKeyMiddleware, api_keys=server_cfg.auth.api_keys)
 
     if server_cfg.rate_limit.enabled:
@@ -304,6 +323,8 @@ def create_app() -> FastAPI:
     app.include_router(cache.router)
     app.include_router(health.router)
     app.include_router(admin.router)
+    if server_cfg.ui.enabled and _auth_on(server_cfg):
+        app.include_router(ui.router)
 
     return app
 

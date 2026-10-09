@@ -22,6 +22,7 @@ from app.providers.registry import register_provider
 from app.services.cache_manager import CacheManager
 from app.services.embedding_batcher import EmbeddingBatcher
 from app.services.gpu_scheduler import GpuScheduler
+from app.services.prompt_history import PromptHistory
 from app.services.provider_manager import ProviderManager
 
 # Fake providers: @register_provider lets reload_model() resolve them by class name.
@@ -283,7 +284,7 @@ async def client(services):
     from fastapi.responses import JSONResponse
 
     from app.config import UploadLimitsConfig
-    from app.routers import admin, audio, cache, chat, embeddings, health, images, models
+    from app.routers import admin, audio, cache, chat, embeddings, health, images, models, ui
     from app.services.gpu_scheduler import QueueFullError, RequestTimeoutError
     from app.services.provider_manager import ModelNotFoundError
     from app.utils import UploadTooLargeError
@@ -295,6 +296,7 @@ async def client(services):
     app.state.gpu_scheduler = services["scheduler"]
     app.state.cache_manager = services["cache"]
     app.state.embedding_batcher = EmbeddingBatcher()
+    app.state.prompt_history = PromptHistory(50)
     app.state.defaults = services["defaults"]
     app.state.upload_limits = services.get("upload_limits", UploadLimitsConfig())
     app.state.allowed_adapter_repos = ["*"]
@@ -358,6 +360,7 @@ async def client(services):
     app.include_router(cache.router)
     app.include_router(health.router)
     app.include_router(admin.router)
+    app.include_router(ui.router)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

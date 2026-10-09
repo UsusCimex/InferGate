@@ -88,3 +88,9 @@ class CacheManager:
 
     async def stats(self, model_id: str | None = None) -> dict:
         return await self._backend.stats(model_id)
+
+    async def recent_images(self, limit: int) -> list[dict]:
+        return await self._backend.recent_images(limit)
+
+    async def peek(self, key: str) -> bytes | None:
+        return await self._backend.peek(key)

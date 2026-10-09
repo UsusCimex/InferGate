@@ -35,9 +35,10 @@ infergate.example.com {
     @internal_metrics path /metrics /metrics/prometheus
     respond @internal_metrics 404
 
-    # Cache purge, memory admin and model load/unload stay inside the host.
+    # Cache purge, memory admin, model load/unload and the /ui page with every client's
+    # prompts stay inside the host.
     # Drop this block once the gateway runs with auth.enabled and api_keys.
-    @internal_admin path /cache /cache/* /v1/admin/* /v1/models/*/load /v1/models/*/unload
+    @internal_admin path /cache /cache/* /v1/admin/* /v1/models/*/load /v1/models/*/unload /ui /ui/*
     respond @internal_admin 404
 
     log {

@@ -5,7 +5,8 @@ import json
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-_SKIP_PATHS = frozenset({"/health", "/v1/health", "/docs", "/redoc", "/openapi.json"})
+# /ui is the web page alone: the browser opens it without a key, its data requests carry one.
+_SKIP_PATHS = frozenset({"/health", "/v1/health", "/docs", "/redoc", "/openapi.json", "/ui"})
 
 
 class ApiKeyMiddleware:
