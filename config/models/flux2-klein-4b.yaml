@@ -31,6 +31,9 @@ queue:
   timeout_seconds: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_TIMEOUT,300}}
   max_concurrent: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_MAX_CONCURRENT,1}}
 
+capabilities:
+  reference_images: true
+
 metadata:
   license: Apache-2.0
   description: "FLUX.2 Klein 4B: open, sub-second generation"

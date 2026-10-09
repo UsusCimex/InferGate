@@ -43,6 +43,8 @@ class ModelCapabilities(BaseModel):
     """Per-model feature flags enforced at the API boundary."""
     voice_clone_only: bool = False
     vision: bool = False
+    # /v1/images/generations takes reference_images: pictures of the subject to draw again.
+    reference_images: bool = False
     voices: list[str] = []
 
 

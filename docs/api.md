@@ -64,6 +64,7 @@
 | `textual_inversions` | до 10 `{id, token?, weight_file?}` | |
 | `highres_fix` | `{scale (1, 4], denoising_strength, steps?, upscaler}` | двухпроходная генерация |
 | `image`, `mask` | base64 | img2img и inpaint |
+| `reference_images` | до 4 base64 PNG или JPEG | персонаж или предмет с этих картинок на новой; только у моделей с `capabilities.reference_images` (иначе 400), без `image`, `highres_fix` и `refiner_switch_at`; входят в ключ кэша |
 | `denoising_strength` | 0-1 | сила img2img |
 | `refiner_switch_at` | 0-1 | доля шагов базы перед SDXL Refiner (нужен `refiner_hub_id` модели) |
 | `response_format` | `b64_json`, `url` (data URL) или `png` | `png`: ответ сама картинка (`image/png`), только при `n` 1 |

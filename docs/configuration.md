@@ -83,7 +83,7 @@ metadata:
 
 Ключ `model.gpu` (`<ID>_GPU`, 0) у GPU-моделей: номер GPU воркера в нумерации `nvidia-smi` ([несколько GPU](#несколько-gpu)).
 
-Необязательные ключи верхнего уровня: `worker_url` (адрес воркера вместо `WORKER_URL_*`) и `capabilities`: `vision` (картинки во входе chat/completions), `voice_clone_only` (синтез только через `/audio/speech/voice-clone`), `voices` (список разрешённых голосов `/audio/speech`). Тег `voice-clone` в `metadata.tags` отмечает модели клонирования для клиентов, PictoLex строит по нему их список. `category`: `image`, `text`, `tts`, `stt`, `upscale`, `embedding-text`, `embedding-audio`, `embedding-multimodal` или `embedding-video`.
+Необязательные ключи верхнего уровня: `worker_url` (адрес воркера вместо `WORKER_URL_*`) и `capabilities`: `vision` (картинки во входе chat/completions), `reference_images` (референсы в `/v1/images/generations`), `voice_clone_only` (синтез только через `/audio/speech/voice-clone`), `voices` (список разрешённых голосов `/audio/speech`). Тег `voice-clone` в `metadata.tags` отмечает модели клонирования для клиентов, PictoLex строит по нему их список. `category`: `image`, `text`, `tts`, `stt`, `upscale`, `embedding-text`, `embedding-audio`, `embedding-multimodal` или `embedding-video`.
 
 Блок `batching` (эмбеддинги текста): `enabled` (по умолчанию `false`), `max_batch_size` (32 строки), `max_wait_ms` (5 мс). Одновременные запросы `/v1/embeddings` к модели с одним приоритетом собираются в один вызов, пока в пакете меньше `max_batch_size` строк и с первого запроса прошло меньше `max_wait_ms`; ошибка вызова достаётся всем запросам пакета.
 

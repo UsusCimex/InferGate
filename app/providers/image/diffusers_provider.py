@@ -430,6 +430,11 @@ class DiffusersImageProvider(ImageProvider):
         input_mask = self._decode_image(mask_b64, mode="L") if mask_b64 else None
         if input_mask is not None and input_image is None:
             raise ValueError("mask requires image: inpainting needs a base image")
+        references = [self._decode_image(r, mode="RGB") for r in defaults.pop("reference_images", None) or []]
+        if references and (input_image is not None or highres_fix or refiner_switch_at is not None):
+            raise ValueError("reference_images guide a new picture: leave out image, highres_fix and refiner_switch_at")
+        if references and "image" not in inspect.signature(self._pipeline.__call__).parameters:
+            raise ValueError(f"{self.model_id} does not take reference images")
         model_dir = self._model_dir or "/app/models"
         lora_cfg = self.config.model.get("lora") or {}
 
@@ -506,6 +511,8 @@ class DiffusersImageProvider(ImageProvider):
                 return self._refiner(prompt=strip_weight_syntax(prompt), **ref_kwargs).images[0]
 
             call_kwargs = _with_previews(self._pipeline, defaults)
+            if references:
+                call_kwargs = {**call_kwargs, "image": references}
             if use_compel:
                 return self._pipeline(**call_kwargs).images[0]
             # Pass prompt as kwarg: some pipelines (FLUX.2-klein) take `image` first positionally.

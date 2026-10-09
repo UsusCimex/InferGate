@@ -39,6 +39,19 @@ class _Pipeline:
         return types.SimpleNamespace(images=[Image.new("RGB", (8, 8))])
 
 
+class _ReferencePipeline(_Pipeline):
+    def __call__(self, image=None, **kwargs):
+        return super().__call__(image=image, **kwargs)
+
+
+def _png_b64() -> str:
+    import base64
+
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (200, 50, 50)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 @pytest.fixture
 def fake_diffusers(monkeypatch):
     module = types.ModuleType("diffusers")
@@ -172,3 +185,18 @@ async def test_stream_without_previews_or_step_callbacks_sends_the_final_image(p
     assert [frame.final for frame in frames] == [True]
     _, kwargs = provider._pipeline.calls[-1]
     assert "callback_on_step_end" not in kwargs
+
+
+async def test_reference_images_reach_the_pipeline_as_pictures(provider):
+    provider._pipeline = _ReferencePipeline(provider._pipeline.scheduler)
+
+    await provider.generate("the same fox", reference_images=[_png_b64(), _png_b64()])
+
+    _, kwargs = provider._pipeline.calls[-1]
+    assert [picture.size for picture in kwargs["image"]] == [(8, 8), (8, 8)]
+    assert kwargs["prompt"] == "the same fox"
+
+
+async def test_a_pipeline_without_reference_pictures_refuses_them(provider):
+    with pytest.raises(ValueError, match="does not take reference images"):
+        await provider.generate("a fox", reference_images=[_png_b64()])

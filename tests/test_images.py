@@ -129,6 +129,68 @@ async def test_image_no_cache_without_seed(client):
     assert resp.headers["x-infergate-cache"] == "DISABLED"
 
 
+@pytest.fixture
+def generate_params(monkeypatch):
+    from tests.conftest import FakeImageProvider
+
+    seen: dict = {}
+    original = FakeImageProvider.generate
+
+    async def spy(self, prompt, **params):
+        seen.update(params)
+        return await original(self, prompt, **params)
+
+    monkeypatch.setattr(FakeImageProvider, "generate", spy)
+    return seen
+
+
+@pytest.fixture
+def takes_references(services, monkeypatch):
+    monkeypatch.setattr(services["manager"].get_config("test-image").capabilities, "reference_images", True)
+
+
+@pytest.mark.asyncio
+async def test_reference_images_reach_a_model_that_takes_them(client, takes_references, generate_params):
+    references = [_png_b64(), _png_b64(colour=(0, 0, 200))]
+    resp = await client.post(
+        "/v1/images/generations",
+        json={"model": "test-image", "prompt": "the same fox", "reference_images": references},
+    )
+    assert resp.status_code == 200
+    assert generate_params["reference_images"] == references
+
+
+@pytest.mark.asyncio
+async def test_reference_images_are_refused_by_a_model_without_them(client):
+    resp = await client.post(
+        "/v1/images/generations",
+        json={"model": "test-image", "prompt": "the same fox", "reference_images": [_png_b64()]},
+    )
+    assert resp.status_code == 400
+    assert "reference_images" in resp.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [
+    {"reference_images": [_png_b64()] * 5},
+    {"reference_images": [_png_b64()], "image": _png_b64()},
+])
+async def test_reference_images_are_four_at_most_and_draw_a_new_picture(client, takes_references, extra):
+    resp = await client.post("/v1/images/generations", json={"model": "test-image", "prompt": "a fox", **extra})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_other_references_miss_the_cache(client, takes_references):
+    async def draw(colour):
+        resp = await client.post("/v1/images/generations", json={
+            "model": "test-image", "prompt": "the same fox", "seed": 7, "reference_images": [_png_b64(colour=colour)],
+        })
+        return resp.headers["X-InferGate-Cache"]
+
+    assert [await draw((1, 2, 3)), await draw((4, 5, 6)), await draw((1, 2, 3))] == ["MISS", "MISS", "HIT"]
+
+
 @pytest.mark.asyncio
 async def test_image_img2img_accepts_base64_input(client):
     resp = await client.post(

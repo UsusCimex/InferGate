@@ -14,7 +14,7 @@
 | `sd35-medium` | Stable Diffusion 3.5 Medium | `DiffusersImageProvider` | 5000 | без T5 (`drop_t5`), послойная выгрузка, LoRA | Stability AI Community |
 | `flux1-schnell` | FLUX.1 Schnell | `DiffusersImageProvider` | 11000 | bf16, послойная выгрузка, 4 шага | Apache-2.0 |
 | `flux1-dev` | FLUX.1 Dev (gated) | `DiffusersImageProvider` | 11000 | bf16, послойная выгрузка, 28 шагов | FLUX.1-dev Non-Commercial |
-| `flux2-klein-4b` | FLUX.2 Klein 4B | `DiffusersImageProvider` | 6000 | bf16, послойная выгрузка; на 12 ГБ nf4 трансформера и текстового энкодера | Apache-2.0 |
+| `flux2-klein-4b` | FLUX.2 Klein 4B | `DiffusersImageProvider` | 6000 | bf16, послойная выгрузка; на 12 ГБ nf4 трансформера и текстового энкодера; референсы (`reference_images`) | Apache-2.0 |
 | `qwen-image` | Qwen-Image | `DiffusersImageProvider` | 11000 | nf4, послойная выгрузка | Apache-2.0 |
 | `hunyuan-dit` | Hunyuan-DiT v1.2 | `DiffusersImageProvider` | 7000 | fp16 | Tencent Hunyuan Community |
 | `z-image-turbo` | Z-Image Turbo | `DiffusersImageProvider` | 12000 | bf16, 8 шагов; на 12 ГБ nf4 | Apache-2.0 |

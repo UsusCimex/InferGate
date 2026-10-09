@@ -96,6 +96,13 @@ async def generate_images(
         params["denoising_strength"] = body.denoising_strength
     if body.refiner_switch_at is not None:
         params["refiner_switch_at"] = body.refiner_switch_at
+    if body.reference_images:
+        if not config.capabilities.reference_images:
+            return JSONResponse(
+                {"error": {"message": f"{model_id} does not take reference_images", "type": "invalid_request"}},
+                status_code=400,
+            )
+        params["reference_images"] = body.reference_images
 
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()

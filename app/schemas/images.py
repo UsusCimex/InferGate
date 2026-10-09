@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -56,6 +56,7 @@ class ImageGenerationRequest(BaseModel):
 
     image: str | None = Field(None, max_length=20_000_000)
     mask: str | None = Field(None, max_length=20_000_000)
+    reference_images: list[Annotated[str, Field(max_length=20_000_000)]] | None = Field(None, max_length=4)
     denoising_strength: float | None = Field(None, ge=0.0, le=1.0)
     refiner_switch_at: float | None = Field(None, ge=0.0, le=1.0)
 
@@ -77,6 +78,13 @@ class ImageGenerationRequest(BaseModel):
     def _mask_requires_image(self) -> ImageGenerationRequest:
         if self.mask is not None and self.image is None:
             raise ValueError("mask requires image: inpainting needs a base image to modify")
+        return self
+
+    @model_validator(mode="after")
+    def _references_draw_a_new_image(self) -> ImageGenerationRequest:
+        if self.reference_images and (self.image is not None or self.highres_fix is not None
+                                      or self.refiner_switch_at is not None):
+            raise ValueError("reference_images guide a new picture: leave out image, highres_fix and refiner_switch_at")
         return self
 
     @model_validator(mode="after")
