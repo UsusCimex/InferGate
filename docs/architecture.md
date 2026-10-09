@@ -58,7 +58,7 @@
 
 ## Сторожа
 
-- **`ConfigWatcher`** раз в 2 с проверяет `config/models/*.yaml` и вызывает `reload_model` и обновление пределов планировщика. Удаление YAML только пишет предупреждение.
+- **`ConfigWatcher`** раз в 2 с проверяет `config/models/*.yaml` и вызывает `reload_model` и обновление пределов планировщика. Удаление YAML только пишет предупреждение. С `config_sync.enabled` правку через Redis pub/sub получают и другие шлюзы (`ConfigSync`, `app/services/config_sync.py`).
 - **`MemoryWatchdog`**: [configuration.md](configuration.md#защита-памяти).
 
 ## Middleware
@@ -84,7 +84,7 @@
 | `app/providers/text/` | vLLM (`_chat_images`) |
 | `app/providers/tts/` | kokoro, voxcpm2 (`voxcpm2_voices/`), qwen3_tts, xtts, fish_speech |
 | `app/providers/stt/`, `upscale/`, `embedding/` | whisper; spandrel; sentence-transformers, CLIP, SigLIP, CLAP, CLIP4Clip |
-| `app/services/` | provider_manager, gpu_scheduler, cache_manager (`cache_backends/`), config_watcher, memory_watchdog |
+| `app/services/` | provider_manager, gpu_scheduler, cache_manager (`cache_backends/`), config_watcher, config_sync, embedding_batcher, memory_watchdog |
 | `app/utils/uploads.py` | предел размера загрузок |
 | `config/` | `server.yaml`, `models/*.yaml`, `examples/` |
 | `deploy/` | Dockerfile шлюза и воркера, `docker-compose*.yml`, `docker-bake.hcl`, `workers/<id>/requirements.txt`, `monitoring/`, `Caddyfile.example`, `.env.example` |

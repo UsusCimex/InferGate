@@ -153,6 +153,11 @@ class ProviderManager:
     def get_config(self, model_id: str) -> ModelConfig:
         return self.get(model_id).config
 
+    def worker_url_of(self, model_id: str) -> str | None:
+        """Worker address of a registered model; None for an unknown or in-process one."""
+        provider = self._registry.get(model_id)
+        return provider.config.worker_url if provider is not None else None
+
     def _is_gpu_model(self, model_id: str) -> bool:
         provider = self._registry.get(model_id)
         return provider is not None and provider.vram_mb > 0
@@ -325,12 +330,12 @@ class ProviderManager:
             logger.info("Model %s disabled via config: unloaded & unregistered", model_id)
             return True
 
+        if not config.worker_url:
+            config.worker_url = resolve_worker_url(model_id, self._worker_url_template)
+
         if existing is not None and existing.config.model_dump() == config.model_dump():
             # Editor touch with no content diff: no-op.
             return False
-
-        if not config.worker_url:
-            config.worker_url = resolve_worker_url(model_id, self._worker_url_template)
 
         # Remote hot-path: keep the httpx pool, push the new config via the worker's /reload.
         if (

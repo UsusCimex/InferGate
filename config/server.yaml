@@ -54,3 +54,6 @@ rate_limit:
   enabled: ${oc.decode:${oc.env:RATE_LIMIT_ENABLED,false}}
   requests_per_minute: 60
   backend: ${oc.env:RATE_LIMIT_BACKEND,memory}
+
+config_sync:
+  enabled: ${oc.decode:${oc.env:CONFIG_SYNC_ENABLED,false}}

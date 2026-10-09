@@ -25,6 +25,7 @@ from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
 from app.monitoring.logs import configure_logging
 from app.routers import admin, audio, cache, chat, embeddings, health, images, models
 from app.services.cache_manager import CacheManager
+from app.services.config_sync import ConfigSync
 from app.services.config_watcher import ConfigWatcher
 from app.services.embedding_batcher import EmbeddingBatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
@@ -132,7 +133,19 @@ async def lifespan(app: FastAPI):
         await manager.reload_model(new_cfg)
         scheduler.update_concurrency(new_cfg.id, new_cfg.queue.max_concurrent)
 
-    config_watcher = ConfigWatcher("config/models", _on_config_reload)
+    config_sync = None
+    if server_cfg.config_sync.enabled:
+        config_sync = ConfigSync(
+            server_cfg.config_sync.redis_url or server_cfg.cache.redis_url,
+            server_cfg.config_sync.channel,
+            _on_config_reload,
+            worker_url_of=manager.worker_url_of,
+        )
+        config_sync.start()
+
+    config_watcher = ConfigWatcher(
+        "config/models", config_sync.apply_and_publish if config_sync else _on_config_reload
+    )
     config_watcher.start()
 
     watchdog = MemoryWatchdog(
@@ -149,6 +162,8 @@ async def lifespan(app: FastAPI):
 
     await watchdog.stop()
     await config_watcher.stop()
+    if config_sync:
+        await config_sync.stop()
     cleanup_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await cleanup_task

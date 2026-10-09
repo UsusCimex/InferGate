@@ -72,6 +72,14 @@ class RateLimitConfig(BaseModel):
     redis_prefix: str = "infergate:ratelimit"
 
 
+class ConfigSyncConfig(BaseModel):
+    """Relay of model YAML changes between gateway instances over Redis pub/sub."""
+    enabled: bool = False
+    # None reuses cache.redis_url.
+    redis_url: str | None = None
+    channel: str = "infergate:config"
+
+
 class UploadLimitsConfig(BaseModel):
     """Per-endpoint upload size caps, applied via streaming read-with-limit."""
     max_image_mb: int = Field(20, ge=1)
@@ -92,3 +100,4 @@ class ServerConfig(BaseModel):
     defaults: DefaultsConfig = DefaultsConfig()
     rate_limit: RateLimitConfig = RateLimitConfig()
     upload_limits: UploadLimitsConfig = UploadLimitsConfig()
+    config_sync: ConfigSyncConfig = ConfigSyncConfig()

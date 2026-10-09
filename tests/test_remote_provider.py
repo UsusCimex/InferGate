@@ -240,6 +240,27 @@ def test_provider_manager_uses_template_for_remote_discovery():
     assert provider.config.worker_url == "http://worker-text-template:8000"
 
 
+@pytest.mark.asyncio
+async def test_reload_of_an_unchanged_yaml_keeps_a_template_worker(monkeypatch):
+    """The YAML has no worker_url; the template fills one in, which must not count as a change."""
+    from app.services.provider_manager import ProviderManager
+
+    manager = ProviderManager(
+        model_dir=".", max_loaded=2, worker_url_template="http://worker-{id}:8000",
+    )
+
+    def yaml_config() -> ModelConfig:
+        return ModelConfig(
+            id="text-template", display_name="t", category="text", provider_class="Unused",
+            model={"hub_id": "test/test", "vram_mb": 0},
+        )
+
+    manager.discover_models([yaml_config()])
+    before = manager.get("text-template")
+    assert await manager.reload_model(yaml_config()) is False
+    assert manager.get("text-template") is before
+
+
 _KEEPALIVE_RESPONSE = [b"HTTP/1.1 200 OK\r\n", b"Content-Length: 2\r\n", b"\r\n", b"ok"]
 
 
