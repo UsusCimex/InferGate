@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.config.enums import EvictionPolicy, LogLevel
+from app.config.enums import EvictionPolicy, LogLevel, RateLimitBackend
 
 
 class AuthConfig(BaseModel):
@@ -66,6 +66,10 @@ class DefaultsConfig(BaseModel):
 class RateLimitConfig(BaseModel):
     enabled: bool = False
     requests_per_minute: int = Field(60, ge=1)
+    backend: RateLimitBackend = RateLimitBackend.MEMORY
+    # None reuses cache.redis_url.
+    redis_url: str | None = None
+    redis_prefix: str = "infergate:ratelimit"
 
 
 class UploadLimitsConfig(BaseModel):

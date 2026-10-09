@@ -1,4 +1,4 @@
-from app.config.enums import CacheStrategy, EvictionPolicy, LogLevel, Priority
+from app.config.enums import CacheStrategy, EvictionPolicy, LogLevel, Priority, RateLimitBackend
 from app.config.loader import load_model_configs, load_server_config, load_single_model_config
 from app.config.models import (
     ModelBatchingConfig,
@@ -39,6 +39,7 @@ __all__ = [
     "ModelQueueConfig",
     "Priority",
     "QueueConfig",
+    "RateLimitBackend",
     "RateLimitConfig",
     "ServerConfig",
     "UploadLimitsConfig",

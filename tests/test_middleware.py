@@ -173,6 +173,143 @@ async def test_rate_limit_skips_health(app_with_rate_limit):
         assert resp.status_code == 200
 
 
+def _limited_app(limiter):
+    from app.middleware.rate_limit import RateLimitMiddleware
+
+    inner_app = FastAPI()
+
+    @inner_app.get("/test")
+    async def test_endpoint():
+        return {"ok": True}
+
+    return RateLimitMiddleware(inner_app, limiter=limiter)
+
+
+def _redis_limiter(server, requests_per_minute: int):
+    import fakeredis
+
+    from app.middleware.rate_limit import RedisRateLimiter
+
+    return RedisRateLimiter(
+        requests_per_minute, "redis://unused", client=fakeredis.FakeAsyncRedis(server=server)
+    )
+
+
+def _gateway(limiter) -> AsyncClient:
+    return AsyncClient(transport=ASGITransport(app=_limited_app(limiter)), base_url="http://test")
+
+
+@pytest.mark.asyncio
+async def test_redis_rate_limit_is_shared_by_gateways():
+    import fakeredis
+
+    server = fakeredis.FakeServer()
+    async with (
+        _gateway(_redis_limiter(server, 3)) as first,
+        _gateway(_redis_limiter(server, 3)) as second,
+    ):
+        assert (await first.get("/test")).status_code == 200
+        assert (await second.get("/test")).status_code == 200
+        assert (await first.get("/test")).status_code == 200
+        resp = await second.get("/test")
+
+    assert resp.status_code == 429
+    assert resp.json()["error"]["type"] == "rate_limit_exceeded"
+    assert 1 <= int(resp.headers["retry-after"]) <= 61
+
+
+@pytest.mark.asyncio
+async def test_redis_rate_limit_frees_a_slot_after_the_window(monkeypatch):
+    import time
+    import types
+
+    import fakeredis
+
+    import app.middleware.rate_limit as rate_limit
+
+    now = [1000.0]
+    monkeypatch.setattr(
+        rate_limit, "time", types.SimpleNamespace(time=lambda: now[0], monotonic=time.monotonic)
+    )
+    async with _gateway(_redis_limiter(fakeredis.FakeServer(), 1)) as client:
+        assert (await client.get("/test")).status_code == 200
+        now[0] += 30
+        blocked = await client.get("/test")
+        now[0] += 31
+        assert (await client.get("/test")).status_code == 200
+
+    assert blocked.status_code == 429
+    assert blocked.headers["retry-after"] == "31"
+
+
+@pytest.mark.asyncio
+async def test_redis_rate_limit_admits_requests_when_redis_is_down(caplog):
+    import logging
+
+    import fakeredis
+
+    server = fakeredis.FakeServer()
+    server.connected = False
+    with caplog.at_level(logging.WARNING, logger="app.middleware.rate_limit"):
+        async with _gateway(_redis_limiter(server, 1)) as client:
+            statuses = [(await client.get("/test")).status_code for _ in range(3)]
+
+    assert statuses == [200, 200, 200]
+    assert sum("Rate limit store unavailable" in r.message for r in caplog.records) == 1
+
+
+@pytest.mark.asyncio
+async def test_redis_is_left_alone_for_a_while_after_a_failure(monkeypatch):
+    import time
+    import types
+
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    import app.middleware.rate_limit as rate_limit
+
+    calls = []
+
+    class _DownRedis:
+        def register_script(self, _source):
+            async def script(**_kwargs):
+                calls.append(1)
+                raise RedisConnectionError("connection refused")
+            return script
+
+    clock = [100.0]
+    monkeypatch.setattr(
+        rate_limit, "time", types.SimpleNamespace(time=time.time, monotonic=lambda: clock[0])
+    )
+    limiter = rate_limit.RedisRateLimiter(1, "redis://unused", client=_DownRedis())
+
+    assert [await limiter.hit("10.0.0.1") for _ in range(3)] == [None, None, None]
+    assert len(calls) == 1
+    clock[0] += rate_limit._REDIS_RETRY_S + 1
+    assert await limiter.hit("10.0.0.1") is None
+    assert len(calls) == 2
+
+
+def test_rate_limit_is_switched_on_from_the_environment(monkeypatch):
+    from app.config import load_server_config
+
+    monkeypatch.delenv("RATE_LIMIT_ENABLED", raising=False)
+    assert load_server_config("config/server.yaml").rate_limit.enabled is False
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    assert load_server_config("config/server.yaml").rate_limit.enabled is True
+
+
+@pytest.mark.asyncio
+async def test_make_rate_limiter_picks_the_backend():
+    from app.config import RateLimitConfig
+    from app.middleware.rate_limit import MemoryRateLimiter, RedisRateLimiter, make_rate_limiter
+
+    assert isinstance(make_rate_limiter(RateLimitConfig(), "redis://cache:6379/0"), MemoryRateLimiter)
+    limiter = make_rate_limiter(RateLimitConfig(backend="redis"), "redis://cache:6379/0")
+    assert isinstance(limiter, RedisRateLimiter)
+    assert limiter._client.connection_pool.connection_kwargs["host"] == "cache"
+    await limiter.close()
+
+
 @pytest.mark.asyncio
 async def test_auth_allows_valid_bearer(app_with_auth):
     resp = await app_with_auth.get("/test", headers={"Authorization": "Bearer valid-key-123"})

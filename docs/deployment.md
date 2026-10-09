@@ -53,6 +53,8 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.tls.yml up 
 
 Caddy принимает 80 и 443 (HTTP/2, HTTP/3), выпускает сертификат Let's Encrypt, ограничивает тело запроса 200 МБ, сжимает ответы, передаёт `X-Request-ID` и закрывает снаружи `/metrics`. Порт 8000 шлюза наружу не публикуется (`ports: !reset []`, нужен Compose 2.20+). Для локальной сети без домена есть блок `tls internal` в `Caddyfile.example`; корневой сертификат Caddy (`/data/caddy/pki/authorities/local/root.crt`) добавляется в доверенные на клиентах. Ещё Caddy закрывает `/cache`, `/v1/admin/*` и загрузку и выгрузку моделей; с авторизацией шлюза этот блок можно убрать. Без авторизации стоит сузить `adapters.allowed_repos`.
 
+Лимиту запросов за Caddy нужен `FORWARDED_ALLOW_IPS=*` в `deploy/.env`, иначе все клиенты для шлюза один IP Caddy.
+
 ## Мониторинг
 
 ```bash

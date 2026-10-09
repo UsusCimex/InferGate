@@ -26,3 +26,8 @@ class Priority(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
+
+
+class RateLimitBackend(StrEnum):
+    MEMORY = "memory"
+    REDIS = "redis"

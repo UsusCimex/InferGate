@@ -25,10 +25,14 @@
 | `models_dir` | `./models` | папка весов для локального режима и `scripts/download_models.py` |
 | `defaults.image`, `text`, `tts`, `stt`, `upscale` | `sdxl-base`, `qwen3.5-4b`, `kokoro-82m`, `whisper-base`, `realesrgan-x4` | модель, если в запросе нет `model` |
 | `defaults.embedding_text`, `_audio`, `_image`, `_video` | E5, CLAP, CLIP, CLIP4Clip | то же для эмбеддингов |
-| `rate_limit.enabled`, `requests_per_minute` | `false`, 60 | скользящее окно на IP клиента |
+| `rate_limit.enabled`, `requests_per_minute` | `false` (`RATE_LIMIT_ENABLED`), 60 | скользящее окно в минуту на IP клиента, за прокси нужен `FORWARDED_ALLOW_IPS` (см. ниже) |
+| `rate_limit.backend` | `memory` (`RATE_LIMIT_BACKEND`) | `memory`: окно в памяти шлюза, за балансировщиком предел умножается на число шлюзов; `redis`: одно окно на все шлюзы с общим Redis; недоступный Redis шлюз 5 с не спрашивает и пропускает запросы без лимита, предупреждение в журнале раз в минуту |
+| `rate_limit.redis_url`, `redis_prefix` | `cache.redis_url`, `infergate:ratelimit` | адрес Redis лимита и префикс ключей |
 | `upload_limits.*` | картинка 20, аудио 25, видео 200, апскейл 50 МБ | предел загружаемых файлов (413) |
 
 Адрес и порт задаёт команда uvicorn в `Dockerfile.gateway`. Неизвестный ключ шлюз пропускает и пишет о нём в журнал.
+
+Лимит запросов различает клиентов по IP соединения. За Caddy или балансировщиком это IP прокси, пока uvicorn не доверяет его заголовку `X-Forwarded-For`: доверие включает переменная `FORWARDED_ALLOW_IPS` шлюза (адреса прокси через запятую или `*`, если до порта 8000 достаёт только прокси).
 
 ## YAML модели
 

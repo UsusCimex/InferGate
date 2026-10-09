@@ -15,7 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import load_model_configs, load_server_config
-from app.middleware import AccessLogMiddleware, ApiKeyMiddleware, RateLimitMiddleware
+from app.middleware import (
+    AccessLogMiddleware,
+    ApiKeyMiddleware,
+    RateLimitMiddleware,
+    make_rate_limiter,
+)
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
 from app.monitoring.logs import configure_logging
 from app.routers import admin, audio, cache, chat, embeddings, health, images, models
@@ -149,6 +154,8 @@ async def lifespan(app: FastAPI):
         await cleanup_task
     await manager.shutdown()
     await cache_mgr.close()
+    if limiter := getattr(app.state, "rate_limiter", None):
+        await limiter.close()
     logger.info("InferGate stopped")
 
 
@@ -172,10 +179,8 @@ def create_app() -> FastAPI:
         app.add_middleware(ApiKeyMiddleware, api_keys=server_cfg.auth.api_keys)
 
     if server_cfg.rate_limit.enabled:
-        app.add_middleware(
-            RateLimitMiddleware,
-            requests_per_minute=server_cfg.rate_limit.requests_per_minute,
-        )
+        app.state.rate_limiter = make_rate_limiter(server_cfg.rate_limit, server_cfg.cache.redis_url)
+        app.add_middleware(RateLimitMiddleware, limiter=app.state.rate_limiter)
 
     app.add_middleware(
         CORSMiddleware,
