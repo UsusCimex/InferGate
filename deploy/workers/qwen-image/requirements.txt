@@ -5,3 +5,4 @@ safetensors>=0.4.0
 sentencepiece>=0.2.0
 # NF4 weight quantization for the 20B transformer: required on 12GB cards
 bitsandbytes>=0.46.0
+optimum-quanto>=0.2.5
