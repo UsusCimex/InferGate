@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # Feature test: /v1/audio/transcriptions end-to-end via whisper-base worker.
 #
-# Builds a synthetic WAV on the host (pure stdlib — `wave` + `struct`),
+# Builds a synthetic WAV on the host (pure stdlib: `wave` + `struct`),
 # posts it to the gateway in three shapes, asserts the response envelope
 # in each and that the cache round-trips correctly.
 #
-# We do NOT assert the transcribed text content — synthetic audio isn't
+# We do NOT assert the transcribed text content: synthetic audio isn't
 # speech, and Whisper's output on a 1-second sine tone is non-deterministic
 # (often empty, sometimes a short hallucination). What we verify:
 #   * HTTP 200 on default json, text, and verbose_json
-#   * Content-Type switches text/plain ↔ application/json correctly
+#   * Content-Type switches between text/plain and application/json correctly
 #   * verbose_json returns language + duration + segments[] keys
 #   * Second identical request is a cache HIT
-#   * Bogus response_format → 400
-#   * Missing file → 422 (FastAPI multipart validation)
+#   * Bogus response_format: 400
+#   * Missing file: 422 (FastAPI multipart validation)
 #
-# A full content-aware test (TTS → STT round-trip) is viable but needs
+# A full content-aware test (TTS to STT round-trip) is viable but needs
 # two workers running simultaneously; deferred until the kokoro + whisper
 # pair is a common setup.
 #
@@ -44,20 +44,20 @@ for c in python3 python py; do
 done
 [[ -n "$PY" ]] || { err "python required (for WAV generation + JSON parsing)"; exit 1; }
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 ok "Env flags set"
 
-log "Building + starting gateway + $SERVICE …"
+log "Building + starting gateway + $SERVICE..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 ok "compose up issued"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
-# ── Build a 1-second 440Hz sine-wave WAV (pure stdlib on the host) ──
+# Build a 1-second 440Hz sine-wave WAV (pure stdlib on the host)
 AUDIO_WAV=$(mktemp --suffix=.wav)
 cleanup() { rm -f "$AUDIO_WAV" "$RESP_FILE" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -85,7 +85,7 @@ http_post() {
         -D "${out}.headers" \
         "$@" || echo 000)
     local elapsed=$(( SECONDS - t0 ))
-    echo "  [$label] HTTP $code, ${elapsed}s → $(wc -c < "$out") bytes"
+    echo "  [$label] HTTP $code, ${elapsed}s: $(wc -c < "$out") bytes"
     LAST_CODE=$code
     LAST_TIME=$elapsed
 }
@@ -93,7 +93,6 @@ http_post() {
 fail=0
 expect_200() { [[ "$1" == "200" ]] || { err "$2: HTTP $1 (body: $(head -c 300 "$RESP_FILE"))"; fail=1; }; }
 
-# ── (1) Default json format ─────────────────────────────────────────
 log "[1] default json format"
 http_post json "$RESP_FILE" -F "file=@${AUDIO_WAV}" -F "model=${MODEL_ID}" \
                             -H "X-InferGate-No-Cache: true"
@@ -108,7 +107,6 @@ if [[ "$LAST_CODE" == "200" ]]; then
     fi
 fi
 
-# ── (2) Text plain format ───────────────────────────────────────────
 log "[2] response_format=text"
 http_post text "$RESP_FILE" -F "file=@${AUDIO_WAV}" -F "model=${MODEL_ID}" \
                             -F "response_format=text" -H "X-InferGate-No-Cache: true"
@@ -123,7 +121,6 @@ if [[ "$LAST_CODE" == "200" ]]; then
     fi
 fi
 
-# ── (3) verbose_json with language hint ─────────────────────────────
 log "[3] response_format=verbose_json, language=en"
 http_post vjson "$RESP_FILE" -F "file=@${AUDIO_WAV}" -F "model=${MODEL_ID}" \
                              -F "response_format=verbose_json" -F "language=en" \
@@ -140,13 +137,12 @@ print('OK' if not missing and isinstance(d.get('segments'), list) else 'MISSING:
     if [[ "$CHECK" == "OK" ]]; then
         ok "verbose_json has text + language + duration + segments[]"
     else
-        err "verbose_json shape incomplete — $CHECK"
+        err "verbose_json shape incomplete: $CHECK"
         fail=1
     fi
 fi
 
-# ── (4) Cache MISS + HIT on identical request ───────────────────────
-log "[4] cache MISS → HIT on repeat"
+log "[4] cache MISS, then HIT on repeat"
 http_post c-miss "$RESP_FILE" -F "file=@${AUDIO_WAV}" -F "model=${MODEL_ID}"
 MISS_STATE=$(grep -i '^x-infergate-cache' "${RESP_FILE}.headers" | head -1 | tr -d '\r' | awk '{print $NF}')
 http_post c-hit  "$RESP_FILE" -F "file=@${AUDIO_WAV}" -F "model=${MODEL_ID}"
@@ -158,8 +154,7 @@ else
     fail=1
 fi
 
-# ── (5) Bogus response_format → 400 ─────────────────────────────────
-log "[5] response_format=srt → 400 (not supported in this iteration)"
+log "[5] response_format=srt, expect 400"
 http_post bad-fmt "$RESP_FILE" -F "file=@${AUDIO_WAV}" -F "model=${MODEL_ID}" \
                                -F "response_format=srt"
 if [[ "$LAST_CODE" == "400" ]] && grep -q "response_format" "$RESP_FILE"; then
@@ -169,16 +164,15 @@ else
     fail=1
 fi
 
-# ── (6) Missing file → 422 ──────────────────────────────────────────
-log "[6] missing file field → 422 (multipart validation)"
+log "[6] missing file field, expect 422 (multipart validation)"
 http_post no-file "$RESP_FILE" -F "model=${MODEL_ID}"
 if [[ "$LAST_CODE" == "422" ]]; then
-    ok "missing file → 422"
+    ok "missing file: 422"
 else
     err "expected 422, got $LAST_CODE"
     fail=1
 fi
 
 echo
-(( fail )) && { err "FAIL — review output above."; exit 1; }
-ok "PASS — /v1/audio/transcriptions works end-to-end on whisper-base."
+(( fail )) && { err "FAIL: review output above."; exit 1; }
+ok "PASS: /v1/audio/transcriptions works end-to-end on whisper-base."

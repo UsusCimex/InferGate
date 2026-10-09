@@ -58,7 +58,7 @@ class LoraCache:
                 if cache_key in self._cache:
                     adapter_name = self._cache[cache_key]
                     self._cache.move_to_end(cache_key)
-                    logger.debug("LoRA cache hit: %s → %s", repo_id, adapter_name)
+                    logger.debug("LoRA cache hit: %s (adapter %s)", repo_id, adapter_name)
                 else:
                     adapter_name = spec.get("adapter_name") or f"lora_{next(self._counter)}"
                     while adapter_name in self._cache.values():
@@ -91,7 +91,7 @@ class LoraCache:
                     while len(self._cache) > max_loaded:
                         evict_key, evict_name = self._cache.popitem(last=False)
                         logger.info(
-                            "Evicting LoRA adapter '%s' (%s) — cache full (%d)",
+                            "Evicting LoRA adapter '%s' (%s): cache full (%d)",
                             evict_name, evict_key[0], max_loaded,
                         )
                         try:

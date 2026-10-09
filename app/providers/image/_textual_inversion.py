@@ -31,7 +31,7 @@ class TextualInversionRegistry:
                 repo_id = spec["id"]
                 weight_file = spec.get("weight_file")
                 token = spec.get("token")
-                # Normalise list tokens to tuples — they'd be unhashable as set keys otherwise.
+                # Normalise list tokens to tuples: lists are unhashable as set keys.
                 token_key: Any = tuple(token) if isinstance(token, list) else token
                 cache_key = (repo_id, weight_file, token_key)
 

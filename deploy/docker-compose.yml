@@ -1,8 +1,8 @@
-# Per-model Docker deployment — one unified Dockerfile, one matrix, many workers.
+# Per-model Docker deployment: one unified Dockerfile, one matrix, many workers.
 #
 # Build (single service, via compose):
 #   docker compose -f deploy/docker-compose.yml build worker-qwen-image
-# Build (batch, via bake — preferred for >1 model):
+# Build (batch, via bake; preferred for >1 model):
 #   docker buildx bake -f deploy/docker-bake.hcl
 #
 # Run (from project root so .env is picked up):
@@ -11,8 +11,8 @@
 #   docker compose -f deploy/docker-compose.yml --profile text --profile image --profile tts up -d
 #
 # Adding a new model:
-#   1. config/models/<id>.yaml                         — model config
-#   2. deploy/workers/<id>/requirements.txt            — per-model pip deps
+#   1. config/models/<id>.yaml (model config)
+#   2. deploy/workers/<id>/requirements.txt (per-model pip deps)
 #   3. One entry in the matrix in deploy/docker-bake.hcl
 #   4. One service stanza here (copy a similar one)
 #
@@ -21,8 +21,8 @@
 #   GPU_BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 #   (for RTX 30xx/40xx: pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime)
 
-# ─── Reusable YAML fragments ────────────────────────────────────────────
-# env_file: .env — tunables for each model (quantisation, offload, steps,
+# Reusable YAML fragments
+# env_file: tunables for each model (quantisation, offload, steps,
 # concurrency, etc.) come from deploy/.env. The model YAMLs read them via
 # OmegaConf `${oc.env:VAR,default}`. See deploy/.env.example.
 x-env-file: &env-file
@@ -34,15 +34,15 @@ x-env: &env
   WORKER_MODELS_DIR: /app/models
   HF_TOKEN: ${HF_TOKEN:-}
   HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
-  # garbage_collection_threshold:0.8  — triggers allocator GC when 80% of
+  # garbage_collection_threshold:0.8    triggers allocator GC when 80% of
   #                                     the budget is in use; prevents
   #                                     fragmentation OOM under ensemble
   #                                     loads (SDXL base+refiner, img2img+
   #                                     highres_fix, etc.)
-  # max_split_size_mb:512            — caps individual block size so a
+  # max_split_size_mb:512              caps individual block size so a
   #                                     single large tensor can't pin an
   #                                     oversized contiguous region
-  # expandable_segments is OFF by default — it's incompatible with
+  # expandable_segments is OFF by default: it's incompatible with
   # enable_model_cpu_offload on Blackwell/WSL2 (triggers
   # CUDACachingAllocator handles_.at assert). Override via env if you
   # run on Ampere/Ada without CPU offload.
@@ -84,8 +84,8 @@ x-gpu: &gpu
   shm_size: ${GPU_WORKER_SHM_SIZE:-2g}
   # Host-protection memory caps. When a runaway model (e.g. SDXL base +
   # refiner together on a 12GB card) overshoots these limits, Linux OOMKiller
-  # kills the container process — the HOST stays alive. Without these the
-  # WSL2/Docker-Desktop case easily spirals into host swap-storm → reboot.
+  # kills the container process and the HOST stays alive. Without these the
+  # WSL2/Docker-Desktop case easily spirals into a host swap storm and a reboot.
   # memswap_limit == mem_limit disables swap for this container specifically,
   # so the kernel reaches OOMKill faster (seconds) instead of thrashing.
   # Tune via deploy/.env: GPU_WORKER_MEM_LIMIT=24g on a 64 GB server.
@@ -112,7 +112,7 @@ x-build: &build
   dockerfile: deploy/Dockerfile.worker
 
 services:
-  # ─── Gateway ─────────────────────────────────────────────────────────
+  # Gateway
   gateway:
     build:
       context: ..
@@ -162,7 +162,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # ─── Text workers (vLLM) ─────────────────────────────────────────────
+  # Text workers (vLLM)
   worker-qwen3-5-4b:
     <<: *gpu
     profiles: ["text", "qwen3.5-4b"]
@@ -223,7 +223,7 @@ services:
     environment: *env
     healthcheck: *hc-text
 
-  # ─── Image workers (diffusers) ───────────────────────────────────────
+  # Image workers (diffusers)
   worker-sd35-medium:
     <<: *gpu
     profiles: ["sd35-medium"]
@@ -396,7 +396,7 @@ services:
     environment: *env
     healthcheck: *hc-image
 
-  # ─── TTS workers ─────────────────────────────────────────────────────
+  # TTS workers
   worker-kokoro-82m:
     <<: *cpu-worker
     profiles: ["tts", "kokoro-82m"]
@@ -421,7 +421,7 @@ services:
       <<: *build
       args:
         BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
-        # fish-speech → pyaudio (C-extension) needs gcc + portaudio headers
+        # fish-speech depends on pyaudio (C-extension), which needs gcc + portaudio headers
         APT_PACKAGES: git build-essential portaudio19-dev
         WORKER_REQUIREMENTS: deploy/workers/openaudio-s1-mini/requirements.txt
     volumes:
@@ -487,7 +487,7 @@ services:
       MALLOC_MMAP_THRESHOLD_: "65536"
     healthcheck: *hc-tts-gpu
 
-  # ─── STT workers ─────────────────────────────────────────────────────
+  # STT workers
   worker-whisper-base:
     <<: *cpu-worker
     profiles: ["stt", "whisper-base"]
@@ -504,7 +504,7 @@ services:
     environment: *env
     healthcheck: *hc-tts
 
-  # ─── Embedding workers ──────────────────────────────────────────────
+  # Embedding workers
   worker-multilingual-e5-base:
     <<: *cpu-worker
     profiles: ["embedding", "embedding-text", "multilingual-e5-base"]
@@ -539,7 +539,7 @@ services:
 
   worker-siglip-base-multilingual:
     <<: *gpu
-    # Не в общем `embedding`-профиле — модель оставлена в InferGate для опциональной
+    # Не в общем `embedding`-профиле: модель оставлена в InferGate для опциональной
     # сравнительной проверки. Поднять её можно явно через `--profile siglip-base-multilingual`,
     # затем выставить SIGLIP_ENABLED=true в deploy/.env и пересоздать контейнер.
     profiles: ["siglip-base-multilingual"]
@@ -588,7 +588,7 @@ services:
     environment: *env
     healthcheck: *hc-tts-gpu
 
-  # ─── Upscale workers (super-resolution) ─────────────────────────────
+  # Upscale workers (super-resolution)
   worker-realesrgan-x4:
     <<: *gpu
     profiles: ["upscale", "realesrgan-x4"]

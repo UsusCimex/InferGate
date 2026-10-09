@@ -86,8 +86,8 @@ class SpandrelUpscaleProvider(ImageUpscaleProvider):
                 raise ValueError("image is not a recognised PNG/JPEG") from e
             if max(img.size) > max_side:
                 raise ValueError(
-                    f"image side {max(img.size)}px exceeds max_input_side={max_side}px — "
-                    f"tiling is a follow-up feature"
+                    f"image side {max(img.size)}px exceeds max_input_side={max_side}px; "
+                    f"tiling is not supported"
                 )
 
             arr = np.asarray(img, dtype=np.float32) / 255.0

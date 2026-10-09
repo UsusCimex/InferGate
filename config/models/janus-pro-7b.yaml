@@ -27,5 +27,5 @@ queue:
 
 metadata:
   license: MIT
-  description: "Janus-Pro 7B — autoregressive T2I, 384×384, nf4-quant for 12GB cards"
+  description: "Janus-Pro 7B: autoregressive T2I, 384x384, nf4-quant for 12GB cards"
   tags: ["autoregressive", "deepseek", "mit", "quantized", "quality"]

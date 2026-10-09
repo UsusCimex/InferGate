@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
 # Feature test: /v1/audio/speech/voice-clone end-to-end on xtts-v2.
 #
-# Same shape as the earlier voice-clone.sh (openaudio-s1-mini) but
-# targets the XTTS-v2 worker — that's the one we actually ship as the
-# voice-cloning default since openaudio remains blocked on fish-speech
-# upstream. 4 assertions:
+# Assertions:
 #
-#   1. multipart upload → HTTP 200, audio/* Content-Type, non-empty body
-#   2. cache MISS → HIT on an identical (text + reference + language) request
-#   3. empty reference_audio → HTTP 400 with a clear message
-#   4. missing reference_audio field → HTTP 422 (multipart validator)
+#   1. multipart upload: HTTP 200, audio/* Content-Type, non-empty body
+#   2. cache MISS, then HIT on an identical (text + reference + language) request
+#   3. empty reference_audio: HTTP 400 with a clear message
+#   4. missing reference_audio field: HTTP 422 (multipart validator)
 #
-# We don't assert cloned-voice timbre — it's subjective and not
+# We don't assert cloned-voice timbre: it's subjective and not
 # byte-deterministic across fp16 CUDA kernel choices. This script
 # guards against wire-format / caching / validation regressions.
 #
 # Reference audio: override with REFERENCE_AUDIO=<path/to/clip.wav>
 # for a realistic voice. Default is a 2-second 440Hz sine tone built
-# from Python stdlib — XTTS accepts any valid WAV; cloning quality
+# from Python stdlib. XTTS accepts any valid WAV; cloning quality
 # on a sine tone is low, but the pipeline runs and returns audio.
 #
 # Run from project root: bash scripts/feature/voice-clone-xtts.sh
@@ -45,27 +42,27 @@ for c in python3 python py; do
 done
 [[ -n "$PY" ]] || { err "python required (for synthetic WAV generation)"; exit 1; }
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 update_env "$ENV_FILE" XTTS_V2_ENABLED true
 ok "Env flags set (xtts-v2 enabled)"
 
-log "Building + starting gateway + $SERVICE …"
+log "Building + starting gateway + $SERVICE..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
-# ── Reference audio ──────────────────────────────────────────────
+# Reference audio
 REF_WAV=${REFERENCE_AUDIO:-}
 CLEANUP_REF=0
 if [[ -z "$REF_WAV" ]]; then
     REF_WAV=$(mktemp --suffix=.wav)
     CLEANUP_REF=1
-    log "No REFERENCE_AUDIO set — generating 2s 440Hz sine as placeholder …"
-    # Generate inside gateway container — Windows-native Python on a
+    log "No REFERENCE_AUDIO set; generating 2s 440Hz sine as placeholder..."
+    # Generate inside gateway container: Windows-native Python on a
     # Git-bash host can't open a /tmp/ path (different filesystem
     # namespaces). gateway is python:3.12-slim so `wave` stdlib is there.
     "${COMPOSE[@]}" exec -T gateway python <<'PYEOF' > "$REF_WAV"
@@ -98,14 +95,13 @@ http_post() {
         -D "${out}.headers" \
         "$@" || echo 000)
     local elapsed=$(( SECONDS - t0 ))
-    echo "  HTTP $code, ${elapsed}s → $(wc -c < "$out") bytes"
+    echo "  HTTP $code, ${elapsed}s: $(wc -c < "$out") bytes"
     LAST_CODE=$code
 }
 
 fail=0
 
-# ── (1) Basic voice-clone ────────────────────────────────────────
-log "[1] basic voice-clone: text + reference → audio"
+log "[1] basic voice-clone: text + reference, expect audio"
 http_post "$RESP_FILE" \
     -F "reference_audio=@${REF_WAV}" \
     -F "input=Hello world, this is a voice cloning test." \
@@ -118,7 +114,7 @@ if [[ "$LAST_CODE" == "200" ]]; then
     if grep -q 'audio/' <<<"$CT" && [[ "$SZ" -gt 1000 ]]; then
         ok "cloned audio returned: $CT, $SZ bytes"
     else
-        err "unexpected response — CT='$CT' size=$SZ"
+        err "unexpected response: CT='$CT' size=$SZ"
         fail=1
     fi
 else
@@ -128,11 +124,10 @@ else
     fail=1
 fi
 
-# ── (2) Cache MISS → HIT on identical request ───────────────────
-# Nonce makes this idempotent — re-running the script shouldn't hit
+# Nonce makes this idempotent: re-running the script shouldn't hit
 # stale cache from a previous invocation.
 PROBE="Cache probe $(date +%s%N)"
-log "[2] cache MISS → HIT on identical request"
+log "[2] cache MISS, then HIT on identical request"
 http_post "$RESP_FILE" \
     -F "reference_audio=@${REF_WAV}" -F "input=${PROBE}" \
     -F "model=${MODEL_ID}" -F "response_format=wav"
@@ -148,30 +143,28 @@ else
     fail=1
 fi
 
-# ── (3) Empty reference → 400 ───────────────────────────────────
-log "[3] empty reference_audio → 400"
+log "[3] empty reference_audio, expect 400"
 EMPTY=$(mktemp --suffix=.wav)
 http_post "$RESP_FILE" \
     -F "reference_audio=@${EMPTY}" \
     -F "input=short text" -F "model=${MODEL_ID}"
 rm -f "$EMPTY"
 if [[ "$LAST_CODE" == "400" ]]; then
-    ok "empty reference → 400"
+    ok "empty reference: 400"
 else
     err "expected 400, got $LAST_CODE"
     fail=1
 fi
 
-# ── (4) Missing reference field → 422 ───────────────────────────
-log "[4] missing reference_audio field → 422 (multipart validation)"
+log "[4] missing reference_audio field, expect 422 (multipart validation)"
 http_post "$RESP_FILE" -F "input=short text" -F "model=${MODEL_ID}"
 if [[ "$LAST_CODE" == "422" ]]; then
-    ok "missing reference field → 422"
+    ok "missing reference field: 422"
 else
     err "expected 422, got $LAST_CODE"
     fail=1
 fi
 
 echo
-(( fail )) && { err "FAIL — review output above."; exit 1; }
-ok "PASS — /v1/audio/speech/voice-clone works end-to-end on $MODEL_ID."
+(( fail )) && { err "FAIL: review output above."; exit 1; }
+ok "PASS: /v1/audio/speech/voice-clone works end-to-end on $MODEL_ID."

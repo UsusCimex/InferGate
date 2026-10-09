@@ -31,7 +31,7 @@ queue:
 
 metadata:
   license: "Apache-2.0"
-  description: "VoxCPM2 2B — four preset English narrators cloned from bundled clips, plus voice cloning from an uploaded clip; 48 kHz"
+  description: "VoxCPM2 2B: four preset English narrators cloned from bundled clips, plus voice cloning from an uploaded clip; 48 kHz"
   tags: ["voxcpm2", "voice-clone", "narration", "openbmb"]
 
 capabilities:

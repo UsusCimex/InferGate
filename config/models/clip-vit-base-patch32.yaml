@@ -20,5 +20,5 @@ queue:
 
 metadata:
   license: MIT
-  description: "OpenAI CLIP ViT-B/32 — joint text+image embeddings (English-only, 512-d, L2-normalised)"
+  description: "OpenAI CLIP ViT-B/32: joint text+image embeddings (English-only, 512-d, L2-normalised)"
   tags: ["embedding", "multimodal", "image", "text", "clip"]

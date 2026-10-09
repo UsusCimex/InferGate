@@ -23,7 +23,7 @@ _WORKER_DISCONNECT_MISSES = 3
 def resolve_worker_url(model_id: str, template: str | None = None) -> str | None:
     """Pick a worker URL for `model_id` using the configured resolution chain.
 
-    Order: WORKER_URL_<ID> env var → `template` formatted with {id} → None.
+    Order: WORKER_URL_<ID> env var, then `template` formatted with {id}, then None.
     Caller decides whether None means "local provider" (config.worker_url left
     unset) or an error.
     """
@@ -125,7 +125,7 @@ class ProviderManager:
             try:
                 if config.worker_url:
                     provider = self._create_remote_provider(config)
-                    logger.info("Registered remote model: %s -> %s", config.id, config.worker_url)
+                    logger.info("Registered remote model: %s at %s", config.id, config.worker_url)
                 else:
                     provider_cls = get_provider_class(config.provider_class)
                     provider = provider_cls(config)
@@ -211,7 +211,7 @@ class ProviderManager:
                 if healthy:
                     if model_id not in reachable:
                         logger.info(
-                            "Worker reachable: %s (%s) — model loads on demand",
+                            "Worker reachable: %s (%s); model loads on demand",
                             model_id, provider.config.worker_url,
                         )
                         reachable.add(model_id)
@@ -221,7 +221,7 @@ class ProviderManager:
                             and await provider.load_status() in ("idle", "failed")):
                         # A recreated worker answers /health but has lost its model.
                         logger.warning(
-                            "Worker restarted: %s (%s) — model no longer loaded",
+                            "Worker restarted: %s (%s); model no longer loaded",
                             model_id, provider.config.worker_url,
                         )
                         with contextlib.suppress(Exception):
@@ -233,10 +233,10 @@ class ProviderManager:
                     # Drop loaded-state on disconnect so the planner doesn't reserve its VRAM.
                     if provider.is_loaded() and fail_counts[model_id] >= _WORKER_DISCONNECT_MISSES:
                         logger.warning(
-                            "Worker disconnected: %s (%s) — marking unavailable",
+                            "Worker disconnected: %s (%s); marking unavailable",
                             model_id, provider.config.worker_url,
                         )
-                        # Run unload() so httpx clients are closed; swallow errors —
+                        # Run unload() so httpx clients are closed; swallow errors because
                         # the worker is already unreachable.
                         with contextlib.suppress(Exception):
                             await provider.unload()
@@ -260,7 +260,7 @@ class ProviderManager:
                 self._touch_lru(model_id)
                 return provider
 
-        # Per-model lock — one concurrent load per model, but other models still accessible.
+        # Per-model lock: one concurrent load per model; other models stay accessible.
         async with self._get_model_lock(model_id):
             if provider.is_loaded():
                 async with self._state_lock:
@@ -315,11 +315,11 @@ class ProviderManager:
                 async with self._state_lock:
                     self._loaded_order.pop(model_id, None)
                 self._registry.pop(model_id, None)
-            logger.info("Model %s disabled via config — unloaded & unregistered", model_id)
+            logger.info("Model %s disabled via config: unloaded & unregistered", model_id)
             return True
 
         if existing is not None and existing.config.model_dump() == config.model_dump():
-            # Editor touch with no content diff — no-op.
+            # Editor touch with no content diff: no-op.
             return False
 
         if not config.worker_url:
@@ -339,7 +339,7 @@ class ProviderManager:
                 except Exception as e:
                     # Fall through to recreate so gateway-side metadata still updates.
                     logger.warning(
-                        "Worker /reload for %s failed (%s) — falling back to local re-register",
+                        "Worker /reload for %s failed (%s); falling back to local re-register",
                         model_id, e,
                     )
                 else:
@@ -358,7 +358,7 @@ class ProviderManager:
                     await existing.unload()
                 except Exception as e:
                     logger.warning(
-                        "Error unloading stale %s during reload — continuing: %s",
+                        "Error unloading stale %s during reload, continuing: %s",
                         model_id, e,
                     )
                 async with self._state_lock:
@@ -389,7 +389,7 @@ class ProviderManager:
             "Reloaded model %s%s%s",
             model_id,
             " (new registration)" if existing is None else "",
-            " — reloaded into GPU" if was_loaded and not config.worker_url else "",
+            ", reloaded into GPU" if was_loaded and not config.worker_url else "",
         )
         return True
 
@@ -421,13 +421,13 @@ class ProviderManager:
             effective_budget = self._effective_budget()
             if effective_budget > 0:
                 raise InsufficientResourcesError(
-                    f"Cannot fit {incoming_vram_mb} MB — "
+                    f"Cannot fit {incoming_vram_mb} MB: "
                     f"{self._loaded_vram_mb()} MB loaded, budget {effective_budget} MB, "
                     f"remaining models all pinned or in-flight. "
                     f"Unpin a model or raise gpu.max_vram_budget_mb."
                 )
             logger.warning(
-                "Cannot make room — every loaded model is pinned or in-flight"
+                "Cannot make room: every loaded model is pinned or in-flight"
             )
             return
         for victim in plan:
@@ -562,7 +562,7 @@ class ProviderManager:
         }
 
     def preview_load(self, model_id: str) -> dict[str, Any]:
-        """Dry-run `ensure_loaded(model_id)` — return the eviction plan without mutating state."""
+        """Dry-run `ensure_loaded(model_id)`: return the eviction plan without mutating state."""
         provider = self.get(model_id)
         incoming_mb = provider.vram_mb
         base: dict[str, Any] = {

@@ -20,7 +20,7 @@ class ApiKeyMiddleware:
     def _is_valid(self, token: str) -> bool:
         if not token:
             return False
-        # OR over constant-time compare — never short-circuits on first match.
+        # OR over constant-time compare; never short-circuits on first match.
         valid = False
         for key in self._api_keys:
             if hmac.compare_digest(token, key):

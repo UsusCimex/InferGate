@@ -74,8 +74,6 @@ async def test_tts_rejects_negative_seed(client):
     assert resp.json()["error"]["param"] == "seed"
 
 
-# ── Transcription ──────────────────────────────────────────────────────
-
 _FAKE_AUDIO = b"RIFF\x00\x00\x00\x00WAVEfmt " + b"\x00" * 40  # pseudo-WAV
 
 
@@ -151,7 +149,7 @@ async def test_stt_srt_format(client):
     )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("application/x-subrip")
-    # Fake provider returns a single segment: 0.0 → 1.0 "hello world"
+    # Fake provider returns a single segment: 0.0-1.0 "hello world"
     body = resp.text
     assert "1\n" in body
     assert "00:00:00,000 --> 00:00:01,000" in body
@@ -245,20 +243,17 @@ async def test_stt_vad_filter_omitted_does_not_propagate(client, services, monke
 
 @pytest.mark.asyncio
 async def test_stt_cache_hit_on_same_audio(client):
-    """Same bytes + same params → cache HIT on second call."""
+    """Same bytes + same params: cache HIT on second call."""
     files = {"file": ("a.wav", _FAKE_AUDIO, "audio/wav")}
     r1 = await client.post("/v1/audio/transcriptions", files=files, data={"model": "test-stt"})
     assert r1.status_code == 200
     assert r1.headers["x-infergate-cache"] == "MISS"
 
-    files = {"file": ("a.wav", _FAKE_AUDIO, "audio/wav")}  # rebuild — httpx consumes
+    files = {"file": ("a.wav", _FAKE_AUDIO, "audio/wav")}  # rebuild: httpx consumes it
     r2 = await client.post("/v1/audio/transcriptions", files=files, data={"model": "test-stt"})
     assert r2.status_code == 200
     assert r2.headers["x-infergate-cache"] == "HIT"
     assert r2.json() == {"text": "hello world"}
-
-
-# ── Voice cloning ─────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -297,7 +292,7 @@ async def test_voice_clone_rejects_empty_reference(client):
 
 @pytest.mark.asyncio
 async def test_voice_clone_cache_hit_on_identical_request(client):
-    """Same input + same reference bytes + same speed → cache HIT."""
+    """Same input + same reference bytes + same speed: cache HIT."""
     files = {"reference_audio": ("ref.wav", _FAKE_AUDIO, "audio/wav")}
     data = {"input": "same text", "model": "test-tts", "speed": "1.0"}
     r1 = await client.post("/v1/audio/speech/voice-clone", files=files, data=data)
@@ -312,7 +307,7 @@ async def test_voice_clone_cache_hit_on_identical_request(client):
 
 @pytest.mark.asyncio
 async def test_voice_clone_different_references_bust_cache(client):
-    """Identical text + same model but different reference audio → different cache keys."""
+    """Identical text + same model but different reference audio: different cache keys."""
     data = {"input": "same text", "model": "test-tts"}
     r1 = await client.post(
         "/v1/audio/speech/voice-clone",
@@ -325,7 +320,7 @@ async def test_voice_clone_different_references_bust_cache(client):
         files={"reference_audio": ("b.wav", b"BBBB" + _FAKE_AUDIO, "audio/wav")},
         data=data,
     )
-    assert r2.headers["x-infergate-cache"] == "MISS"  # different voice → different key
+    assert r2.headers["x-infergate-cache"] == "MISS"  # different voice, different key
 
 
 @pytest.mark.asyncio

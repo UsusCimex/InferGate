@@ -165,7 +165,7 @@ async def test_eviction_for_model(cache):
 
 @pytest.mark.asyncio
 async def test_hit_rate_zero_when_no_records(cache):
-    """Without recorded hits or misses, hit_rate must be 0.0 — not derived from entries."""
+    """Without recorded hits or misses, hit_rate must be 0.0, not derived from entries."""
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     key = cache.make_key("model-zero", {"prompt": "a"})
     await cache.put(key, b"data", "model-zero", cfg)

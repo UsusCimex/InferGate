@@ -4,16 +4,16 @@
 # Four scenarios, same seed across each group so we can tell what the
 # refiner actually changed:
 #
-#   A) baseline            — sdxl-base alone, no refiner
-#   B) refiner at 0.8      — base does 80% steps, refiner polishes 20%
-#   C) repeat of B         — determinism check (same seed → same bytes)
-#   D) refiner at 0.9      — refiner gets a smaller share; output differs
-#                            from B (diff refiner_switch_at → diff image)
-#   E) bounds              — refiner_switch_at=1.5 → 422
+#   A) baseline            - sdxl-base alone, no refiner
+#   B) refiner at 0.8      - base does 80% steps, refiner polishes 20%
+#   C) repeat of B         - determinism check (same seed, same bytes)
+#   D) refiner at 0.9      - refiner gets a smaller share; output differs
+#                            from B (other refiner_switch_at, other image)
+#   E) bounds              - refiner_switch_at=1.5 gives 422
 #
-# We don't compare against a golden image — fp16 CUDA kernel autotune
-# makes exact bytes non-portable. We do assert B ≡ C byte-for-byte on
-# the same machine and same run (determinism) and A ≠ B ≠ D (refiner
+# We don't compare against a golden image: fp16 CUDA kernel autotune
+# makes exact bytes non-portable. We do assert B == C byte-for-byte on
+# the same machine and same run (determinism) and A != B != D (refiner
 # actually changed the output).
 #
 # VRAM note: fp16 base (~7GB) + fp16 refiner (~6GB) = ~13GB. RTX 4090/3090
@@ -43,11 +43,11 @@ source scripts/diagnose/_lib.sh
 
 command -v curl >/dev/null 2>&1 || { err "curl required"; exit 1; }
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 update_env "$ENV_FILE" SDXL_BASE_REFINER_HUB_ID "$REFINER_HUB"
-# 12 GB cards can't hold base + refiner in VRAM — sequential_cpu_offload
+# 12 GB cards can't hold base + refiner in VRAM; sequential_cpu_offload
 # streams layers on demand (slower but safe).
 if [[ "${SDXL_BASE_SEQUENTIAL_OFFLOAD:-}" != "false" ]]; then
     update_env "$ENV_FILE" SDXL_BASE_SEQUENTIAL_OFFLOAD true
@@ -57,11 +57,11 @@ fi
 update_env "$ENV_FILE" SDXL_BASE_TIMEOUT 1200
 ok "Env flags set (refiner_hub_id=$REFINER_HUB, sequential_offload=true, timeout=1200s)"
 
-log "Rebuilding gateway + $SERVICE …"
+log "Rebuilding gateway + $SERVICE..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID (loads base + refiner ~6 GB) …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID (loads base + refiner ~6 GB)..."
 wait_for_worker "$SERVICE" "$REFINER_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
 COMMON='"seed":42,"num_inference_steps":25,"size":"1024x1024","scheduler":"dpm++_2m"'
@@ -93,31 +93,31 @@ fire() {
         cp "$resp" "$out"
     fi
     local sz; sz=$(wc -c < "$out" 2>/dev/null || echo 0)
-    echo "  HTTP $code, ${elapsed}s → $out ($sz bytes)"
+    echo "  HTTP $code, ${elapsed}s: $out ($sz bytes)"
     LAST_CODE=$code
 }
 
-# ── (A) baseline without refiner ──────────────────────────────────
+# (A) baseline without refiner
 fire A "$(printf '{"model":"%s","prompt":"%s",%s}' "$MODEL_ID" "$PROMPT" "$COMMON")" "$OUT_A"
 CODE_A=$LAST_CODE
 
-# ── (B) refiner at 0.8 ────────────────────────────────────────────
+# (B) refiner at 0.8
 fire B "$(printf '{"model":"%s","prompt":"%s",%s,"refiner_switch_at":0.8}' \
           "$MODEL_ID" "$PROMPT" "$COMMON")" "$OUT_B"
 CODE_B=$LAST_CODE
 
-# ── (C) refiner at 0.8 repeat (determinism) ───────────────────────
+# (C) refiner at 0.8 repeat (determinism)
 fire C "$(printf '{"model":"%s","prompt":"%s",%s,"refiner_switch_at":0.8}' \
           "$MODEL_ID" "$PROMPT" "$COMMON")" "$OUT_C"
 CODE_C=$LAST_CODE
 
-# ── (D) refiner at 0.9 (different share) ──────────────────────────
+# (D) refiner at 0.9 (different share)
 fire D "$(printf '{"model":"%s","prompt":"%s",%s,"refiner_switch_at":0.9}' \
           "$MODEL_ID" "$PROMPT" "$COMMON")" "$OUT_D"
 CODE_D=$LAST_CODE
 
 echo
-echo "─── Feature applied? ─────────────────────────────────────"
+echo "--- Feature applied? ---"
 fail=0
 for L in A B C D; do
     declare -n code="CODE_$L"
@@ -133,45 +133,44 @@ check_diff() {
     local a="$1" b="$2" expectation="$3"
     if cmp -s "$a" "$b"; then
         if [[ "$expectation" == "same" ]]; then
-            ok "$a ≡ $b (byte-identical, as expected)"
+            ok "$a == $b (byte-identical, as expected)"
         else
-            err "$a ≡ $b (UNEXPECTED — refiner didn't change output)"
+            err "$a == $b (UNEXPECTED: refiner didn't change output)"
             fail=1
         fi
     else
         if [[ "$expectation" == "diff" ]]; then
-            ok "$a ≠ $b"
+            ok "$a != $b"
         else
-            err "$a ≠ $b (UNEXPECTED — should be byte-identical)"
+            err "$a != $b (UNEXPECTED: should be byte-identical)"
             fail=1
         fi
     fi
 }
 
 check_diff "$OUT_A" "$OUT_B" diff  # refiner changes output vs base alone
-check_diff "$OUT_B" "$OUT_C" same  # same seed + same switch_at → identical
-check_diff "$OUT_B" "$OUT_D" diff  # different switch_at → different polish
+check_diff "$OUT_B" "$OUT_C" same  # same seed + same switch_at: identical
+check_diff "$OUT_B" "$OUT_D" diff  # different switch_at: different polish
 
-# ── (E) bounds validation ─────────────────────────────────────────
-log "[E] refiner_switch_at=1.5 → 422"
+log "[E] refiner_switch_at=1.5, expect 422"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' \
     -X POST "${GATEWAY_URL}/v1/images/generations" \
     -H 'Content-Type: application/json' \
     -d "$(printf '{"model":"%s","prompt":"x","refiner_switch_at":1.5}' "$MODEL_ID")" \
     || echo 000)
 if [[ "$CODE" == "422" ]]; then
-    ok "out-of-range refiner_switch_at → 422"
+    ok "out-of-range refiner_switch_at: 422"
 else
     err "expected 422, got $CODE"
     fail=1
 fi
 
 echo
-(( fail )) && { err "FAIL — review output above."; exit 1; }
-ok "PASS — SDXL Refiner ensemble works end-to-end."
+(( fail )) && { err "FAIL: review output above."; exit 1; }
+ok "PASS: SDXL Refiner ensemble works end-to-end."
 echo
 echo "Open side-by-side:"
-echo "  $OUT_A — base alone (no refiner)"
-echo "  $OUT_B — base → refiner @ switch_at=0.8 (classic 80/20 recipe)"
-echo "  $OUT_C — repeat of B (byte-equal to B; determinism)"
-echo "  $OUT_D — base → refiner @ switch_at=0.9 (refiner gets smaller share)"
+echo "  $OUT_A: base alone (no refiner)"
+echo "  $OUT_B: base, then refiner @ switch_at=0.8 (classic 80/20 recipe)"
+echo "  $OUT_C: repeat of B (byte-equal to B; determinism)"
+echo "  $OUT_D: base, then refiner @ switch_at=0.9 (refiner gets smaller share)"

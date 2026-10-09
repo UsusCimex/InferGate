@@ -125,7 +125,7 @@ class LocalCacheBackend(CacheBackend):
         ttl_hours = cache_config.get("ttl_hours")
         ttl_expires = time.time() + ttl_hours * 3600 if ttl_hours is not None else None
 
-        # Write to .tmp → commit DB → atomic rename: crash-safe ordering.
+        # Crash-safe order: write to .tmp, commit the DB, then rename atomically.
         tmp_path = file_path.with_suffix(".tmp")
         try:
             async with aiofiles.open(tmp_path, "wb") as f:

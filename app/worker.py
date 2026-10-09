@@ -33,7 +33,7 @@ def _initial_load_state() -> dict[str, Any]:
 
 
 async def _run_load(app: FastAPI, models_dir: str) -> None:
-    """Background load task — owns load_lock; updates load_state on completion/failure."""
+    """Background load task: owns load_lock, updates load_state on completion/failure."""
     state: dict[str, Any] = app.state.load_state
     provider: BaseProvider = app.state.provider
     started = time.monotonic()
@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
         try:
             import torch
             if not torch.cuda.is_available():
-                logger.error("CUDA not available — cannot load GPU model %s", config.id)
+                logger.error("CUDA not available, cannot load GPU model %s", config.id)
                 raise RuntimeError("CUDA is not available")
             gpu_name = torch.cuda.get_device_name(0)
             cc = torch.cuda.get_device_capability(0)
@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
                 gpu_name, cc[0], cc[1], torch.version.cuda, torch.__version__,
             )
         except ImportError:
-            logger.warning("torch not available — skipping GPU check")
+            logger.warning("torch not available, skipping GPU check")
 
     provider_cls = get_provider_class(config.provider_class)
     provider = provider_cls(config)
@@ -103,13 +103,13 @@ async def lifespan(app: FastAPI):
     # Serialises /reload vs /generate+/synthesize.
     app.state.reload_lock = asyncio.Lock()
     # Held by the background /load task across provider.load(); also acquired by /reload
-    # (reload_lock first → load_lock) and /unload to serialise model swaps.
+    # (reload_lock first, then load_lock) and /unload to serialise model swaps.
     app.state.load_lock = asyncio.Lock()
     app.state.load_state = _initial_load_state()
     app.state.load_task = None
 
-    # Start unloaded — gateway's VRAM planner calls /load when it's made room.
-    logger.info("Worker started (model unloaded): %s — awaiting /load", config.id)
+    # Start unloaded: the gateway's VRAM planner calls /load once it has made room.
+    logger.info("Worker started (model unloaded): %s, awaiting /load", config.id)
     yield
 
     logger.info("Worker shutting down: %s", config.id)
@@ -172,7 +172,7 @@ async def stats(request: Request):
     provider: BaseProvider = request.app.state.provider
     config = request.app.state.config
 
-    # VRAM source priority: NVML (device-wide, sees co-tenants) → torch (per-process).
+    # VRAM source priority: NVML (device-wide, sees co-tenants), then torch (per-process).
     vram_used_mb = 0
     vram_total_mb = 0
     vram_free_mb = 0
@@ -247,7 +247,7 @@ async def load(request: Request):
             status_code=202,
         )
 
-    # Reap any prior task before starting a new one — avoids parallel loads.
+    # Reap any prior task before starting a new one to avoid parallel loads.
     prior: asyncio.Task | None = app_state.load_task
     if prior is not None and not prior.done():
         with contextlib.suppress(asyncio.CancelledError, TimeoutError):
@@ -343,7 +343,7 @@ async def reload_config(request: Request):
             triggers = []
             if old_dump.get("provider_class") != new_dump.get("provider_class"):
                 triggers.append(
-                    f"provider_class: {old_dump.get('provider_class')!r} → "
+                    f"provider_class: {old_dump.get('provider_class')!r} to "
                     f"{new_dump.get('provider_class')!r}"
                 )
             if old_dump.get("model") != new_dump.get("model"):
@@ -352,7 +352,7 @@ async def reload_config(request: Request):
                 for k in sorted(set(old_m) | set(new_m)):
                     if old_m.get(k) != new_m.get(k):
                         triggers.append(
-                            f"model.{k}: {old_m.get(k)!r} → {new_m.get(k)!r}"
+                            f"model.{k}: {old_m.get(k)!r} to {new_m.get(k)!r}"
                         )
             logger.info(
                 "Full reload of %s triggered by: %s",
@@ -376,7 +376,7 @@ async def reload_config(request: Request):
             )
 
         new_provider = provider_cls(new_config)
-        logger.info("Reloading %s (full): loading new provider …", new_config.id)
+        logger.info("Reloading %s (full): loading new provider...", new_config.id)
         try:
             await new_provider.load(models_dir)
         except Exception as e:
@@ -431,7 +431,7 @@ async def generate(request: Request):
             )
         except RuntimeError as e:
             if "CUDA error" in str(e):
-                logger.critical("Unrecoverable CUDA error — worker exiting for restart: %s", e)
+                logger.critical("Unrecoverable CUDA error, worker exiting for restart: %s", e)
                 logging.shutdown()
                 # sys.exit inside a request only raises SystemExit into uvicorn; the container must die to restart.
                 os._exit(1)

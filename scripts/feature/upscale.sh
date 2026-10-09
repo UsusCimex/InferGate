@@ -2,15 +2,15 @@
 # Feature test: /v1/images/upscale end-to-end on realesrgan-x4.
 #
 # Round-trip:
-#   1. Generate a 128×128 gradient PNG inside the worker container (PIL
+#   1. Generate a 128x128 gradient PNG inside the worker container (PIL
 #      is available there via spandrel/torch's transitive deps).
 #   2. POST it to the gateway, receive back an upscaled PNG.
-#   3. Parse the IHDR chunk to assert dimensions are exactly input × 4.
+#   3. Parse the IHDR chunk to assert dimensions are exactly 4x the input.
 #   4. Round-trip a second identical request and assert cache HIT.
 #   5. Test the b64_json envelope on a third call.
 #   6. Reject an invalid image (random bytes) with 400.
 #
-# Content-aware (colour / gradient) assertions are skipped — Real-ESRGAN
+# Content-aware (colour / gradient) assertions are skipped: Real-ESRGAN
 # on a tiny synthetic gradient produces something plausible but not
 # byte-deterministic across fp16 CUDA contexts. Shape + dimensions +
 # status codes are what this script guards against regressions.
@@ -40,30 +40,30 @@ for c in python3 python py; do
 done
 [[ -n "$PY" ]] || { err "python required (for PNG IHDR parsing)"; exit 1; }
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 ok "Env flags set"
 
-log "Building + starting gateway + $SERVICE …"
+log "Building + starting gateway + $SERVICE..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 ok "compose up issued"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
-# ── Build a 128×128 gradient PNG inside the worker container ──────
+# Build a 128x128 gradient PNG inside the worker container
 INPUT_PNG=$(mktemp --suffix=.png)
 OUTPUT_PNG=$(mktemp --suffix=.png)
 RESP_FILE=$(mktemp --suffix=.txt)
 cleanup() { rm -f "$INPUT_PNG" "$OUTPUT_PNG" "$RESP_FILE" "${RESP_FILE}.headers" 2>/dev/null || true; }
 trap cleanup EXIT
 
-log "Generating 128×128 gradient PNG (timestamp-seeded) inside $SERVICE …"
-# Seed the gradient on time so each run produces a distinct SHA-256 —
+log "Generating 128x128 gradient PNG (timestamp-seeded) inside $SERVICE..."
+# Seed the gradient on time so each run produces a distinct SHA-256;
 # otherwise rerunning the script starts with the previous run's cache
-# warm and the MISS→HIT assertion reads as HIT→HIT.
+# warm and the MISS-then-HIT assertion sees HIT twice.
 SEED=$(( $(date +%s) % 256 ))
 "${COMPOSE[@]}" exec -T -e "SEED=$SEED" "$SERVICE" python <<'PYEOF' > "$INPUT_PNG"
 import io, os, sys
@@ -104,14 +104,13 @@ http_post() {
         -D "${out}.headers" \
         "$@" || echo 000)
     local elapsed=$(( SECONDS - t0 ))
-    echo "  HTTP $code, ${elapsed}s → $(wc -c < "$out") bytes"
+    echo "  HTTP $code, ${elapsed}s: $(wc -c < "$out") bytes"
     LAST_CODE=$code
 }
 
 fail=0
 
-# ── (1) raw PNG response, assert dims = 128×4 = 512 ───────────────
-log "[1] response_format=png, assert dims scale 4×"
+log "[1] response_format=png, assert dims scale 4x"
 http_post "$OUTPUT_PNG" \
     -F "file=@${INPUT_PNG}" -F "model=${MODEL_ID}" -F "response_format=png" \
     -H "X-InferGate-No-Cache: true"
@@ -121,15 +120,14 @@ if [[ "$LAST_CODE" != "200" ]]; then
 else
     AFTER_DIMS=$(png_dims "$OUTPUT_PNG")
     if [[ "$AFTER_DIMS" == "512x512" ]]; then
-        ok "upscaled PNG dims 128×128 → $AFTER_DIMS (4× scale applied)"
+        ok "upscaled PNG dims 128x128 to $AFTER_DIMS (4x scale applied)"
     else
         err "wrong dims: got $AFTER_DIMS, expected 512x512"
         fail=1
     fi
 fi
 
-# ── (2) cache MISS + HIT on identical input ──────────────────────
-log "[2] cache MISS → HIT on repeat"
+log "[2] cache MISS, then HIT on repeat"
 http_post "$RESP_FILE" -F "file=@${INPUT_PNG}" -F "model=${MODEL_ID}" -F "response_format=png"
 FIRST_CACHE=$(grep -i '^x-infergate-cache' "${RESP_FILE}.headers" | head -1 | tr -d '\r' | awk '{print $NF}')
 http_post "$RESP_FILE" -F "file=@${INPUT_PNG}" -F "model=${MODEL_ID}" -F "response_format=png"
@@ -141,14 +139,12 @@ else
     fail=1
 fi
 
-# ── (3) b64_json envelope (OpenAI-style) ─────────────────────────
 log "[3] b64_json default envelope"
 http_post "$RESP_FILE" -F "file=@${INPUT_PNG}" -F "model=${MODEL_ID}" \
     -H "X-InferGate-No-Cache: true"
 if [[ "$LAST_CODE" == "200" ]]; then
-    # Write the check script to a tempfile rather than `python -c '...'` —
-    # heredoc-in-command-substitution quoting was silently eating the
-    # output on earlier attempts.
+    # Write the check script to a tempfile rather than `python -c '...'`:
+    # heredoc-in-command-substitution quoting silently eats the output.
     CHECK_PY=$(mktemp --suffix=.py)
     cat > "$CHECK_PY" <<'PYEOF'
 import json, base64, struct, sys
@@ -164,7 +160,7 @@ PYEOF
     ENVELOPE_OK=$("$PY" "$CHECK_PY" "$RESP_FILE" 2>&1 || true)
     rm -f "$CHECK_PY"
     if [[ "$ENVELOPE_OK" == "OK" ]]; then
-        ok "b64_json envelope correct, decoded PNG is 512×512"
+        ok "b64_json envelope correct, decoded PNG is 512x512"
     else
         err "envelope check failed: $ENVELOPE_OK"
         fail=1
@@ -174,29 +170,27 @@ else
     fail=1
 fi
 
-# ── (4) invalid image (random bytes) → 400 ────────────────────────
-log "[4] random bytes as 'image' → 400 from spandrel's decode path"
+log "[4] random bytes as 'image': expect 400 from spandrel's decode path"
 BOGUS=$(mktemp --suffix=.png)
 head -c 512 /dev/urandom > "$BOGUS"
 http_post "$RESP_FILE" -F "file=@${BOGUS}" -F "model=${MODEL_ID}" -F "response_format=png"
 rm -f "$BOGUS"
 if [[ "$LAST_CODE" == "400" ]]; then
-    ok "bogus image → 400"
+    ok "bogus image: 400"
 else
     err "expected 400, got $LAST_CODE (body: $(head -c 200 "$RESP_FILE"))"
     fail=1
 fi
 
-# ── (5) missing file → 422 ────────────────────────────────────────
-log "[5] missing file → 422"
+log "[5] missing file, expect 422"
 http_post "$RESP_FILE" -F "model=${MODEL_ID}"
 if [[ "$LAST_CODE" == "422" ]]; then
-    ok "missing file → 422"
+    ok "missing file: 422"
 else
     err "expected 422, got $LAST_CODE"
     fail=1
 fi
 
 echo
-(( fail )) && { err "FAIL — review output above."; exit 1; }
-ok "PASS — /v1/images/upscale works end-to-end on realesrgan-x4."
+(( fail )) && { err "FAIL: review output above."; exit 1; }
+ok "PASS: /v1/images/upscale works end-to-end on realesrgan-x4."

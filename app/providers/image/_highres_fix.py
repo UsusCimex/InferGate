@@ -52,7 +52,7 @@ def apply_highres_fix(
     if _torch.cuda.is_available():
         _torch.cuda.empty_cache()
 
-    # Pass width/height explicitly — SDXL img2img auto-detect snaps to 1024-bucket.
+    # Pass width/height explicitly: SDXL img2img auto-detect snaps to 1024-bucket.
     img2img_kwargs = {
         k: v for k, v in defaults.items()
         if k not in ("width", "height")

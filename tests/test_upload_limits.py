@@ -1,4 +1,4 @@
-"""Tests for upload size limits — both the read-with-limit helper and 413 round-trips."""
+"""Tests for upload size limits: the read-with-limit helper and 413 round-trips."""
 from __future__ import annotations
 
 import io
@@ -47,16 +47,13 @@ async def test_read_with_limit_rejects_zero_max():
 
 @pytest.mark.asyncio
 async def test_read_with_limit_streams_bounded_memory(monkeypatch):
-    """Once the limit is hit, no more bytes are accumulated — verify by inspecting buffer."""
+    """Once the limit is hit, no more bytes are accumulated; verify by inspecting buffer."""
     big_payload = b"y" * 10_000
     upload = UploadFile(file=io.BytesIO(big_payload), filename="t.bin")
 
-    # 1KB limit → reader should bail out around 1KB+chunk_size, not after reading all 10KB.
+    # 1KB limit: reader should bail out around 1KB+chunk_size, not after reading all 10KB.
     with pytest.raises(UploadTooLargeError):
         await read_with_limit(upload, max_bytes=1024, chunk_size=512)
-
-
-# ── HTTP-level: routers return 413 ───────────────────────────────────
 
 
 @pytest.mark.asyncio

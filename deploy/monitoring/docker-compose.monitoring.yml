@@ -8,8 +8,8 @@
 # Volume paths below are relative to Compose's project directory, which
 # resolves to `deploy/` (directory of the first --file, deploy/docker-compose.yml).
 # So `./monitoring/...` here means `deploy/monitoring/...` on the host.
-# Do NOT prefix with `./deploy/` — that would double-nest to
-# `deploy/deploy/monitoring/…` which doesn't exist; Docker auto-creates a
+# Do NOT prefix with `./deploy/`: that would double-nest to
+# `deploy/deploy/monitoring/...`, which doesn't exist; Docker auto-creates a
 # directory at that path and then fails mounting a dir onto a file.
 
 services:
@@ -34,7 +34,7 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      # Suppress the first-run password change nag — provisioning is idempotent.
+      # Suppress the first-run password change nag; provisioning is idempotent.
       - GF_SECURITY_ADMIN_USER=admin
     depends_on:
       - prometheus

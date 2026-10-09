@@ -8,7 +8,7 @@ from app.services.cache_backends.base import CacheBackend
 
 try:
     import redis.asyncio as redis_async
-except ImportError:  # pragma: no cover — optional dependency
+except ImportError:  # pragma: no cover (optional dependency)
     redis_async = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
@@ -28,16 +28,16 @@ def _decode_keys(d: dict) -> dict:
 
 
 class RedisCacheBackend(CacheBackend):
-    """Redis-backed CacheBackend — multi-instance safe, no filesystem dependency.
+    """Redis-backed CacheBackend: multi-instance safe, no filesystem dependency.
 
     Storage layout (all under `redis_prefix`, default "infergate:cache"):
-      data:{key}        — bytes payload
-      meta:{key}        — hash {model_id, size_bytes, created_at, last_accessed, ttl_expires?}
-      hit:{key}         — counter (read on stats())
-      lru               — sorted set, score=last_accessed, member=key (global LRU)
-      lru:{model_id}    — sorted set per model
-      miss:{model_id}   — counter
-      models            — set of registered model_ids
+      data:{key}        bytes payload
+      meta:{key}        hash {model_id, size_bytes, created_at, last_accessed, ttl_expires?}
+      hit:{key}         counter (read on stats())
+      lru               sorted set, score=last_accessed, member=key (global LRU)
+      lru:{model_id}    sorted set per model
+      miss:{model_id}   counter
+      models            set of registered model_ids
     """
 
     def __init__(
@@ -48,7 +48,7 @@ class RedisCacheBackend(CacheBackend):
     ):
         if client is None and redis_async is None:
             raise RuntimeError(
-                "RedisCacheBackend requires the `redis` package — install via "
+                "RedisCacheBackend requires the `redis` package; install via "
                 "`pip install redis`."
             )
         self._url: str = global_config.get("redis_url", "redis://localhost:6379/0")
@@ -59,8 +59,6 @@ class RedisCacheBackend(CacheBackend):
         self._client: Any | None = client
         self._initialized = False
 
-    # ── Key builders ───────────────────────────────────────────────
-
     def _data_key(self, key: str) -> str: return f"{self._prefix}:data:{key}"
     def _meta_key(self, key: str) -> str: return f"{self._prefix}:meta:{key}"
     def _hit_key(self, key: str) -> str: return f"{self._prefix}:hit:{key}"
@@ -69,27 +67,23 @@ class RedisCacheBackend(CacheBackend):
     def _miss_key(self, model_id: str) -> str: return f"{self._prefix}:miss:{model_id}"
     def _models_key(self) -> str: return f"{self._prefix}:models"
 
-    # ── Lifecycle ──────────────────────────────────────────────────
-
     async def initialize(self) -> None:
         if self._client is None:
             assert redis_async is not None
             self._client = redis_async.from_url(self._url)
-        # Probe — fail fast if Redis unreachable.
+        # Probe: fail fast if Redis unreachable.
         await self._client.ping()
         self._initialized = True
 
     async def close(self) -> None:
         if self._client is not None and self._injected_client is None:
-            # Only close clients we created — injected clients (tests) belong to caller.
+            # Only close clients we created; injected clients (tests) belong to the caller.
             await self._client.aclose()
         self._client = None
         self._initialized = False
 
     def is_initialized(self) -> bool:
         return self._initialized
-
-    # ── Public API ─────────────────────────────────────────────────
 
     async def record_miss(self, model_id: str) -> None:
         if not self._initialized:
@@ -194,7 +188,7 @@ class RedisCacheBackend(CacheBackend):
         keys = [_decode(m) for m in members]
         for k in keys:
             await self.invalidate_key(k)
-        # Per-model state — mirror the Local backend's scope.
+        # Per-model state: mirror the Local backend's scope.
         models = await self._client.smembers(self._models_key())
         for m in models:
             mid = _decode(m)
@@ -282,8 +276,6 @@ class RedisCacheBackend(CacheBackend):
             "miss_count": misses,
             "hit_rate_percent": hit_rate,
         }
-
-    # ── Eviction ───────────────────────────────────────────────────
 
     async def _evict_for_model(
         self, model_id: str, max_bytes: int, needed: int

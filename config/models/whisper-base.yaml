@@ -27,5 +27,5 @@ queue:
 
 metadata:
   license: MIT
-  description: "Whisper Base (faster-whisper / CTranslate2) — multilingual speech-to-text"
+  description: "Whisper Base (faster-whisper / CTranslate2): multilingual speech-to-text"
   tags: ["whisper", "stt", "cpu", "multilingual"]

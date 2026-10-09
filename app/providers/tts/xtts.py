@@ -76,13 +76,13 @@ class XttsTtsProvider(TtsProvider):
         ref_filename = str(defaults.pop("reference_filename", "ref.wav"))
         language = str(defaults.pop("language", "en"))
         output_format = str(defaults.pop("output_format", "wav"))
-        # XTTS-v2 doesn't use reference_text / speed / voice — drop silently.
+        # XTTS-v2 doesn't use reference_text / speed / voice; drop silently.
         for k in ("reference_text", "speed", "voice"):
             defaults.pop(k, None)
 
         if ref_audio is None:
             raise ValueError(
-                "xtts-v2 requires reference_audio for voice cloning — "
+                "xtts-v2 requires reference_audio for voice cloning; "
                 "use POST /v1/audio/speech/voice-clone"
             )
 

@@ -22,7 +22,7 @@ def download_model(hub_id: str, model_dir: str, revision: str | None = None) -> 
     from huggingface_hub import snapshot_download
 
     token = os.environ.get("HF_TOKEN")
-    print(f"  Downloading {hub_id} -> {model_dir}")
+    print(f"  Downloading {hub_id} to {model_dir}")
     snapshot_download(
         repo_id=hub_id,
         cache_dir=model_dir,

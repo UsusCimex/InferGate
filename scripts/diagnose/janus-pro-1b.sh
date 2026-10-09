@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Launch + smoke-test Janus-Pro-1B — DeepSeek's autoregressive T2I model.
-# Native 384×384, ~3-4GB VRAM at bf16, MIT. First non-diffusion provider.
+# Launch + smoke-test Janus-Pro-1B, DeepSeek's autoregressive T2I model.
+# Native 384x384, ~3-4GB VRAM at bf16, MIT.
 # Run from project root: bash scripts/diagnose/janus-pro-1b.sh
 set -euo pipefail
 
@@ -18,23 +18,23 @@ READY_TIMEOUT=900
 # shellcheck source=_lib.sh
 source scripts/diagnose/_lib.sh
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 ok "Env flags set"
 
-log "Starting $SERVICE (first build pulls janus from git — expect 5-10 min) …"
+log "Starting $SERVICE (first build pulls janus from git; expect 5-10 min)..."
 "${COMPOSE[@]}" up -d --build "$SERVICE" gateway
 ok "Service up issued"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
-log "POST /v1/images/generations (prompt=cyberpunk cat) — native 384×384 …"
+log "POST /v1/images/generations (prompt=cyberpunk cat, native 384x384)..."
 fire_image_request "$MODEL_ID" "a cyberpunk cat" "$OUTPUT"
 report_result "$SERVICE" "$OUTPUT"
 
 if [[ "$HTTP_CODE" == "200" ]]; then
-    echo "  → 384×384 native (no upscaler). AR samples 576 tokens sequentially,"
+    echo "  384x384 native (no upscaler). AR samples 576 tokens sequentially,"
     echo "    so latency is fixed regardless of step count."
 fi

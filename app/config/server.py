@@ -21,7 +21,7 @@ class GpuConfig(BaseModel):
     watchdog_vram_threshold: float = Field(0.92, ge=0.5, le=1.0)
     watchdog_ram_threshold: float = Field(0.90, ge=0.5, le=1.0)
     # When neither config.worker_url nor WORKER_URL_<ID> is set, format this template
-    # with `{id}` to derive the worker URL — useful for k8s/swarm DNS-based discovery.
+    # with `{id}` to derive the worker URL (k8s/swarm DNS-based discovery).
     worker_url_template: str | None = None
 
 

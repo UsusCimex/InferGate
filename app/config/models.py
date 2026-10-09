@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.config.enums import CacheStrategy, Priority
 
-# model_id is a path component under the cache directory — keep it traversal-safe.
+# model_id is a path component under the cache directory; keep it traversal-safe.
 _MODEL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
 
 

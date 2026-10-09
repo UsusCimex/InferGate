@@ -11,7 +11,7 @@
 # - deploy/Caddyfile present (see deploy/Caddyfile.example).
 #
 # For a private LAN / self-signed setup, replace your domain in Caddyfile with
-# `:443 { tls internal ... }` — Caddy will mint a local CA cert; clients must
+# `:443 { tls internal ... }`. Caddy will mint a local CA cert; clients must
 # trust /data/caddy/pki/authorities/local/root.crt.
 
 services:
@@ -22,7 +22,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"   # HTTP/3 (QUIC) — Caddy enables it by default
+      - "443:443/udp"   # HTTP/3 (QUIC); Caddy enables it by default
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data         # ACME state, issued certs (persist across restarts)
@@ -33,7 +33,7 @@ services:
       - default
 
   gateway:
-    # Drop the public 8000 binding — only Caddy reaches gateway, over the
+    # Drop the public 8000 binding: only Caddy reaches gateway, over the
     # internal compose network. `!reset []` requires Compose v2.20+; older
     # versions can comment this block and rely on a host firewall to block 8000.
     ports: !reset []

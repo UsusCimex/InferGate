@@ -15,10 +15,7 @@ CACHE_KEY_VERSION = "v1"
 
 
 class CacheManager:
-    """Cache façade: caching policy + key derivation; storage delegated to a CacheBackend.
-
-    Routers stay backend-agnostic — swap LocalCacheBackend for Redis/S3 without touching them.
-    """
+    """Cache facade: caching policy + key derivation; storage delegated to a CacheBackend."""
 
     def __init__(
         self,
@@ -63,8 +60,6 @@ class CacheManager:
             sort_keys=True,
         )
         return hashlib.sha256(canonical.encode()).hexdigest()
-
-    # ── Storage delegation ─────────────────────────────────────────
 
     async def get(self, key: str) -> bytes | None:
         return await self._backend.get(key)

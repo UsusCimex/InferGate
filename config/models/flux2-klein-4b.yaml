@@ -33,5 +33,5 @@ queue:
 
 metadata:
   license: Apache-2.0
-  description: "FLUX.2 Klein 4B — fast, open, sub-second generation"
+  description: "FLUX.2 Klein 4B: open, sub-second generation"
   tags: ["fast", "flux2", "apache2", "open"]

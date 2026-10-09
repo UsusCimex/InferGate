@@ -19,7 +19,7 @@ async def read_with_limit(
     """Stream-read `upload` and raise UploadTooLargeError once `max_bytes` is exceeded.
 
     Reading in chunks bounds memory use to `chunk_size` even if the client sends a
-    multi-GB body — the limit fires before the full payload is buffered.
+    multi-GB body; the limit fires before the full payload is buffered.
     """
     if max_bytes <= 0:
         raise ValueError("max_bytes must be > 0")

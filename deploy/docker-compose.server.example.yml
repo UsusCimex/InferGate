@@ -8,7 +8,7 @@
 #                  --profile image --profile text up -d
 #
 # Compose merges files left-to-right; keys here are applied on top of the base.
-# `environment:` and `deploy:` are merged by key — you only write what differs.
+# `environment:` and `deploy:` are merged by key, so you only write what differs.
 #
 # Prefer tuning via deploy/.env (simple key=value) when the change applies to
 # all hosts. Use this file for host-specific layout: GPU count, volumes,

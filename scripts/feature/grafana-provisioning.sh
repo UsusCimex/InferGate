@@ -6,12 +6,12 @@
 #   2. Prometheus successfully scrapes the gateway target (state="up")
 #   3. Prometheus returns non-empty data for a real InferGate metric
 #   4. Grafana auto-provisioned the Prometheus datasource with the
-#      expected uid (infergate-prometheus) — no UI click-through
+#      expected uid (infergate-prometheus), no UI click-through
 #   5. Grafana auto-loaded the InferGate dashboard from
 #      /var/lib/grafana/dashboards (uid=infergate-main) into the "InferGate" folder
 #   6. Dashboard references a resolvable datasource uid (sanity on the JSON)
 #
-# This runs gateway-only (no workers) — cheap & fast. Metrics populated
+# This runs gateway-only (no workers): cheap & fast. Metrics populated
 # here are those emitted for gateway-level requests (HTTP, models_loaded,
 # queue depth). Inference/cache metrics stay at zero, which is expected
 # and doesn't invalidate the test: we're checking provisioning wiring,
@@ -41,7 +41,7 @@ source scripts/diagnose/_lib.sh
 
 command -v curl >/dev/null 2>&1 || { err "curl required"; exit 1; }
 
-# Pick a python interpreter — tolerate python3 / python / py (Windows bash).
+# Pick a python interpreter: python3, python or py (Windows bash).
 PY=""
 for candidate in python3 python py; do
     if command -v "$candidate" >/dev/null 2>&1; then
@@ -54,7 +54,7 @@ done
 # jq-free JSON query helper. Uses Python to pick a value out of JSON passed
 # on stdin via a dotted path with bracket indices, e.g. `.data.result[0].value[1]`
 # or `.status`. Missing keys return empty string (matches jq `// ""`).
-# Supports the three specific shapes this script needs — it's not a jq clone.
+# Supports the three specific shapes this script needs; it's not a jq clone.
 jq_get() {
     local path="$1"
     "$PY" -c "
@@ -83,7 +83,7 @@ print(d if not isinstance(d, (dict, list)) else json.dumps(d))
 "
 }
 
-# For target-health we need to filter by label job='infergate' first — give
+# For target-health we need to filter by label job='infergate' first; give
 # it a dedicated helper rather than extending jq_get into a full query lang.
 prometheus_target_health() {
     "$PY" -c "
@@ -116,11 +116,9 @@ print(','.join(sorted(uids)))
 "
 }
 
-# ── Bring up gateway + monitoring stack ───────────────────────────────
-# --build forces the gateway image to be rebuilt — required when base.txt
-# changes (e.g. prometheus-client was promoted from optional to core). No-op
-# on unchanged layers thanks to BuildKit cache.
-log "Starting gateway + prometheus + grafana (rebuilding gateway if needed) …"
+# --build rebuilds the gateway image, required when base.txt changes;
+# a no-op on unchanged layers thanks to the BuildKit cache.
+log "Starting gateway + prometheus + grafana (rebuilding gateway if needed)..."
 "${COMPOSE[@]}" up -d --build gateway prometheus grafana
 ok "compose up issued"
 
@@ -131,7 +129,7 @@ wait_http() {
         local code
         code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo 000)
         if [[ "$code" == "200" || "$code" == "302" ]]; then
-            ok "$label ready ($url → $code)"
+            ok "$label ready ($url returned $code)"
             return 0
         fi
         if (( SECONDS - start > timeout )); then
@@ -146,21 +144,19 @@ wait_http gateway    "${GATEWAY_URL}/health"         60
 wait_http prometheus "${PROMETHEUS_URL}/-/ready"     60
 wait_http grafana    "${GRAFANA_URL}/api/health"     60
 
-# ── Generate traffic so metrics aren't all zero ───────────────────────
-log "Generating request traffic to populate request metrics …"
+log "Generating request traffic to populate request metrics..."
 for _ in $(seq 1 5); do
     curl -sS "${GATEWAY_URL}/health"    >/dev/null || true
     curl -sS "${GATEWAY_URL}/v1/models" >/dev/null || true
 done
 ok "10 requests issued"
 
-# Prometheus scrape interval = 15s — give it one full cycle.
-log "Waiting 20s for Prometheus to scrape …"
+# Prometheus scrape interval = 15s; give it one full cycle.
+log "Waiting 20s for Prometheus to scrape..."
 sleep 20
 
 fail=0
 
-# ── (1) Gateway emits infergate_* metrics ─────────────────────────────
 log "[1] Gateway /metrics/prometheus contains infergate_* series"
 METRICS_BODY=$(curl -sS "${GATEWAY_URL}/metrics/prometheus" || true)
 if grep -q '^infergate_requests_total' <<<"$METRICS_BODY" \
@@ -172,7 +168,6 @@ else
     fail=1
 fi
 
-# ── (2) Prometheus scraped gateway successfully ───────────────────────
 log "[2] Prometheus target gateway:8000 is UP"
 TARGETS_JSON=$(curl -sS "${PROMETHEUS_URL}/api/v1/targets" || echo '{}')
 TARGET_HEALTH=$(prometheus_target_health <<<"$TARGETS_JSON")
@@ -184,7 +179,6 @@ else
     fail=1
 fi
 
-# ── (3) Prometheus returns data for infergate_requests_total ──────────
 log "[3] Prometheus has non-zero infergate_requests_total"
 QUERY_JSON=$(curl -sS --data-urlencode 'query=sum(infergate_requests_total)' \
     "${PROMETHEUS_URL}/api/v1/query" || echo '{}')
@@ -199,7 +193,6 @@ else
     fail=1
 fi
 
-# ── (4) Grafana datasource auto-provisioned ───────────────────────────
 log "[4] Grafana datasource uid=${DS_UID} present"
 DS_JSON=$(curl -sS -u "$GRAFANA_AUTH" "${GRAFANA_URL}/api/datasources/uid/${DS_UID}" || echo '{}')
 DS_TYPE=$(jq_get '.type' <<<"$DS_JSON")
@@ -212,7 +205,6 @@ else
     fail=1
 fi
 
-# ── (5) Grafana dashboard auto-loaded ─────────────────────────────────
 log "[5] Grafana dashboard uid=${DASHBOARD_UID} present"
 # Dashboard provisioner runs every 30s; we've already slept 20s. Give it one more cycle.
 DASH_JSON=""
@@ -223,11 +215,11 @@ for attempt in 1 2 3; do
     if [[ -n "$DASH_TITLE" ]]; then
         break
     fi
-    log "  attempt ${attempt}/3 — dashboard not yet loaded, waiting 15s …"
+    log "  attempt ${attempt}/3: dashboard not yet loaded, waiting 15s..."
     sleep 15
 done
 DASH_FOLDER=$(jq_get '.meta.folderTitle' <<<"$DASH_JSON")
-if [[ "$DASH_TITLE" == "InferGate — Gateway & Inference" ]]; then
+if [[ "$DASH_TITLE" == "InferGate - Gateway & Inference" ]]; then
     ok "dashboard loaded: title='${DASH_TITLE}' folder='${DASH_FOLDER}'"
 else
     err "dashboard uid=${DASHBOARD_UID} not found or title mismatch (got '$DASH_TITLE')"
@@ -236,7 +228,6 @@ else
     fail=1
 fi
 
-# ── (6) Dashboard panels reference the resolvable datasource uid ──────
 log "[6] Dashboard panels reference datasource uid=${DS_UID}"
 PANEL_UIDS=$(dashboard_panel_uids <<<"$DASH_JSON")
 if grep -q "$DS_UID" <<<"$PANEL_UIDS"; then
@@ -249,14 +240,14 @@ fi
 
 echo
 (( fail )) && {
-    err "FAIL — see above."
+    err "FAIL: see above."
     err "Quick diagnostics:"
     err "  grafana provisioning log:"
     "${COMPOSE[@]}" logs --no-color --tail 20 grafana | grep -iE 'provision|dashboard|datasource' || true
     exit 1
 }
 
-ok "PASS — Grafana provisioning wired end-to-end."
+ok "PASS: Grafana provisioning wired end-to-end."
 echo
 echo "Open in browser to inspect visually:"
 echo "  Grafana dashboard : ${GRAFANA_URL}/d/${DASHBOARD_UID}  (admin / admin)"

@@ -83,7 +83,7 @@ class CompelAdapter:
                 )
         except Exception as e:
             logger.warning(
-                "Compel init failed for %s: %s — weighting disabled", self._model_id, e
+                "Compel init failed for %s: %s; weighting disabled", self._model_id, e
             )
             self._compel = None
             self._mode = None

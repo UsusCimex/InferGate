@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Feature test: HighresFix — two-pass generate-upscale-refine.
+# Feature test: HighresFix, two-pass generate-upscale-refine.
 #
 # Three requests, same seed:
-#   A) 1024×1024 single-pass                            — baseline
-#   B) 768×768 base + scale=1.5 + denoising=0.5 → 1152  — two-pass
-#   C) repeat of B                                      — sanity (no crash)
+#   A) 1024x1024 single pass (baseline)
+#   B) 768x768 base, scale=1.5, denoising=0.5, 1152 output (two-pass)
+#   C) repeat of B (sanity, no crash)
 #
 # Assertions:
 #   - All three return HTTP 200
 #   - B takes meaningfully longer than A (two passes > one)
-#   - B and C both produce 1152×1152 PNGs (dimensions via IHDR)
+#   - B and C both produce 1152x1152 PNGs (dimensions via IHDR)
 #
 # NOTE on non-determinism: unlike single-pass features, byte-identical
-# B ≡ C is NOT asserted here. cuDNN benchmark-mode autotune + lazy
+# B == C is NOT asserted here. cuDNN benchmark-mode autotune + lazy
 # AutoPipelineForImage2Image.from_pipe init cause different kernel
 # choices across back-to-back two-pass calls, producing tiny numerical
 # drift that cascades visibly. Forcing cudnn.deterministic=True would
 # fix it at a 20-30% throughput cost, which is not worth it for the
 # general serving path. The two images look visually identical; bytes
 # differ. Single-pass tests (scheduler, LoRA, TI) do enforce byte-
-# identical repeats — that path has stable kernel selection.
+# identical repeats; that path has stable kernel selection.
 #
 # Run from project root: bash scripts/feature/highres-fix.sh
 set -euo pipefail
@@ -40,16 +40,16 @@ PROMPT="a cyberpunk cat in neon Tokyo"
 # shellcheck source=../diagnose/_lib.sh
 source scripts/diagnose/_lib.sh
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 ok "Env flags set"
 
-log "Rebuilding gateway + worker …"
+log "Rebuilding gateway + worker..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
 fire() {
@@ -75,7 +75,7 @@ fire() {
 
     local sz
     sz=$(wc -c < "$out" 2>/dev/null || echo 0)
-    echo "  HTTP $code, ${elapsed}s → $out ($sz bytes)"
+    echo "  HTTP $code, ${elapsed}s: $out ($sz bytes)"
     LAST_CODE=$code
     LAST_TIME=$elapsed
 }
@@ -115,7 +115,7 @@ fire C "$(printf '{"model":"%s","prompt":"%s",%s,"size":"768x768","highres_fix":
 CODE_C=$LAST_CODE; TIME_C=$LAST_TIME
 
 echo
-echo "─── Feature applied? ─────────────────────────────────────"
+echo "--- Feature applied? ---"
 fail=0
 
 for lbl in A:$CODE_A B:$CODE_B C:$CODE_C; do
@@ -133,44 +133,44 @@ DIMS_C=$(png_dims "$OUT_C")
 echo "  dims: A=$DIMS_A  B=$DIMS_B  C=$DIMS_C"
 
 if [[ "$DIMS_A" == "1024x1024" ]]; then
-    ok "A is 1024×1024 as requested"
+    ok "A is 1024x1024 as requested"
 else
-    err "A expected 1024×1024, got $DIMS_A"
+    err "A expected 1024x1024, got $DIMS_A"
     fail=1
 fi
 
 if [[ "$DIMS_B" == "1152x1152" ]]; then
-    ok "B is 1152×1152 (768 * 1.5 scale) as expected"
+    ok "B is 1152x1152 (768 * 1.5 scale) as expected"
 else
-    err "B expected 1152×1152, got $DIMS_B — highres_fix did not scale"
+    err "B expected 1152x1152, got $DIMS_B; highres_fix did not scale"
     fail=1
 fi
 
 if [[ "$DIMS_C" == "1152x1152" ]]; then
-    ok "C is 1152×1152 — same pipeline reproduced the scale"
+    ok "C is 1152x1152; same pipeline reproduced the scale"
 else
-    err "C expected 1152×1152, got $DIMS_C — repeat run dropped the scale"
+    err "C expected 1152x1152, got $DIMS_C; repeat run dropped the scale"
     fail=1
 fi
 
 if cmp -s "$OUT_B" "$OUT_C"; then
-    ok "B ≡ C byte-identical — stable cuDNN kernel selection"
+    ok "B == C byte-identical: stable cuDNN kernel selection"
 else
-    log "B ≠ C bytewise — expected on two-pass flows (cuDNN benchmark-mode"
+    log "B != C bytewise: expected on two-pass flows (cuDNN benchmark-mode"
     log "  autotune picks different kernels between the initial and warm"
     log "  runs of img2img). Images should look near-identical visually."
 fi
 
 if (( TIME_A > 0 && TIME_B > TIME_A )); then
-    ok "B (${TIME_B}s) took longer than A (${TIME_A}s) — two-pass as expected"
+    ok "B (${TIME_B}s) took longer than A (${TIME_A}s), as expected for two passes"
 else
-    log "timing: A=${TIME_A}s B=${TIME_B}s — not a strict failure (noisy on warm GPUs)"
+    log "timing: A=${TIME_A}s B=${TIME_B}s; not a strict failure (noisy on warm GPUs)"
 fi
 
 echo
-(( fail )) && { err "FAIL — review above."; exit 1; }
-ok "PASS — HighresFix produces correctly-scaled images via two-pass flow."
+(( fail )) && { err "FAIL: review above."; exit 1; }
+ok "PASS: HighresFix produces correctly-scaled images via two-pass flow."
 echo
 echo "Open side-by-side:"
 echo "  $OUT_A (1024 single pass)"
-echo "  $OUT_B (768→1152 two-pass, sharper fine detail)"
+echo "  $OUT_B (768 to 1152 two-pass, sharper fine detail)"

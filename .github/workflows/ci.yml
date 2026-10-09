@@ -27,9 +27,9 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      # Install only the dev extra — the full `[all]` pulls torch + vLLM and
-      # takes ~15 min per job. The dev extra is enough for lint + the 208
-      # pytest cases, which all use fake providers.
+      # Install only the dev extra; the full `[all]` pulls torch + vLLM and
+      # takes ~15 min per job. The dev extra is enough for lint and the
+      # tests, which all use fake providers.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

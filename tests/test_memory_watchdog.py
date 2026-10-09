@@ -1,4 +1,4 @@
-"""Tests for MemoryWatchdog — drive scan_once() directly to avoid sleep loops."""
+"""Tests for MemoryWatchdog: drive scan_once() directly to avoid sleep loops."""
 from __future__ import annotations
 
 import pytest
@@ -59,7 +59,7 @@ class _StubManager:
 
 @pytest.mark.asyncio
 async def test_watchdog_evicts_on_vram_over_threshold():
-    """live VRAM ≥ threshold * total → evict LRU non-pinned model."""
+    """live VRAM >= threshold * total: evict LRU non-pinned model."""
     providers = {
         "old": _StubProvider(vram_used_mb=11000, vram_total_mb=12000),  # 91%
         "new": _StubProvider(vram_used_mb=11000, vram_total_mb=12000),  # same total
@@ -75,7 +75,7 @@ async def test_watchdog_evicts_on_vram_over_threshold():
 
 @pytest.mark.asyncio
 async def test_watchdog_noop_below_threshold():
-    """Usage under threshold → no eviction, no logs."""
+    """Usage under threshold: no eviction, no logs."""
     providers = {
         "m1": _StubProvider(vram_used_mb=5000, vram_total_mb=12000),  # 42%
     }
@@ -90,7 +90,7 @@ async def test_watchdog_noop_below_threshold():
 
 @pytest.mark.asyncio
 async def test_watchdog_cannot_evict_when_all_pinned(caplog):
-    """Over threshold + all pinned → warning, no eviction."""
+    """Over threshold + all pinned: warning, no eviction."""
     providers = {
         "pinned-a": _StubProvider(vram_used_mb=11500, vram_total_mb=12000),
         "pinned-b": _StubProvider(vram_used_mb=11500, vram_total_mb=12000),
@@ -139,13 +139,13 @@ async def test_watchdog_keeps_cpu_models_next_to_a_lone_gpu_model():
 
 @pytest.mark.asyncio
 async def test_watchdog_ram_threshold_is_advisory(caplog, monkeypatch):
-    """Host RAM overshoot → log warning but no eviction (we don't own
+    """Host RAM overshoot: log warning but no eviction (we don't own
     host processes)."""
     import psutil
 
     class _FakeVM:
         total = 16 * 1024 * 1024 * 1024       # 16 GB
-        available = 1 * 1024 * 1024 * 1024    # 1 GB free → 94% used
+        available = 1 * 1024 * 1024 * 1024    # 1 GB free, 94% used
     monkeypatch.setattr(psutil, "virtual_memory", lambda: _FakeVM())
 
     providers = {"m1": _StubProvider(vram_used_mb=100, vram_total_mb=12000)}
@@ -172,7 +172,7 @@ async def test_watchdog_handles_empty_stats():
     wd = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.9, ram_threshold=0.99)
 
     summary = await wd.scan_once()
-    # No data → no eviction, no thresholds tripped
+    # No data: no eviction, no thresholds tripped
     assert summary["vram_over_threshold"] is False
     assert summary["evicted"] is None
 
@@ -185,12 +185,12 @@ async def test_watchdog_lifecycle():
     providers = {"m": _StubProvider(0, 12000)}
     manager = _StubManager(providers)
 
-    # Disabled → no task
+    # Disabled: no task
     wd_disabled = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.9, ram_threshold=0.99)
     wd_disabled.start()
     assert wd_disabled._task is None
 
-    # Enabled → task starts, double-start is no-op, stop cancels
+    # Enabled: task starts, double-start is no-op, stop cancels
     wd = MemoryWatchdog(manager, interval_seconds=60, vram_threshold=0.9, ram_threshold=0.99)
     wd.start()
     first = wd._task

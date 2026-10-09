@@ -1,4 +1,4 @@
-"""Gateway ↔ worker waits: the model's queue timeout governs, a worker timeout is a 504, SSE events stay apart."""
+"""Gateway-worker waits: the model's queue timeout governs, a worker timeout is a 504, SSE events stay apart."""
 from __future__ import annotations
 
 import httpx

@@ -204,7 +204,7 @@ class VllmTextProvider(TextProvider):
                         }
                         yield f"data: {json.dumps(chunk)}\n\n"
         except (asyncio.CancelledError, GeneratorExit):
-            # Client disconnected — abort so the GPU frees immediately.
+            # Client disconnected: abort so the GPU frees immediately.
             await self._abort_request(request_id)
             raise
 

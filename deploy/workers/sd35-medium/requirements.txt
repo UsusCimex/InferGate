@@ -3,7 +3,7 @@ transformers>=4.40.0
 accelerate>=0.30.0
 safetensors>=0.4.0
 sentencepiece>=0.2.0
-# LoRA hot-load via pipe.load_lora_weights — peft is the diffusers backend.
+# LoRA hot-load via pipe.load_lora_weights; peft is the diffusers backend.
 # diffusers supports SD3 LoRA through peft since 0.30; works on MMDiT transformer.
 peft>=0.10.0
 # compel is installed so prompt-weighting is available if the provider ever

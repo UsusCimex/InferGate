@@ -2,7 +2,7 @@
 source = app
 branch = True
 omit =
-    # GPU providers require actual hardware — tested via integration tests
+    # GPU providers require actual hardware; tested via integration tests
     app/providers/image/diffusers_provider.py
     app/providers/text/vllm_provider.py
     app/providers/tts/kokoro.py

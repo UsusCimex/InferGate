@@ -1,5 +1,5 @@
 id: realesrgan-x4
-display_name: "Real-ESRGAN 4×"
+display_name: "Real-ESRGAN 4x"
 category: upscale
 provider_class: SpandrelUpscaleProvider
 enabled: ${oc.decode:${oc.env:REALESRGAN_X4_ENABLED,true}}
@@ -25,5 +25,5 @@ queue:
 
 metadata:
   license: "BSD-3-Clause"
-  description: "Real-ESRGAN x4 — general-purpose super-resolution via spandrel"
+  description: "Real-ESRGAN x4: general-purpose super-resolution via spandrel"
   tags: ["super-resolution", "upscale", "real-esrgan", "spandrel"]

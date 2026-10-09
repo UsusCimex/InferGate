@@ -1,7 +1,7 @@
-"""End-to-end tests: RemoteProvider ⇄ FakeWorker via httpx ASGITransport.
+"""End-to-end tests: RemoteProvider against FakeWorker via httpx ASGITransport.
 
 These tests boot a FastAPI app that mimics worker.py's contract and route
-RemoteProvider's httpx client through ASGITransport — no sockets, no mocks,
+RemoteProvider's httpx client through ASGITransport: no sockets, no mocks,
 the full HTTP serialization round-trip.
 """
 from __future__ import annotations
@@ -182,15 +182,12 @@ async def fake_worker(monkeypatch):
     yield state
 
 
-# ── Lifecycle ────────────────────────────────────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_e2e_load_unload_cycle(fake_worker):
     provider = remote_module.RemoteTextProvider(_make_remote_config("text"))
     assert not provider.is_loaded()
 
-    # Worker reports "loading" until /load is called → BaseRemoteMixin tolerates that.
+    # Worker reports "loading" until /load is called; BaseRemoteMixin tolerates that.
     fake_worker["loaded"] = True  # /health returns ok
     await provider.load("/tmp")
     assert provider.is_loaded()
@@ -223,9 +220,6 @@ async def test_e2e_load_fails_when_health_unreachable(monkeypatch):
     with pytest.raises(RuntimeError, match="returned status 500"):
         await provider.load("/tmp")
     assert not provider.is_loaded()
-
-
-# ── JSON endpoints ──────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -296,9 +290,6 @@ async def test_e2e_text_embedding(fake_worker):
     assert vecs[1][0] == 11.0  # len("hello world")
 
 
-# ── Multipart endpoints ─────────────────────────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_e2e_stt_transcribe(fake_worker):
     fake_worker["loaded"] = True
@@ -363,9 +354,6 @@ async def test_e2e_video_embedding(fake_worker):
 
     vid_vec = await provider.embed_video(b"mp4-bytes-payload")
     assert vid_vec[0] == float(len(b"mp4-bytes-payload"))
-
-
-# ── Cross-cutting concerns ──────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -435,7 +423,7 @@ async def test_e2e_streaming_text(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_e2e_load_after_unload_reconnects(fake_worker):
-    """A provider can be cycled load → unload → load without errors."""
+    """A provider can be cycled load, unload, load without errors."""
     fake_worker["loaded"] = True
     provider = remote_module.RemoteTextProvider(_make_remote_config("text"))
 
@@ -475,9 +463,6 @@ async def test_e2e_check_health_routes_correctly(fake_worker, monkeypatch):
     assert await provider.check_health() is True
 
 
-# ── Registry ───────────────────────────────────────────────────────
-
-
 def test_registry_exposes_every_category():
     """remote_provider_for must resolve every category we register."""
     from app.providers.remote import CATEGORY_REGISTRY, remote_provider_for
@@ -497,9 +482,6 @@ def test_registry_rejects_unknown_category():
 
     with pytest.raises(ValueError, match="No remote provider"):
         remote_provider_for("clairvoyance")
-
-
-# ── Async /load polling ─────────────────────────────────────────────
 
 
 def _make_polling_worker(
@@ -535,7 +517,7 @@ def _make_polling_worker(
 
 @pytest.mark.asyncio
 async def test_e2e_async_load_polling_succeeds(monkeypatch):
-    """FakeWorker reports loading→loading→ready; gateway completes load via polling."""
+    """FakeWorker reports loading, loading, ready; gateway completes load via polling."""
     from app.providers import remote as r
 
     monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0, 0.0, 0.0])
@@ -561,7 +543,7 @@ async def test_e2e_async_load_polling_succeeds(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_e2e_load_reissued_after_worker_restart(monkeypatch):
-    """Worker restarted mid-load reports idle → gateway posts /load again and waits for ready."""
+    """Worker restarted mid-load reports idle; gateway posts /load again and waits for ready."""
     from app.providers import remote as r
 
     monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0])
@@ -599,7 +581,7 @@ async def test_e2e_load_reissued_after_worker_restart(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_e2e_async_load_failure_propagates(monkeypatch):
-    """FakeWorker reports failed → gateway raises RuntimeError carrying error."""
+    """FakeWorker reports failed; gateway raises RuntimeError carrying the error."""
     from app.providers import remote as r
 
     monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.0])
@@ -624,7 +606,7 @@ async def test_e2e_async_load_failure_propagates(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_e2e_load_total_timeout(monkeypatch):
-    """FakeWorker stays in loading forever — gateway raises after _LOAD_TIMEOUT."""
+    """FakeWorker stays in loading forever; gateway raises after _LOAD_TIMEOUT."""
     from app.providers import remote as r
 
     monkeypatch.setattr(r, "_LOAD_POLL_BACKOFF", [0.05])
@@ -648,7 +630,7 @@ async def test_e2e_load_total_timeout(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_e2e_already_ready_returns_200_fast_path(monkeypatch):
-    """Worker reports model already loaded → /load returns 200 → gateway skips polling."""
+    """Worker reports model already loaded: /load returns 200, gateway skips polling."""
     from app.providers import remote as r
 
     fast = FastAPI()
@@ -677,7 +659,7 @@ async def test_e2e_already_ready_returns_200_fast_path(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_e2e_load_cancellation_during_polling(monkeypatch):
-    """Outer asyncio.wait_for cancels polling — gateway closes httpx client cleanly."""
+    """Outer asyncio.wait_for cancels polling; gateway closes httpx client cleanly."""
     import asyncio as _asyncio
 
     from app.providers import remote as r
@@ -699,7 +681,7 @@ async def test_e2e_load_cancellation_during_polling(monkeypatch):
         await _asyncio.wait_for(provider.load("/tmp"), timeout=0.2)
 
     assert not provider.is_loaded()
-    # httpx client must be closed → second load() rebuilds it without error.
+    # httpx client must be closed so a second load() rebuilds it without error.
     assert provider._client is None
 
 

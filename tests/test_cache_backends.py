@@ -126,7 +126,7 @@ async def test_contract_invalidate_all(backend: CacheBackend):
 async def test_contract_ttl_expiry(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10, "ttl_hours": 0}
     await backend.put("k", b"data", "m", cfg)
-    # ttl_hours=0 → already expired on read.
+    # ttl_hours=0: already expired on read.
     assert await backend.get("k") is None
 
 
@@ -171,9 +171,6 @@ async def test_contract_stats_global_shape(backend: CacheBackend):
     assert "m" in stats["per_model"]
 
 
-# ── Factory ─────────────────────────────────────────────────────────
-
-
 def test_factory_default_is_local(tmp_path):
     backend = make_cache_backend({
         "enabled": True,
@@ -202,7 +199,7 @@ def test_factory_redis_returns_redis_backend():
 
     backend = make_cache_backend({
         "backend": "redis",
-        "redis_url": "redis://localhost:6379/0",  # not connecting yet — only on initialize()
+        "redis_url": "redis://localhost:6379/0",  # not connecting yet, only on initialize()
     })
     assert isinstance(backend, RedisCacheBackend)
 
@@ -213,9 +210,6 @@ def test_factory_case_insensitive(tmp_path):
         "directory": str(tmp_path / "cache"),
     })
     assert isinstance(backend, LocalCacheBackend)
-
-
-# ── CacheManager façade ─────────────────────────────────────────────
 
 
 @pytest.mark.asyncio

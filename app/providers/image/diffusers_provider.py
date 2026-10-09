@@ -27,7 +27,7 @@ def _disable_caching_allocator_warmup() -> None:
     noop = lambda *_a, **_kw: None  # noqa: E731
     import importlib
 
-    # `from X import Y` creates a local binding — every re-importing module must be patched.
+    # `from X import Y` creates a local binding, so every re-importing module must be patched.
     targets = [
         ("diffusers.models.model_loading_utils", "_caching_allocator_warmup"),
         ("diffusers.models.modeling_utils", "_caching_allocator_warmup"),
@@ -116,7 +116,7 @@ def _maybe_enable_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
     free_mb = torch.cuda.mem_get_info()[0] / (1024 ** 2)
     if free_mb >= 3000:
         logger.info(
-            "VAE: %.0f MB free — full fp16 decode fits, skipping tiling for %s",
+            "VAE: %.0f MB free; full fp16 decode fits, skipping tiling for %s",
             free_mb, model_id,
         )
         return
@@ -131,7 +131,7 @@ def _maybe_enable_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
         pipe.vae.tile_latent_min_size = tile_size
 
     logger.info(
-        "VAE: %.0f MB free — tiling with tile=%d latents for %s",
+        "VAE: %.0f MB free; tiling with tile=%d latents for %s",
         free_mb, tile_size, model_id,
     )
 
@@ -257,7 +257,7 @@ class DiffusersImageProvider(ImageProvider):
             logger.info("Loaded refiner for %s", self.model_id)
 
         if self.config.model.get("warmup", True):
-            logger.info("Warming up %s …", self.model_id)
+            logger.info("Warming up %s...", self.model_id)
             await loop.run_in_executor(_GPU_EXECUTOR, self._warmup)
             logger.info("Warmup complete for %s", self.model_id)
 
@@ -390,7 +390,7 @@ class DiffusersImageProvider(ImageProvider):
         loras = defaults.pop("loras", None)
         textual_inversions = defaults.pop("textual_inversions", None)
         highres_fix = defaults.pop("highres_fix", None)
-        # `seed` is wire-format only — diffusers wants a torch.Generator. Build inside
+        # `seed` is wire-format only; diffusers wants a torch.Generator. Build inside
         # _gen() so the device matches CUDA context, and pop unconditionally because
         # strict pipelines (SD3, some FLUX variants) raise TypeError on stray `seed`.
         seed = defaults.pop("seed", None)
@@ -400,7 +400,7 @@ class DiffusersImageProvider(ImageProvider):
         refiner_switch_at = defaults.pop("refiner_switch_at", None)
         if refiner_switch_at is not None and self._refiner is None:
             raise ValueError(
-                "refiner_switch_at requires a refiner model — set "
+                "refiner_switch_at requires a refiner model: set "
                 "model.refiner_hub_id in the YAML for this worker"
             )
         input_image = self._decode_image(image_b64, mode="RGB") if image_b64 else None

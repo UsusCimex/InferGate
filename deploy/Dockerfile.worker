@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.6
-# Unified worker image — one Dockerfile for every model worker.
+# Unified worker image: one Dockerfile for every model worker.
 #
 # Parameterised via build-args; driven from `deploy/docker-bake.hcl` (batch
 # builds, matrix, registry push) or `deploy/docker-compose.yml` (per-service
-# local rebuilds). Adding a new model does NOT require editing this file —
+# local rebuilds). Adding a new model does NOT require editing this file:
 # add one tuple to the bake matrix and a thin stanza to compose.
 
 ARG BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
@@ -12,9 +12,9 @@ FROM ${BASE_IMAGE}
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Optional apt packages (space-separated). Examples:
-#   build-essential  → bitsandbytes/triton JIT needs a C compiler
-#   git              → for `pip install git+https://...` entries
-#   gcc              → for spacy and other native-extension builds
+#   build-essential  bitsandbytes/triton JIT needs a C compiler
+#   git              for `pip install git+https://...` entries
+#   gcc              for spacy and other native-extension builds
 ARG APT_PACKAGES=""
 RUN if [ -n "${APT_PACKAGES}" ]; then \
         apt-get update && \
@@ -24,7 +24,7 @@ RUN if [ -n "${APT_PACKAGES}" ]; then \
 
 WORKDIR /app
 
-# uv defaults to a 30s HTTP timeout — too tight for large GPU wheels (torch ~2 GB,
+# uv defaults to a 30s HTTP timeout, too tight for large GPU wheels (torch ~2 GB,
 # ctranslate2 ~37 MB, faster-whisper et al) when N workers build in parallel and
 # share the host's outbound bandwidth. 600s tolerates slow / saturated links.
 ENV UV_HTTP_TIMEOUT=600
@@ -38,7 +38,7 @@ ARG WORKER_REQUIREMENTS
 COPY ${WORKER_REQUIREMENTS} requirements/worker.txt
 
 # Optional post-install step (e.g. `python -m spacy download en_core_web_sm`).
-# Defaults to `true` — a POSIX no-op.
+# Defaults to `true`, a POSIX no-op.
 ARG POST_INSTALL="true"
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --no-cache-dir --system -r requirements/worker.txt && \
@@ -50,13 +50,13 @@ RUN mkdir -p /app/models
 
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility
-# PYTORCH_CUDA_ALLOC_CONF intentionally NOT set here — expandable_segments
+# PYTORCH_CUDA_ALLOC_CONF intentionally NOT set here: expandable_segments
 # breaks enable_model_cpu_offload on Blackwell/WSL2. Override per-deployment
 # via docker-compose environment if a specific allocator config is needed.
 
 EXPOSE 8001
 
-# Some bases (e.g. vllm/vllm-openai) set an ENTRYPOINT that wraps CMD — reset it.
+# Some bases (e.g. vllm/vllm-openai) set an ENTRYPOINT that wraps CMD; reset it.
 ENTRYPOINT []
 CMD ["uvicorn", "app.worker:app", "--host", "0.0.0.0", "--port", "8001", \
      "--workers", "1", "--no-access-log"]

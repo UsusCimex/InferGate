@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @register_provider
 class CLIP4ClipProvider(VideoEmbeddingProvider):
-    """CLIP4Clip joint text+video embeddings — 12 evenly-spaced frames, mean-pooled into 512-d."""
+    """CLIP4Clip joint text+video embeddings: 12 evenly-spaced frames, mean-pooled into 512-d."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -42,7 +42,7 @@ class CLIP4ClipProvider(VideoEmbeddingProvider):
             except Exception as e:
                 # CLIP4Clip checkpoints sometimes ship only model weights without a processor.
                 logger.info(
-                    "Processor missing on %s (%s) — falling back to %s",
+                    "Processor missing on %s (%s), falling back to %s",
                     hub_id, e, self._fallback_processor_id,
                 )
                 processor = CLIPProcessor.from_pretrained(

@@ -32,5 +32,5 @@ queue:
 
 metadata:
   license: "Tencent Hunyuan Community (non-commercial)"
-  description: "Hunyuan-DiT v1.2 — 1.5B DiT, native Chinese + English prompts"
+  description: "Hunyuan-DiT v1.2: 1.5B DiT, native Chinese + English prompts"
   tags: ["dit", "multilingual", "chinese", "tencent"]

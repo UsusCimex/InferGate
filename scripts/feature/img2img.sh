@@ -2,19 +2,18 @@
 # Feature test: img2img + inpainting via base64 on sdxl-base.
 #
 # What this verifies end-to-end (with a real UNet, not a fake provider):
-#   A) baseline text2img          — standard 512×512 generation
-#   B) img2img (denoising=0.5)    — uses A as the `image` input
-#   C) inpaint with centred mask  — uses A + a programmatic mask
-#   D) repeat of B (cache hit)    — same seed, same input → byte-equal
-#   E) error path                 — mask without image → HTTP 422
+#   A) baseline text2img          - standard 512x512 generation
+#   B) img2img (denoising=0.5)    - uses A as the `image` input
+#   C) inpaint with centred mask  - uses A + a programmatic mask
+#   D) repeat of B (cache hit)    - same seed, same input: byte-equal
+#   E) error path                 - mask without image: HTTP 422
 #
-# Scheduler (dpm++_2m) + seed are pinned across runs so B ≡ D is
-# deterministic — this doubles as a regression check for the seed-fix
-# (generator now actually drives reproducibility) and the img2img pipe
-# cache (AutoPipelineForImage2Image.from_pipe reuse).
+# Scheduler (dpm++_2m) + seed are pinned across runs so B == D is
+# deterministic; this also checks that the seed drives the generator and
+# that the img2img pipe is cached (AutoPipelineForImage2Image.from_pipe reuse).
 #
-# Mask construction: a 256×256 grayscale PNG with a white circle, built
-# client-side (pure PIL). Using `sdxl-base` 512×512 avoids the 1024 bucket
+# Mask construction: a 256x256 grayscale PNG with a white circle, built
+# client-side (pure PIL). Using `sdxl-base` 512x512 avoids the 1024 bucket
 # stress on 12GB cards; both A and the masks are resized internally if
 # they don't match.
 #
@@ -47,21 +46,20 @@ for c in python3 python py; do
 done
 [[ -n "$PY" ]] || { err "python required (for base64-encoding the input image and building the mask)"; exit 1; }
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 ok "Env flags set"
 
-log "Rebuilding gateway + worker (schema/provider changed) …"
+log "Rebuilding gateway + worker..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
-# ── Helper: POST /v1/images/generations with body in a file ───────────
-# (request bodies get long once base64 images land in there — a file is
-# less fragile than stitching with printf or shell escaping.)
+# POST /v1/images/generations with the body in a file: bodies with base64
+# images get long, and a file is less fragile than printf or shell escaping.
 fire_with_body_file() {
     local label="$1" body_file="$2" out="$3"
     log "[$label]"
@@ -85,9 +83,9 @@ fire_with_body_file() {
 
     local sz
     sz=$(wc -c < "$out" 2>/dev/null || echo 0)
-    echo "  HTTP $code, ${elapsed}s → $out ($sz bytes)"
+    echo "  HTTP $code, ${elapsed}s: $out ($sz bytes)"
     if [[ "$code" != "200" ]]; then
-        echo "  ── Response body ─────────────────────────────────────"
+        echo "  --- Response body ---"
         sed 's/^/  /' "$resp"
         echo
     fi
@@ -102,7 +100,7 @@ OUT_B=feature_img2img_B_img2img.png
 OUT_C=feature_img2img_C_inpaint.png
 OUT_D=feature_img2img_D_cache.png
 
-# ── (A) Baseline text2img ────────────────────────────────────────────
+# (A) Baseline text2img
 BODY_A=$(mktemp --suffix=.json)
 printf '{"model":"%s","prompt":"%s",%s}' "$MODEL_ID" "$PROMPT_BASE" "$COMMON" > "$BODY_A"
 fire_with_body_file A "$BODY_A" "$OUT_A"
@@ -110,14 +108,14 @@ rm -f "$BODY_A"
 CODE_A=$LAST_CODE
 [[ "$CODE_A" == "200" ]] || { err "baseline failed (HTTP $CODE_A); inspect $OUT_A"; exit 1; }
 
-# ── Build base64 payload of A + a centred-circle mask ────────────────
-# Image: pure stdlib base64 on the host (no Pillow needed — we're just
+# Build base64 payload of A + a centred-circle mask
+# Image: pure stdlib base64 on the host (no Pillow needed; we're just
 # wrapping an existing PNG file's bytes).
 # Mask: generated inside the worker container via `docker compose exec`
 # because Pillow is a transitive dep of diffusers there but may not be
 # installed on the host. Keeps the script host-Pillow-free on Windows/
 # macOS devboxes where `pip install Pillow` on system Python is awkward.
-log "Encoding baseline image (host stdlib) and building mask (inside worker) …"
+log "Encoding baseline image (host stdlib) and building mask (inside worker)..."
 IMAGE_B64=$("$PY" -c "
 import base64, sys
 sys.stdout.write(base64.b64encode(open(sys.argv[1], 'rb').read()).decode())
@@ -141,24 +139,21 @@ ok "payloads built (image=${#IMAGE_B64}B base64, mask=${#MASK_B64}B base64)"
 
 # Persist base64 payloads to tempfiles so mkbody can reference them by
 # path rather than embedding them in a python -c argv. A 400KB IMAGE_B64
-# inlined as `-c '… """$IMAGE_B64""" …'` blows past ARG_MAX (~128KB on
+# inlined as `-c '... """$IMAGE_B64""" ...'` blows past ARG_MAX (~128KB on
 # Linux; similar on Windows/Git-bash). File I/O sidesteps that entirely.
 IMAGE_PATH=$(mktemp --suffix=.b64)
 MASK_PATH=$(mktemp --suffix=.b64)
 printf '%s' "$IMAGE_B64" > "$IMAGE_PATH"
 printf '%s' "$MASK_B64"  > "$MASK_PATH"
-# Note: we intentionally keep IMAGE_B64/MASK_B64 in-scope after writing
-# to disk — the error-path check (E) still references MASK_B64 inline,
-# and a 400KB shell var has no measurable overhead for a script that
-# already spawned docker exec. Earlier versions unset these and broke
-# step E with `set -u` on unbound variable.
+# Keep IMAGE_B64/MASK_B64 set after writing them to disk: the error-path
+# check (E) still uses MASK_B64 inline, and an unset var fails under `set -u`.
 
 cleanup_payloads() { rm -f "$IMAGE_PATH" "$MASK_PATH"; }
 trap cleanup_payloads EXIT
 
 # Helper to materialise a JSON request body. Paths to the base64
 # payloads are passed as short argv (a few dozen bytes), and Python
-# reads the actual content from disk — this keeps argv well under ARG_MAX.
+# reads the actual content from disk; this keeps argv well under ARG_MAX.
 mkbody() {
     local out="$1" prompt="$2" mode="$3"
     MODEL_ID="$MODEL_ID" PROMPT="$prompt" MODE="$mode" \
@@ -186,23 +181,23 @@ with open(os.environ['OUT'], 'w') as f:
 PYEOF
 }
 
-# ── (B) img2img ──────────────────────────────────────────────────────
+# (B) img2img
 BODY_B=$(mktemp --suffix=.json); mkbody "$BODY_B" "$PROMPT_EDIT" img2img
 fire_with_body_file B "$BODY_B" "$OUT_B"; rm -f "$BODY_B"
 CODE_B=$LAST_CODE; TIME_B_FIRST=$LAST_TIME
 
-# ── (C) inpaint ──────────────────────────────────────────────────────
+# (C) inpaint
 BODY_C=$(mktemp --suffix=.json); mkbody "$BODY_C" "$PROMPT_INPAINT" inpaint
 fire_with_body_file C "$BODY_C" "$OUT_C"; rm -f "$BODY_C"
 CODE_C=$LAST_CODE
 
-# ── (D) img2img repeat (cache hit / determinism) ─────────────────────
+# (D) img2img repeat (cache hit / determinism)
 BODY_D=$(mktemp --suffix=.json); mkbody "$BODY_D" "$PROMPT_EDIT" img2img
 fire_with_body_file D "$BODY_D" "$OUT_D"; rm -f "$BODY_D"
 CODE_D=$LAST_CODE; TIME_D_SECOND=$LAST_TIME
 
 echo
-echo "─── Feature applied? ─────────────────────────────────────"
+echo "--- Feature applied? ---"
 fail=0
 
 for L in B C D; do
@@ -215,46 +210,45 @@ for L in B C D; do
 done
 (( fail )) && exit 1
 
-# A ≠ B: img2img with a different prompt + denoising=0.5 must modify A
+# A != B: img2img with a different prompt + denoising=0.5 must modify A
 if cmp -s "$OUT_A" "$OUT_B"; then
-    err "A ≡ B byte-identical — img2img path didn't engage"
+    err "A == B byte-identical: img2img path didn't engage"
     fail=1
 else
-    ok "A ≠ B — img2img modified the baseline"
+    ok "A != B: img2img modified the baseline"
 fi
 
-# A ≠ C: inpaint under a centred mask must differ from A
+# A != C: inpaint under a centred mask must differ from A
 if cmp -s "$OUT_A" "$OUT_C"; then
-    err "A ≡ C byte-identical — inpaint path didn't engage"
+    err "A == C byte-identical: inpaint path didn't engage"
     fail=1
 else
-    ok "A ≠ C — inpaint modified the masked region"
+    ok "A != C: inpaint modified the masked region"
 fi
 
-# B ≠ C: different prompt + mask → must differ too
+# B != C: different prompt + mask, so they must differ too
 if cmp -s "$OUT_B" "$OUT_C"; then
-    err "B ≡ C byte-identical — pipeline selection is indistinguishable"
+    err "B == C byte-identical: pipeline selection is indistinguishable"
     fail=1
 else
-    ok "B ≠ C — img2img and inpaint produce different results"
+    ok "B != C: img2img and inpaint produce different results"
 fi
 
-# B ≡ D: same seed, same inputs, same adapter state → byte-equal
+# B == D: same seed, same inputs, same adapter state, so byte-equal
 if cmp -s "$OUT_B" "$OUT_D"; then
-    ok "B ≡ D — img2img is deterministic with fixed seed"
+    ok "B == D: img2img is deterministic with fixed seed"
 else
-    err "B ≠ D — seed did not drive reproducibility (regression on seed-fix)"
+    err "B != D: seed did not drive reproducibility"
     fail=1
 fi
 
 if (( TIME_B_FIRST > 0 && TIME_D_SECOND <= TIME_B_FIRST * 2 )); then
-    ok "repeat latency: ${TIME_D_SECOND}s ≈ first-load ${TIME_B_FIRST}s (img2img pipe cached)"
+    ok "repeat latency: ${TIME_D_SECOND}s ~ first-load ${TIME_B_FIRST}s (img2img pipe cached)"
 else
-    log "repeat latency: ${TIME_D_SECOND}s vs ${TIME_B_FIRST}s — noisy, not a failure"
+    log "repeat latency: ${TIME_D_SECOND}s vs ${TIME_B_FIRST}s; noisy, not a failure"
 fi
 
-# ── (E) Error path: mask without image → 422 ─────────────────────────
-log "[E] Error path: mask without image → HTTP 422 (schema guard)"
+log "[E] Error path: mask without image, expect HTTP 422 (schema guard)"
 RESP=$(mktemp --suffix=.json)
 CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
     -X POST http://localhost:8000/v1/images/generations \
@@ -271,12 +265,12 @@ fi
 rm -f "$RESP"
 
 echo
-(( fail )) && { err "FAIL — review output above."; exit 1; }
+(( fail )) && { err "FAIL: review output above."; exit 1; }
 
-ok "PASS — img2img + inpaint + determinism + schema-guard all green."
+ok "PASS: img2img + inpaint + determinism + schema-guard all green."
 echo
 echo "Open side-by-side to inspect:"
-echo "  $OUT_A — baseline (text2img)"
-echo "  $OUT_B — img2img with prompt '$PROMPT_EDIT' (denoising=0.5)"
-echo "  $OUT_C — inpaint with centred circle mask, prompt '$PROMPT_INPAINT'"
-echo "  $OUT_D — repeat of B (byte-equal to B; determinism check)"
+echo "  $OUT_A: baseline (text2img)"
+echo "  $OUT_B: img2img with prompt '$PROMPT_EDIT' (denoising=0.5)"
+echo "  $OUT_C: inpaint with centred circle mask, prompt '$PROMPT_INPAINT'"
+echo "  $OUT_D: repeat of B (byte-equal to B; determinism check)"

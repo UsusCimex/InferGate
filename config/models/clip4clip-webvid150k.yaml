@@ -22,5 +22,5 @@ queue:
 
 metadata:
   license: MIT
-  description: "CLIP4Clip ViT-B/32 — text+video embeddings (12-frame mean pool, 512-d, English)"
+  description: "CLIP4Clip ViT-B/32: text+video embeddings (12-frame mean pool, 512-d, English)"
   tags: ["embedding", "video", "clip4clip", "multimodal"]

@@ -52,7 +52,7 @@ async def generate_images(
     if body.scheduler is not None:
         params["scheduler"] = body.scheduler
     if body.loras is not None:
-        # Serialise to dicts — LoraSpec models don't auto-serialise across the httpx hop.
+        # Serialise to dicts: LoraSpec models don't auto-serialise across the httpx hop.
         params["loras"] = [lora.model_dump() for lora in body.loras]
     if body.textual_inversions is not None:
         params["textual_inversions"] = [ti.model_dump() for ti in body.textual_inversions]
@@ -158,7 +158,7 @@ async def edit_images(
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
 ):
-    """Multipart img2img/inpaint — delegates to the same path as /v1/images/generations."""
+    """Multipart img2img/inpaint: delegates to the same path as /v1/images/generations."""
     image_bytes = await read_with_limit(image, limits.max_image_mb * 1024 * 1024)
     if not image_bytes:
         return JSONResponse({"error": {"message": "Empty image file"}}, status_code=400)

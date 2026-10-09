@@ -72,7 +72,7 @@ class GpuScheduler:
         model_id: str,
         priority: Any,
         coro: Awaitable[Any],
-        timeout: float,  # noqa: ASYNC109 — SLO-level deadline, not a cancel token
+        timeout: float,  # noqa: ASYNC109 - SLO-level deadline, not a cancel token
     ) -> Any:
         """Enqueue `coro` for `model_id` with `priority`; higher priority jumps ahead."""
         async with self._lock:
@@ -132,7 +132,7 @@ class GpuScheduler:
                         queue.waiters.pop(i)
                         heapq.heapify(queue.waiters)
                         raise
-                # Slot was granted concurrently with cancellation — pass it on.
+                # Slot was granted concurrently with cancellation; pass it on.
                 self._handoff_locked(queue)
             raise
 

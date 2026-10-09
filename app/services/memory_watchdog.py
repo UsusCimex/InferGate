@@ -94,7 +94,7 @@ class MemoryWatchdog:
             if not stats:
                 continue
             worker_stats[model_id] = stats
-            # Workers on one host share a GPU — max of reported totals is the physical total.
+            # Workers on one host share a GPU, so the max of reported totals is the physical total.
             agg_used = max(agg_used, stats.get("vram_used_mb", 0))
             agg_total = max(agg_total, stats.get("vram_total_mb", 0))
 
@@ -112,7 +112,7 @@ class MemoryWatchdog:
         # on the CPU hold no VRAM to free.
         if summary["vram_over_threshold"] and gpu_models > 1:
             logger.warning(
-                "MemoryWatchdog: VRAM %d/%d MB (%.0f%%) — over threshold %.0f%%; evicting LRU",
+                "MemoryWatchdog: VRAM %d/%d MB (%.0f%%) over threshold %.0f%%; evicting LRU",
                 agg_used, agg_total, 100 * agg_used / agg_total,
                 100 * self._vram_threshold,
             )
@@ -129,11 +129,11 @@ class MemoryWatchdog:
                     "MemoryWatchdog: VRAM over threshold but all loaded models are pinned or busy"
                 )
 
-        # Host RAM is advisory — the watchdog owns no host processes.
+        # Host RAM is advisory: the watchdog owns no host processes.
         if ram_total > 0 and ram_used >= ram_total * self._ram_threshold:
             summary["ram_over_threshold"] = True
             logger.warning(
-                "MemoryWatchdog: host RAM %d/%d MB (%.0f%%) — over threshold %.0f%%; "
+                "MemoryWatchdog: host RAM %d/%d MB (%.0f%%) over threshold %.0f%%; "
                 "host-level OOM risk",
                 ram_used, ram_total, 100 * ram_used / ram_total,
                 100 * self._ram_threshold,

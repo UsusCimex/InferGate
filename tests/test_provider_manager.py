@@ -75,8 +75,6 @@ async def test_list_models_endpoint(client):
     assert len(data["data"]) == 9
 
 
-# ── Hot-reload coverage ──────────────────────────────────────────────
-
 def _make_test_config(
     model_id: str = "test-image",
     display_name: str = "test-image",
@@ -123,7 +121,7 @@ async def test_reload_swaps_provider_on_change(services):
 
 @pytest.mark.asyncio
 async def test_reload_preserves_loaded_state(services):
-    """A provider that was loaded stays loaded after reload — operators
+    """A provider that was loaded stays loaded after reload; operators
     don't want `systemctl restart` just to edit a display_name."""
     manager = services["manager"]
     await manager.ensure_loaded("test-image")
@@ -139,7 +137,7 @@ async def test_reload_preserves_loaded_state(services):
 
 @pytest.mark.asyncio
 async def test_reload_disables_and_unregisters(services):
-    """enabled: false in YAML → model disappears from the registry and
+    """enabled: false in YAML removes the model from the registry and
     from /v1/models after the next reload."""
     manager = services["manager"]
     await manager.ensure_loaded("test-image")
@@ -178,7 +176,7 @@ async def test_reload_disabled_new_model_is_noop(services):
 @pytest.mark.asyncio
 async def test_reload_bad_provider_class_keeps_old(services):
     """Typo in provider_class on reload must not lose the existing
-    provider — the operator should be able to fix the YAML and try again."""
+    provider; the operator should be able to fix the YAML and try again."""
     manager = services["manager"]
     before = manager.get("test-image")
     bad_config = _make_test_config(provider_class="DoesNotExist")
@@ -200,11 +198,11 @@ async def test_scheduler_update_concurrency(services):
 @pytest.mark.asyncio
 async def test_byte_budget_lru_evicts_on_oversubscription(services):
     """Loading a model that would push the sum of declared vram_mb past
-    the budget evicts the LRU until it fits — even if the count cap is
+    the budget evicts the LRU until it fits, even if the count cap is
     nowhere near its limit."""
     manager = services["manager"]
-    # Each fixture model declares 1000 MB. Budget = 2500 MB with 0 headroom
-    # → 2 models fit (2 * 1000 = 2000 ≤ 2500), a third triggers eviction
+    # Each fixture model declares 1000 MB. Budget = 2500 MB with 0 headroom,
+    # so 2 models fit (2 * 1000 = 2000 <= 2500), a third triggers eviction
     # even though max_loaded (=3) hasn't been reached.
     manager._max_vram_budget_mb = 2500
     manager._vram_headroom_mb = 0
@@ -213,7 +211,7 @@ async def test_byte_budget_lru_evicts_on_oversubscription(services):
     await manager.ensure_loaded("test-text")
     assert set(manager.loaded_models()) == {"test-image", "test-text"}
 
-    # Third load: 3 * 1000 > 2500 → byte-budget kicks in, evicts LRU
+    # Third load: 3 * 1000 > 2500, so the byte budget evicts the LRU
     await manager.ensure_loaded("test-tts")
     loaded = set(manager.loaded_models())
     assert loaded == {"test-text", "test-tts"}
@@ -248,10 +246,10 @@ async def test_byte_budget_never_evicts_a_cpu_model(services):
 
 @pytest.mark.asyncio
 async def test_byte_budget_respects_headroom(services):
-    """vram_headroom_mb carves a gap out of the top — pinned + active
+    """vram_headroom_mb carves a gap out of the top: pinned + active
     usage may not push past (budget - headroom)."""
     manager = services["manager"]
-    # Budget 3000, headroom 500 → effective 2500 → 2 models fit
+    # Budget 3000, headroom 500: effective 2500, so 2 models fit
     manager._max_vram_budget_mb = 3000
     manager._vram_headroom_mb = 500
 
@@ -264,7 +262,7 @@ async def test_byte_budget_respects_headroom(services):
 
 @pytest.mark.asyncio
 async def test_byte_budget_raises_when_all_pinned(services):
-    """Every model pinned + new load doesn't fit → InsufficientResourcesError.
+    """Every model pinned + new load doesn't fit: InsufficientResourcesError.
     Gateway turns this into HTTP 503 (instead of letting CUDA OOM take out
     the worker on a real system)."""
     from app.services.provider_manager import InsufficientResourcesError
@@ -328,7 +326,7 @@ async def test_a_load_gives_up_when_the_busy_model_outlasts_its_queue_timeout(se
 
 @pytest.mark.asyncio
 async def test_byte_budget_disabled_falls_back_to_count(services):
-    """max_vram_budget_mb=0 → old count-based LRU only."""
+    """max_vram_budget_mb=0: count-based LRU only."""
     manager = services["manager"]
     manager._max_vram_budget_mb = 0  # disabled
     manager._max_loaded = 2  # hard count cap
@@ -344,8 +342,8 @@ async def test_byte_budget_disabled_falls_back_to_count(services):
 
 @pytest.mark.asyncio
 async def test_validate_config_rejects_pinned_over_budget():
-    """Pinning so many models that their declared vram sum ≥ budget
-    raises ConfigError at startup — operator must fix before serving."""
+    """Pinning so many models that their declared vram sum >= budget
+    raises ConfigError at startup; operator must fix before serving."""
     from app.services.provider_manager import ConfigError, ProviderManager
 
     manager = ProviderManager(
@@ -401,15 +399,15 @@ async def test_lru_skips_model_with_active_request(services):
         # Loading test-tts would evict LRU non-active = test-text
         # (skipping test-image because it's busy).
         await manager.ensure_loaded("test-tts")
-        assert manager.get("test-image").is_loaded()  # busy — NOT evicted
-        assert not manager.get("test-text").is_loaded()  # LRU non-busy → evicted
+        assert manager.get("test-image").is_loaded()  # busy, NOT evicted
+        assert not manager.get("test-text").is_loaded()  # LRU non-busy, evicted
         assert manager.get("test-tts").is_loaded()
 
 
 @pytest.mark.asyncio
 async def test_lru_falls_back_to_pinned_when_all_busy(services):
-    """All non-pinned loaded models are active → no victim, warning path.
-    Matches the all-pinned branch — returns None, caller decides."""
+    """All non-pinned loaded models are active: no victim, warning path.
+    Matches the all-pinned branch: returns None, caller decides."""
     manager = services["manager"]
     await manager.ensure_loaded("test-image")
     await manager.ensure_loaded("test-text")
@@ -442,7 +440,7 @@ async def test_provider_get_stats_default(services):
     assert stats["loaded"] is True
     assert stats["declared_vram_mb"] == 1000  # from _make_model_config
     assert stats["vram_used_mb"] == 1000  # declared == used when loaded
-    # Unloaded → zero
+    # Unloaded: zero
     await manager.unload_model("test-image")
     stats = await manager.get("test-image").get_stats()
     assert stats["vram_used_mb"] == 0
@@ -451,14 +449,12 @@ async def test_provider_get_stats_default(services):
 @pytest.mark.asyncio
 async def test_scheduler_update_concurrency_registers_unknown(services):
     """update_concurrency on an unknown model_id transparently registers
-    the queue — avoids a race when reload_model creates the model and
+    the queue to avoid a race when reload_model creates the model and
     the callback calls update_concurrency before register_model has run."""
     scheduler = services["scheduler"]
     scheduler.update_concurrency("brand-new", 3)
     assert scheduler._queues["brand-new"].max_concurrent == 3
 
-
-# ── Operator introspection ──────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_status_snapshot_reports_loaded_state(services):
@@ -582,8 +578,6 @@ async def test_admin_preview_load_unknown_model_404(client):
     assert resp.status_code == 404
 
 
-# ── Remote-provider reload path ──────────────────────────────────────
-
 class _FakeRemoteProvider:
     """Records reload() calls without hitting HTTP."""
     def __init__(self, config):
@@ -610,7 +604,7 @@ class _FakeRemoteProvider:
 
 @pytest.mark.asyncio
 async def test_reload_remote_calls_worker_endpoint(services):
-    """Connected remote + unchanged worker_url → reload_model routes via existing.reload()."""
+    """Connected remote + unchanged worker_url: reload_model routes via existing.reload()."""
     manager = services["manager"]
 
     remote_cfg = _make_test_config()
@@ -623,7 +617,7 @@ async def test_reload_remote_calls_worker_endpoint(services):
     changed = await manager.reload_model(new_cfg)
     assert changed is True
 
-    # Same provider instance — not replaced with a fresh RemoteProvider
+    # Same provider instance, not replaced with a fresh RemoteProvider
     assert manager.get("test-image") is fake
     # Worker /reload was called exactly once with the new config
     assert len(fake.reload_calls) == 1
@@ -696,11 +690,9 @@ async def test_worker_monitor_drops_worker_that_restarted_without_its_model(serv
     assert "test-image" not in manager.loaded_models()
 
 
-# ── Eviction planning / admission control ───────────────────────────
-
 @pytest.mark.asyncio
 async def test_plan_eviction_empty_when_already_fits(services):
-    """Nothing loaded → empty plan, never None."""
+    """Nothing loaded: empty plan, never None."""
     manager = services["manager"]
     manager._max_vram_budget_mb = 5000
     manager._vram_headroom_mb = 0
@@ -709,13 +701,13 @@ async def test_plan_eviction_empty_when_already_fits(services):
 
 @pytest.mark.asyncio
 async def test_plan_eviction_returns_ordered_victims(services):
-    """Plan is the LRU walk — oldest loaded appears first."""
+    """Plan is the LRU walk: oldest loaded appears first."""
     manager = services["manager"]
     manager._max_vram_budget_mb = 2500
     manager._vram_headroom_mb = 0
     await manager.ensure_loaded("test-image")
     await manager.ensure_loaded("test-text")
-    # Incoming 1000 MB + currently 2000 MB → need to free 500 MB → evict one.
+    # Incoming 1000 MB + currently 2000 MB: need to free 500 MB, so evict one.
     plan = manager._plan_eviction(1000)
     assert plan == ["test-image"]
 
@@ -728,14 +720,14 @@ async def test_plan_eviction_accumulates_until_fits(services):
     manager._vram_headroom_mb = 0
     await manager.ensure_loaded("test-image")
     await manager.ensure_loaded("test-text")
-    # Incoming 2500 MB → need to free both current 1000 MB slots to fit.
+    # Incoming 2500 MB: need to free both current 1000 MB slots to fit.
     plan = manager._plan_eviction(2500)
     assert plan == ["test-image", "test-text"]
 
 
 @pytest.mark.asyncio
 async def test_plan_eviction_infeasible_when_all_pinned(services):
-    """Every loaded model pinned and still wouldn't fit → None."""
+    """Every loaded model pinned and still wouldn't fit: None."""
     manager = services["manager"]
     manager._max_vram_budget_mb = 1500
     manager._vram_headroom_mb = 0
@@ -746,7 +738,7 @@ async def test_plan_eviction_infeasible_when_all_pinned(services):
 
 @pytest.mark.asyncio
 async def test_plan_eviction_infeasible_when_all_active(services):
-    """In-flight models are excluded from plan; no other candidates → None."""
+    """In-flight models are excluded from plan; no other candidates: None."""
     manager = services["manager"]
     manager._max_vram_budget_mb = 1500
     manager._vram_headroom_mb = 0
@@ -765,15 +757,13 @@ async def test_plan_respects_category_reservation_until_forced(services):
     manager._vram_headroom_mb = 0
     await manager.ensure_loaded("test-text")
     await manager.ensure_loaded("test-image")
-    # 1000 incoming → one slot is enough. Pass 1 finds test-image
+    # 1000 incoming: one slot is enough. Pass 1 finds test-image
     # (reservation on text skips it), plan = [test-image].
     assert manager._plan_eviction(1000) == ["test-image"]
-    # 2500 incoming → both slots must go. Reservation bends in pass 2
+    # 2500 incoming: both slots must go. Reservation bends in pass 2
     # when no alternative remains. Plan keeps LRU order.
     assert manager._plan_eviction(2500) == ["test-image", "test-text"]
 
-
-# ── Category reservations (QoS) ──────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_category_reservation_protects_last_member(services):
@@ -783,7 +773,7 @@ async def test_category_reservation_protects_last_member(services):
     manager._category_reservations = {"text": 1}
     manager._max_loaded = 2
 
-    await manager.ensure_loaded("test-text")   # oldest — normally LRU target
+    await manager.ensure_loaded("test-text")   # oldest, normally LRU target
     await manager.ensure_loaded("test-image")  # would be the next victim
 
     await manager.ensure_loaded("test-tts")    # forces eviction
@@ -806,7 +796,7 @@ async def test_category_reservation_violated_when_no_alternative(services):
     manager._pinned.add("test-image")  # image cannot be touched
 
     await manager.ensure_loaded("test-tts")
-    # No alternative → text evicted despite reservation.
+    # No alternative: text evicted despite reservation.
     assert not manager.get("test-text").is_loaded()
     assert manager.get("test-image").is_loaded()
     assert manager.get("test-tts").is_loaded()
@@ -814,8 +804,8 @@ async def test_category_reservation_violated_when_no_alternative(services):
 
 @pytest.mark.asyncio
 async def test_category_reservation_allows_eviction_above_floor(services):
-    """Reservation of 1 does not protect the second+ member — only the
-    last one. Two text models loaded → evicting the older one still
+    """Reservation of 1 does not protect the second+ member, only the
+    last one. With two text models loaded, evicting the older one still
     leaves reservation satisfied."""
     manager = services["manager"]
     manager._category_reservations = {"image": 1}
@@ -848,7 +838,7 @@ async def test_category_reservation_empty_dict_is_noop(services):
     await manager.ensure_loaded("test-image")
     await manager.ensure_loaded("test-text")
     await manager.ensure_loaded("test-tts")
-    # Plain LRU → image (oldest) evicted.
+    # Plain LRU: image (oldest) evicted.
     assert not manager.get("test-image").is_loaded()
     assert manager.get("test-text").is_loaded()
     assert manager.get("test-tts").is_loaded()
@@ -856,7 +846,7 @@ async def test_category_reservation_empty_dict_is_noop(services):
 
 @pytest.mark.asyncio
 async def test_reload_remote_falls_back_on_worker_error(services):
-    """Worker /reload failure → recreate gateway-side provider so model stays registered."""
+    """Worker /reload failure: recreate gateway-side provider so model stays registered."""
     manager = services["manager"]
 
     class _FailingRemote(_FakeRemoteProvider):

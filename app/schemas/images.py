@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class HighresFixSpec(BaseModel):
-    """Two-pass high-resolution generation spec (base → upscale → img2img refine)."""
+    """Two-pass high-resolution generation spec: base, upscale, then img2img refine."""
     model_config = ConfigDict(extra="forbid")
 
     scale: float = Field(2.0, gt=1.0, le=4.0)
@@ -23,7 +23,7 @@ class TextualInversionSpec(BaseModel):
 
 
 class LoraSpec(BaseModel):
-    """LoRA adapter descriptor — repo id plus activation weight."""
+    """LoRA adapter descriptor: repo id plus activation weight."""
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(..., pattern=r"^[\w.-]+/[\w.-]+$", max_length=200)

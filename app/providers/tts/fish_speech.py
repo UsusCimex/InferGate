@@ -86,7 +86,7 @@ class FishSpeechTtsProvider(TtsProvider):
         import os
         import tempfile
 
-        # Fish-Speech expects a filesystem path, not raw bytes — stage to temp.
+        # Fish-Speech expects a filesystem path, not raw bytes; stage to temp.
         ref_path: str | None = None
         if ref_audio is not None:
             suffix = "." + ref_filename.rsplit(".", 1)[-1]
@@ -115,7 +115,7 @@ class FishSpeechTtsProvider(TtsProvider):
             if kwargs:
                 raise ValueError(
                     "fish-speech model is call-style and cannot receive "
-                    "reference_audio/reference_text — upgrade fish_speech to "
+                    "reference_audio/reference_text; upgrade fish_speech to "
                     "a release whose TTS exposes a synthesize() method"
                 )
             return self._model(text)

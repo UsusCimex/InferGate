@@ -71,12 +71,12 @@ async def test_image_cache_with_seed(client):
         "seed": 42,
         "size": "256x256",
     }
-    # First request — MISS
+    # First request: MISS
     resp1 = await client.post("/v1/images/generations", json=payload)
     assert resp1.status_code == 200
     assert resp1.headers["x-infergate-cache"] == "MISS"
 
-    # Second request — HIT
+    # Second request: HIT
     resp2 = await client.post("/v1/images/generations", json=payload)
     assert resp2.status_code == 200
     assert resp2.headers["x-infergate-cache"] == "HIT"
@@ -89,7 +89,7 @@ async def test_image_no_cache_without_seed(client):
         json={"model": "test-image", "prompt": "Test"},
     )
     assert resp.status_code == 200
-    # seed_only strategy — no seed means no cache
+    # seed_only strategy: no seed means no cache
     assert resp.headers["x-infergate-cache"] == "DISABLED"
 
 
@@ -136,14 +136,14 @@ async def test_mask_without_image_is_rejected(client):
     )
     assert resp.status_code == 422
     body = resp.json()
-    # Pydantic validation error — message should mention the mask/image invariant
+    # Pydantic validation error: message should mention the mask/image invariant
     detail = str(body)
     assert "mask" in detail and "image" in detail
 
 
 @pytest.mark.asyncio
 async def test_image_invalid_base64_returns_400_from_worker(client):
-    """Fake provider ignores image field so returns 200 — real decode is e2e-tested."""
+    """Fake provider ignores image field so returns 200; real decode is e2e-tested."""
     resp = await client.post(
         "/v1/images/generations",
         json={
@@ -199,9 +199,6 @@ async def test_image_refiner_switch_at_bounds(client):
         json={"model": "test-image", "prompt": "x", "refiner_switch_at": -0.1},
     )
     assert resp.status_code == 422
-
-
-# ── /v1/images/upscale ──────────────────────────────────────────────
 
 
 _PNG_BYTES = (
@@ -273,11 +270,9 @@ async def test_upscale_rejects_unknown_format(client):
     assert "response_format" in resp.json()["error"]["message"]
 
 
-# ── /v1/images/edits (OpenAI-style multipart) ──────────────────────
-
 @pytest.mark.asyncio
 async def test_edits_multipart_with_image(client):
-    """Multipart image + prompt → 200, same envelope as /v1/images/generations."""
+    """Multipart image + prompt: 200, same envelope as /v1/images/generations."""
     png = base64.b64decode(_png_b64())
     resp = await client.post(
         "/v1/images/edits",
@@ -291,7 +286,7 @@ async def test_edits_multipart_with_image(client):
 
 @pytest.mark.asyncio
 async def test_edits_multipart_with_mask(client):
-    """Multipart image + mask → inpaint path."""
+    """Multipart image + mask: inpaint path."""
     png = base64.b64decode(_png_b64())
     mask_bytes = base64.b64decode(_mask_b64())
     resp = await client.post(
@@ -339,7 +334,7 @@ async def test_edits_rejects_missing_image_field(client):
 
 @pytest.mark.asyncio
 async def test_edits_denoising_strength_bounds(client):
-    """FastAPI Form ge/le validation → 422 for out-of-range."""
+    """FastAPI Form ge/le validation: 422 for out-of-range."""
     png = base64.b64decode(_png_b64())
     resp = await client.post(
         "/v1/images/edits",

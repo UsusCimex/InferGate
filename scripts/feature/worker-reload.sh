@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Feature test: worker-side hot-reload via gateway ConfigWatcher →
-# ProviderManager.reload_model() → RemoteProvider.reload() → worker
+# Feature test: worker-side hot-reload through gateway ConfigWatcher,
+# ProviderManager.reload_model(), RemoteProvider.reload() and the worker's
 # POST /reload.
 #
 # Two reload classes are exercised end-to-end:
@@ -21,7 +21,7 @@
 # YAML is snapshot-restored on trap EXIT regardless of outcome.
 #
 # Runs on kokoro-82m because:
-#   * CPU TTS → no GPU pressure if another test left models loaded
+#   * CPU TTS: no GPU pressure if another test left models loaded
 #   * a "speed" parameter exists in default_params so mutating it is
 #     a meaningful full-reload trigger
 #   * read-only bind mount of config/models/kokoro-82m.yaml into the
@@ -54,8 +54,8 @@ for c in python3 python py; do
 done
 [[ -n "$PY" ]] || { err "python required"; exit 1; }
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
-[[ -f "$MODEL_YAML" ]] || { err "$MODEL_YAML missing — bad working dir?"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
+[[ -f "$MODEL_YAML" ]] || { err "$MODEL_YAML missing; bad working dir?"; exit 1; }
 
 # Snapshot YAML for trap-restore.
 ORIGINAL=$(mktemp --suffix=.yaml)
@@ -69,19 +69,19 @@ trap restore_yaml EXIT
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 
-log "Rebuilding gateway + kokoro worker (new /reload endpoint code) …"
+log "Rebuilding gateway + kokoro worker..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 ok "compose up issued"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
 # Small grace period after "Worker ready" so the worker monitor's next
 # probe lands inside is_loaded() state before we start mutating YAML.
 sleep 2
 
-# Helper: read a field from /v1/models → kokoro-82m entry.
+# Read a field of the kokoro-82m entry in /v1/models.
 read_field() {
     local field="$1"
     curl -sS "${GATEWAY_URL}/v1/models" | "$PY" -c "
@@ -117,8 +117,7 @@ smoke_tts() {
     ok "smoke_tts [$label]: HTTP 200 ($sz bytes)"
 }
 
-# ── Phase 1: metadata-only edit ─────────────────────────────────────
-log "[phase 1] editing metadata.description (expect action=metadata) …"
+log "[phase 1] editing metadata.description (expect action=metadata)..."
 BEFORE_DESC=$(read_field description)
 NEW_DESC="Hot-reloaded metadata at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 "$PY" <<PYEOF
@@ -132,7 +131,7 @@ with open(path, "w") as f:
 PYEOF
 
 # Wait for watcher cycle (interval 2s + debounce 0.5s) + HTTP roundtrip slack
-log "waiting 6s for ConfigWatcher + worker /reload roundtrip …"
+log "waiting 6s for ConfigWatcher + worker /reload roundtrip..."
 sleep 6
 
 AFTER_DESC=$(read_field description)
@@ -162,8 +161,7 @@ fi
 
 smoke_tts "phase1" || fail=1
 
-# ── Phase 2: full-reload edit (model.default_params.speed) ──────────
-log "[phase 2] editing model.default_params.speed (expect action=full_reload) …"
+log "[phase 2] editing model.default_params.speed (expect action=full_reload)..."
 # kokoro YAML has speed via ${oc.env:KOKORO_82M_SPEED,1.0}. We replace the
 # whole line with a concrete new value so the change is unambiguous on disk.
 NEW_SPEED="1.25"
@@ -181,7 +179,7 @@ with open(path, "w") as f:
     f.write(text)
 PYEOF
 
-log "waiting 10s for full-reload (new provider load() on kokoro takes ~seconds) …"
+log "waiting 10s for full-reload (new provider load() on kokoro takes ~seconds)..."
 sleep 10
 
 # Gateway log: full_reload action
@@ -205,5 +203,5 @@ fi
 smoke_tts "phase2" || fail=1
 
 echo
-(( fail )) && { err "FAIL — review output above."; exit 1; }
-ok "PASS — worker-side hot-reload works end-to-end for both metadata and full-reload paths."
+(( fail )) && { err "FAIL: review output above."; exit 1; }
+ok "PASS: worker-side hot-reload works end-to-end for both metadata and full-reload paths."

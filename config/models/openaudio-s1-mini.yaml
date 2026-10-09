@@ -25,5 +25,5 @@ queue:
 
 metadata:
   license: Apache-2.0
-  description: "OpenAudio S1 Mini — 0.5B multilingual TTS by Fish Audio"
+  description: "OpenAudio S1 Mini: 0.5B multilingual TTS by Fish Audio"
   tags: ["multilingual", "quality"]

@@ -39,5 +39,5 @@ queue:
 
 metadata:
   license: "OpenRAIL++"
-  description: "Stable Diffusion XL Base 1.0 — UNet-based, 1024×1024, proven"
+  description: "Stable Diffusion XL Base 1.0: UNet-based, 1024x1024"
   tags: ["stable-diffusion", "xl", "unet", "proven"]

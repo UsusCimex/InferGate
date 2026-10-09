@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "InferGate gateway + workers — requests, inference latency, cache effectiveness, GPU usage.",
+  "description": "InferGate gateway + workers: requests, inference latency, cache effectiveness, GPU usage.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -498,7 +498,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "InferGate — Gateway & Inference",
+  "title": "InferGate - Gateway & Inference",
   "uid": "infergate-main",
   "version": 1,
   "weekStart": ""

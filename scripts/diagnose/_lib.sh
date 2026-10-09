@@ -2,17 +2,16 @@
 #
 # Source at top of each script AFTER setting:
 #   - PROJECT_ROOT (cd'd to)
-#   - COMPOSE      (array — e.g. `COMPOSE=(docker compose -f deploy/docker-compose.yml)`)
+#   - COMPOSE      (array, e.g. `COMPOSE=(docker compose -f deploy/docker-compose.yml)`)
 #
 # Convention: log/ok/err colourise stderr for humans; the rest of the script
 # keeps stdout for machine-readable output (HTTP code, elapsed, etc.).
 
-# ── pretty prints ────────────────────────────────────────────────────────
 log() { printf '\033[1;36m[diag]\033[0m %s\n' "$*"; }
 ok()  { printf '\033[1;32m[ ok ]\033[0m %s\n' "$*"; }
 err() { printf '\033[1;31m[err ]\033[0m %s\n' "$*"; }
 
-# ── idempotent env-file update ───────────────────────────────────────────
+# idempotent env-file update
 # Usage: update_env <env-file> <key> <value>
 update_env() {
     local file="$1" key="$2" val="$3"
@@ -28,18 +27,16 @@ update_env() {
     fi
 }
 
-# ── model-cache progress ─────────────────────────────────────────────────
 # Usage: show_download_progress <cache-dir-path>
 show_download_progress() {
     local cache_dir="$1"
     if [[ -d "$cache_dir" ]]; then
         local sz
         sz=$(du -sh "$cache_dir" 2>/dev/null | cut -f1)
-        log "cache: $cache_dir → $sz"
+        log "cache: $cache_dir ($sz)"
     fi
 }
 
-# ── wait for worker ready ────────────────────────────────────────────────
 # Polls gateway logs every 5s for "Worker reachable: <model_id>"; the model
 # itself loads on the first request. Every 30s also prints the HF cache dir
 # size so long downloads are observable. Fails fast on known fatal patterns
@@ -88,7 +85,7 @@ wait_for_worker() {
     done
 }
 
-# ── decode OpenAI-compat JSON image response → PNG file ──────────────────
+# decode an OpenAI-compat JSON image response into a PNG file
 # Tries python3/python/py for robust decoding, falls back to sed+base64.
 # Usage: decode_b64_png <response-json> <output-png>
 decode_b64_png() {
@@ -108,11 +105,11 @@ with open('$out', 'wb') as f: f.write(base64.b64decode(d['data'][0]['b64_json'])
     return 1
 }
 
-# ── fire a single image-gen request and decode ──────────────────────────
+# fire a single image-gen request and decode
 # Sets the global vars HTTP_CODE, ELAPSED, OUTPUT_SIZE.
-# Sends `X-InferGate-No-Cache: true` — feature tests always exercise the
-# real pipeline, otherwise seed-based caching returns stale results from
-# a previous build before our code change.
+# Sends `X-InferGate-No-Cache: true` so feature tests always exercise the
+# real pipeline; otherwise seed-based caching returns stale results from
+# a previous build.
 # Usage: fire_image_request <model-id> <prompt> <output-path> [json-extra]
 fire_image_request() {
     local model="$1" prompt="$2" out="$3" extra="${4:-}"
@@ -147,13 +144,12 @@ fire_image_request() {
     OUTPUT_SIZE=$(wc -c < "$out" 2>/dev/null || echo 0)
 }
 
-# ── print final result banner ────────────────────────────────────────────
 # Reads HTTP_CODE / ELAPSED / OUTPUT_SIZE set by fire_image_request.
 # Usage: report_result <service> <output-path>
 report_result() {
     local service="$1" out="$2"
     echo
-    echo "─── Result ────────────────────────────────────────────────"
+    echo "--- Result ---"
     echo "  HTTP status : $HTTP_CODE"
     echo "  Elapsed     : ${ELAPSED}s"
     echo "  Output      : $out ($OUTPUT_SIZE bytes)"
@@ -161,10 +157,10 @@ report_result() {
 
     case "$HTTP_CODE" in
         200)
-            ok "SUCCESS — image generated in ${ELAPSED}s."
+            ok "SUCCESS: image generated in ${ELAPSED}s."
             ;;
         500|504)
-            err "FAILED — HTTP $HTTP_CODE."
+            err "FAILED: HTTP $HTTP_CODE."
             echo "  Response body:"
             cat "$out"; echo
             echo "  Last 40 worker log lines:"

@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to preload %s: %s", model_id, e)
 
-    # Parallel preload — VRAM planner serialises evictions internally.
+    # Parallel preload is safe: the VRAM planner serialises evictions.
     await asyncio.gather(*[_preload_one(mid) for mid in preload_ids])
 
     cleanup_interval = server_cfg.cache.cleanup_interval_minutes * 60
@@ -138,7 +138,7 @@ async def lifespan(app: FastAPI):
     watchdog.start()
 
     logger.info(
-        "InferGate started — %d models registered, listening on %s:%d",
+        "InferGate started: %d models registered, listening on %s:%d",
         len(model_cfgs),
         server_cfg.host,
         server_cfg.port,

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 
 class CacheBackend(ABC):
-    """Storage layer for cached responses — swappable behind CacheManager.
+    """Storage layer for cached responses, swappable behind CacheManager.
 
     Implementations must be safe to call concurrently from multiple coroutines.
     `cache_config` passed to put() is the per-model cache policy

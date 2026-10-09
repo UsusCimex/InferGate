@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
-    """Parse a YAML file and resolve `${oc.env:…}` interpolations against the environment."""
+    """Parse a YAML file and resolve `${oc.env:...}` interpolations against the environment."""
     cfg = OmegaConf.load(path)
     return OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)  # type: ignore[return-value]
 

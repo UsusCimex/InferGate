@@ -45,12 +45,12 @@ target "worker" {
   }
   matrix = {
     item = [
-      # ─── Text (vLLM) ─────────────────────────────────────────────────
+      # Text (vLLM)
       { id = "qwen3.5-4b",        base = VLLM_IMAGE,     apt = "",                post = "" },
       { id = "qwen3.5-9b",        base = VLLM_IMAGE,     apt = "",                post = "" },
       { id = "qwen3-8b",          base = VLLM_IMAGE,     apt = "",                post = "" },
       { id = "llama3.1-8b",       base = VLLM_IMAGE,     apt = "",                post = "" },
-      # ─── Image (diffusers) ───────────────────────────────────────────
+      # Image (diffusers)
       { id = "sd35-medium",       base = GPU_BASE_IMAGE, apt = "",                post = "" },
       { id = "sdxl-base",         base = GPU_BASE_IMAGE, apt = "",                post = "" },
       { id = "hunyuan-dit",       base = GPU_BASE_IMAGE, apt = "",                post = "" },
@@ -59,22 +59,22 @@ target "worker" {
       { id = "flux2-klein-4b",    base = GPU_BASE_IMAGE, apt = "",                post = "" },
       { id = "qwen-image",        base = GPU_BASE_IMAGE, apt = "build-essential", post = "" },
       { id = "z-image-turbo",     base = GPU_BASE_IMAGE, apt = "git build-essential", post = "" },
-      # ─── Autoregressive (non-diffusion) ──────────────────────────────
+      # Autoregressive (non-diffusion)
       { id = "janus-pro-1b",      base = GPU_BASE_IMAGE, apt = "git",             post = "" },
       { id = "janus-pro-7b",      base = GPU_BASE_IMAGE, apt = "git build-essential", post = "" },
-      # ─── Masked non-autoregressive ──────────────────────────────────
+      # Masked non-autoregressive
       { id = "meissonic",         base = GPU_BASE_IMAGE, apt = "git",             post = "git clone --depth=1 https://github.com/viiika/Meissonic.git /app/_meissonic" },
-      # ─── TTS ─────────────────────────────────────────────────────────
+      # TTS
       { id = "kokoro-82m",        base = CPU_BASE_IMAGE, apt = "gcc",             post = "python -m spacy download en_core_web_sm" },
       { id = "openaudio-s1-mini", base = GPU_BASE_IMAGE, apt = "git build-essential portaudio19-dev", post = "" },
       { id = "xtts-v2",           base = GPU_BASE_IMAGE, apt = "",                post = "" },
       { id = "qwen3-tts-06b",     base = GPU_BASE_IMAGE, apt = "",                post = "" },
       { id = "voxcpm2",           base = GPU_BASE_IMAGE, apt = "build-essential", post = "uv pip install --no-cache-dir --system --no-deps voxcpm==2.0.3" },
-      # ─── STT ─────────────────────────────────────────────────────────
+      # STT
       { id = "whisper-base",      base = CPU_BASE_IMAGE, apt = "",                post = "" },
-      # ─── Upscale (super-resolution) ──────────────────────────────────
+      # Upscale (super-resolution)
       { id = "realesrgan-x4",     base = GPU_BASE_IMAGE, apt = "",                post = "" },
-      # ─── Embeddings ──────────────────────────────────────────────────
+      # Embeddings
       { id = "multilingual-e5-base",     base = CPU_BASE_IMAGE, apt = "",         post = "" },
       { id = "clap-htsat-fused",         base = GPU_BASE_IMAGE, apt = "",         post = "" },
       { id = "siglip-base-multilingual", base = GPU_BASE_IMAGE, apt = "",         post = "" },

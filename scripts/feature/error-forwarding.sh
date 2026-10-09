@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Feature test: ValueError from worker provider → HTTP 400 + JSON body
+# Feature test: a ValueError from the worker provider becomes HTTP 400 + JSON body,
 # forwarded to client by gateway.
 #
 # Pre: worker converts ValueError to 400 with `{"error": {"message": ..., "type": "invalid_request"}}`.
@@ -22,21 +22,21 @@ READY_TIMEOUT=600
 # shellcheck source=../diagnose/_lib.sh
 source scripts/diagnose/_lib.sh
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 ok "Env flags set"
 
-log "Rebuilding gateway + worker (main.py + worker.py changed) …"
+log "Rebuilding gateway + worker..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
 fail=0
 
-log "[A] Unknown scheduler → expect HTTP 400 + 'Unknown scheduler' in body"
+log "[A] Unknown scheduler: expect HTTP 400 + 'Unknown scheduler' in body"
 RESP=$(mktemp --suffix=.json)
 CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
     -X POST http://localhost:8000/v1/images/generations \
@@ -56,14 +56,14 @@ rm -f "$RESP"
 log "[B] Valid request should still return HTTP 200 PNG (regression check)"
 fire_image_request "$MODEL_ID" "a red apple" /tmp/err_test_ok.png '"seed":1,"num_inference_steps":5'
 if [[ "$HTTP_CODE" == "200" ]]; then
-    ok "HTTP 200, ${ELAPSED}s — normal path unaffected"
+    ok "HTTP 200, ${ELAPSED}s; normal path unaffected"
 else
     err "regression: valid request returned HTTP $HTTP_CODE"
     fail=1
 fi
 rm -f /tmp/err_test_ok.png
 
-log "[C] Ill-formed prompt (empty) → pydantic schema 422"
+log "[C] Ill-formed prompt (empty): expect pydantic schema 422"
 RESP=$(mktemp --suffix=.json)
 CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
     -X POST http://localhost:8000/v1/images/generations \
@@ -79,11 +79,11 @@ rm -f "$RESP"
 
 echo
 if (( fail )); then
-    err "FAIL — error-forwarding is incomplete."
-    echo "  → Check:"
-    echo "    - app/worker.py converts ValueError → JSONResponse(status_code=400)"
+    err "FAIL: error-forwarding is incomplete."
+    echo "  Check:"
+    echo "    - app/worker.py converts ValueError to JSONResponse(status_code=400)"
     echo "    - app/main.py has @app.exception_handler(httpx.HTTPStatusError) that"
     echo "      mirrors response.status_code + response.json()"
     exit 1
 fi
-ok "PASS — upstream worker errors are forwarded with correct status + body."
+ok "PASS: upstream worker errors are forwarded with correct status + body."

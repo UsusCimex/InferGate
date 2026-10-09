@@ -23,7 +23,7 @@ _VENDOR_PATH = "/app/_meissonic"
 def _flush_cache_before_decode(vqvae: Any, torch: Any) -> None:
     """Release the activations the transformer steps leave cached before the VQ decode.
 
-    Otherwise the 1024² decode runs out of memory on a 12 GB card.
+    Otherwise the 1024x1024 decode runs out of memory on a 12 GB card.
     """
     original = vqvae.decode
 

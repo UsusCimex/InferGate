@@ -47,7 +47,7 @@ async def create_speech(
                 "error": {
                     "message": (
                         f"model '{model_id}' is voice-clone-only and requires a reference_audio "
-                        f"clip — call POST /v1/audio/speech/voice-clone (multipart) instead"
+                        f"clip; call POST /v1/audio/speech/voice-clone (multipart) instead"
                     ),
                     "type": "voice_clone_required",
                     "endpoint": "/v1/audio/speech/voice-clone",
@@ -208,7 +208,7 @@ async def create_transcription(
             status_code=400,
         )
 
-    # Subtitle formats are rendered from provider verbose_json — keeps providers focused.
+    # Subtitle formats are rendered here from provider verbose_json.
     effective_format = "verbose_json" if response_format in {"srt", "vtt"} else response_format
 
     model_id = model or defaults.get("stt")

@@ -30,5 +30,5 @@ queue:
 
 metadata:
   license: Apache-2.0
-  description: "Meissonic — 1B masked non-autoregressive T2I, 1024×1024, Apache-2.0"
+  description: "Meissonic: 1B masked non-autoregressive T2I, 1024x1024, Apache-2.0"
   tags: ["masked", "non-ar", "apache2"]

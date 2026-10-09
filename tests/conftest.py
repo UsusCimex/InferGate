@@ -23,7 +23,7 @@ from app.services.cache_manager import CacheManager
 from app.services.gpu_scheduler import GpuScheduler
 from app.services.provider_manager import ProviderManager
 
-# Fake providers — @register_provider lets reload_model() resolve them by class name.
+# Fake providers: @register_provider lets reload_model() resolve them by class name.
 
 @register_provider
 class FakeImageProvider(ImageProvider):

@@ -26,5 +26,5 @@ queue:
 
 metadata:
   license: MIT
-  description: "Janus-Pro 1B — autoregressive T2I, 384×384, unified multimodal (DeepSeek)"
+  description: "Janus-Pro 1B: autoregressive T2I, 384x384, unified multimodal (DeepSeek)"
   tags: ["autoregressive", "deepseek", "mit", "unified", "multimodal"]

@@ -1,6 +1,5 @@
 """Voice-clone-only TTS models refuse the flat /v1/audio/speech endpoint
-with a structured 400 that names /voice-clone as the right alternative —
-instead of the 500 that used to leak from the provider's ValueError."""
+with a structured 400 that names /voice-clone as the right alternative."""
 from __future__ import annotations
 
 import pytest

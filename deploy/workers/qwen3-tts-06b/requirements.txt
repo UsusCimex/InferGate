@@ -3,7 +3,7 @@
 # right transformers/safetensors versions itself.
 qwen-tts>=0.1.1,<0.2.0
 soundfile>=0.12.0
-# flash-attn is intentionally NOT pinned here — compiling it requires
+# flash-attn is intentionally NOT pinned here: compiling it requires
 # the full CUDA toolchain and often fails on WSL2 / Blackwell. Install
 # it manually in the worker image if you want flash_attention_2 and set
 # QWEN3_TTS_06B_ATTN=flash_attention_2 in deploy/.env. The default

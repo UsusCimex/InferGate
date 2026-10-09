@@ -97,7 +97,7 @@ async def test_access_log_human_format_logs_request(app_with_access_log, caplog,
 async def test_access_log_json_format_emits_structured_line(
     app_with_access_log, caplog, monkeypatch
 ):
-    """INFERGATE_ACCESS_LOG_JSON=true → emit a single-line JSON record."""
+    """INFERGATE_ACCESS_LOG_JSON=true: emit a single-line JSON record."""
     import json as _json
     import logging as _logging
 

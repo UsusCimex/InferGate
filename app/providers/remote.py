@@ -120,7 +120,7 @@ async def _retry_send(
                 break
             backoff = _RETRY_BASE_BACKOFF * (2 ** attempt) + random.uniform(0, 0.1)
             logger.warning(
-                "Remote %s %s failed (%s) — retrying in %.2fs (attempt %d/%d)",
+                "Remote %s %s failed (%s), retrying in %.2fs (attempt %d/%d)",
                 method, url_or_log, type(e).__name__, backoff, attempt + 2, _RETRY_ATTEMPTS,
             )
             await asyncio.sleep(backoff)
@@ -181,9 +181,9 @@ class BaseRemoteMixin:
         """Connect to the worker and ensure the model is loaded.
 
         Worker contract:
-        - POST /load returns 200 → already-ready fast path (model was loaded earlier).
-        - POST /load returns 202 → background load running; we poll GET /load/status
-          until "ready"/"failed" or `_LOAD_TIMEOUT` deadline.
+        - POST /load returns 200: the model is already loaded.
+        - POST /load returns 202: a background load is running; poll GET /load/status
+          until "ready"/"failed" or the `_LOAD_TIMEOUT` deadline.
         """
         queue = getattr(self.config, "queue", None)
         self._client = self._build_client(_generate_timeout(float(getattr(queue, "timeout_seconds", 0) or 0)))
@@ -226,7 +226,7 @@ class BaseRemoteMixin:
                 try:
                     await self._poll_load_status(load_resp)
                 except BaseException:
-                    # Cancel/timeout/failure → release the httpx pool slot.
+                    # On cancel, timeout or failure, release the httpx pool slot.
                     await self._client.aclose()
                     self._client = None
                     raise
@@ -291,7 +291,7 @@ class BaseRemoteMixin:
                     headers=_request_id_headers(),
                 )
             except httpx.HTTPError as e:
-                # Transient — keep polling until the deadline.
+                # Transient: keep polling until the deadline.
                 logger.debug("Poll /load/status failed (transient): %s", e)
                 continue
 
@@ -369,7 +369,7 @@ class BaseRemoteMixin:
         """POST a new config to the worker's /reload; returns its action string."""
         if self._client is None:
             raise RuntimeError(
-                f"Worker {self._worker_url} not connected — /reload cannot be delivered"
+                f"Worker {self._worker_url} not connected; /reload cannot be delivered"
             )
         resp = await self._client.post(
             "/reload",
@@ -517,8 +517,7 @@ class RemoteVideoEmbeddingProvider(BaseRemoteMixin, VideoEmbeddingProvider):
         return await self._call_multipart(EMBED_VIDEO, video, filename=filename)
 
 
-# Single source of truth for category → RemoteProvider class. Used by the
-# ProviderManager when resolving worker_url-backed configs.
+# Category to RemoteProvider class; ProviderManager uses it for worker_url-backed configs.
 CATEGORY_REGISTRY: dict[str, type[BaseProvider]] = {
     "text": RemoteTextProvider,
     "image": RemoteImageProvider,

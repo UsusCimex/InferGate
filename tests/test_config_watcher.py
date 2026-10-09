@@ -1,4 +1,4 @@
-"""Tests for ConfigWatcher — drive scan_once() directly to avoid sleep-loop races."""
+"""Tests for ConfigWatcher: drive scan_once() directly to avoid sleep-loop races."""
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +26,7 @@ def _write_yaml(path, model_id="watch-test", display_name="first") -> None:
 
 @pytest.mark.asyncio
 async def test_first_scan_is_baseline_only(tmp_path):
-    """First scan snapshots mtimes without dispatching — otherwise every
+    """First scan snapshots mtimes without dispatching; otherwise every
     startup would re-reload every file."""
     yaml = tmp_path / "watch-test.yaml"
     _write_yaml(yaml)
@@ -104,8 +104,8 @@ async def test_unchanged_file_is_noop(tmp_path):
 
 @pytest.mark.asyncio
 async def test_bad_yaml_does_not_crash_watcher(tmp_path, caplog):
-    """Malformed YAML logs an error but leaves the watcher alive —
-    must also NOT fire the callback with a half-parsed config."""
+    """Malformed YAML logs an error but leaves the watcher alive
+    and must NOT fire the callback with a half-parsed config."""
     yaml = tmp_path / "watch-test.yaml"
     _write_yaml(yaml)
 
@@ -123,7 +123,7 @@ async def test_bad_yaml_does_not_crash_watcher(tmp_path, caplog):
     os.utime(yaml, (old + 2, old + 2))
 
     changed = await watcher.scan_once()
-    # Path is reported as changed but parse failed → no callback
+    # Path is reported as changed but parse failed: no callback
     assert len(changed) == 1
     assert calls == []
 
@@ -150,7 +150,7 @@ async def test_callback_exception_does_not_block_other_files(tmp_path):
         os.utime(f, (old + 2, old + 2))
 
     await watcher.scan_once()
-    # Both callbacks ran — alpha raised but beta was still dispatched
+    # Both callbacks ran: alpha raised but beta was still dispatched
     assert set(calls) == {"alpha", "beta"}
 
 
@@ -187,7 +187,7 @@ async def test_start_stop_lifecycle(tmp_path):
     watcher.start()
     assert watcher._task is not None
     task = watcher._task
-    # Double-start should be idempotent — no second task spawned.
+    # Double-start should be idempotent: no second task spawned.
     watcher.start()
     assert watcher._task is task
     await asyncio.sleep(0)  # let the task actually schedule

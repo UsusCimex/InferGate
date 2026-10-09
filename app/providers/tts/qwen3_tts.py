@@ -89,13 +89,13 @@ class Qwen3TtsProvider(TtsProvider):
         ref_text = defaults.pop("reference_text", None)
         language = str(defaults.pop("language", "English"))
         output_format = str(defaults.pop("output_format", "wav"))
-        # Qwen3-TTS takes neither speed nor voice — drop silently.
+        # Qwen3-TTS takes neither speed nor voice; drop silently.
         for k in ("speed", "voice"):
             defaults.pop(k, None)
 
         if ref_audio is None or not ref_text:
             raise ValueError(
-                "qwen3-tts requires BOTH reference_audio and reference_text — "
+                "qwen3-tts requires BOTH reference_audio and reference_text: "
                 "upload the WAV clip together with the text spoken in it."
             )
 

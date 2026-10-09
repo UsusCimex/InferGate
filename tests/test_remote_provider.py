@@ -163,9 +163,6 @@ def test_remote_request_id_headers_empty_when_unset():
     assert _request_id_headers() == {}
 
 
-# ── Worker URL resolution chain ────────────────────────────────────
-
-
 def test_resolve_worker_url_env_first(monkeypatch):
     """env WORKER_URL_<ID> wins over template."""
     from app.services.provider_manager import resolve_worker_url

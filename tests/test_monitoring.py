@@ -18,7 +18,6 @@ async def monitored_app():
     async def test_endpoint():
         return {"ok": True}
 
-    # Wrap: RequestId -> Prometheus -> app
     app = RequestIdMiddleware(PrometheusMiddleware(inner_app))
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -85,7 +84,7 @@ def test_path_normalization():
     assert _normalize_path("/v1/images/upscale") == "/v1/images/upscale"
     assert _normalize_path("/v1/audio/transcriptions") == "/v1/audio/transcriptions"
     assert _normalize_path("/v1/audio/speech/voice-clone") == "/v1/audio/speech/voice-clone"
-    # Per-model actions no longer collapse — load vs unload stay distinct
+    # Per-model actions stay distinct: load vs unload
     assert _normalize_path("/v1/models/qwen3.5-4b/load") == "/v1/models/{id}/load"
     assert _normalize_path("/v1/models/qwen3.5-4b/unload") == "/v1/models/{id}/unload"
     # Plain /v1/models/{id} still collapses

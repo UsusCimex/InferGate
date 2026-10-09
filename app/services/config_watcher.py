@@ -73,7 +73,7 @@ class ConfigWatcher:
                 logger.debug("stat(%s) failed: %s", path, e)
                 continue
 
-        # First scan only snapshots — startup already loaded every file.
+        # First scan only snapshots: startup already loaded every file.
         if not self._initialized:
             self._mtimes = current
             self._initialized = True
@@ -87,7 +87,7 @@ class ConfigWatcher:
 
         for missing in set(self._mtimes) - set(current):
             logger.warning(
-                "Config file removed: %s — model stays registered until restart",
+                "Config file removed: %s; model stays registered until restart",
                 missing.name,
             )
 

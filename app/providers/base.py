@@ -62,7 +62,7 @@ class TextProvider(BaseProvider):
         """Run chat completion. Returns an OpenAI-format response dict."""
 
     async def generate_stream(self, messages: list[dict], **params: Any):
-        """Stream chat completion as OpenAI SSE chunks. Optional — override to enable."""
+        """Stream chat completion as OpenAI SSE chunks. Optional: override to enable."""
         raise NotImplementedError("Streaming not supported by this provider")
 
 

@@ -2,7 +2,7 @@
 # Feature test: LoRA hot-load on sd35-medium + verify compel-skip.
 #
 # Why this is a separate test from lora-hot-load.sh (sdxl-base):
-#   * SD3 LoRAs target the MMDiT transformer, not UNet — a different
+#   * SD3 LoRAs target the MMDiT transformer, not UNet: a different
 #     diffusers/peft code path. We need at-least-one LoRA request to hit
 #     that path before shipping.
 #   * SD3Pipeline carries the same (tokenizer_2, text_encoder_2) slot as
@@ -14,10 +14,10 @@
 #     in production.
 #
 # Scenarios:
-#   A) baseline           — no loras, standard output
-#   B) single lora 1.0    — LoRA applied via peft on MMDiT
-#   C) cache hit          — repeat B; same bytes, no reload
-#   D) error path         — bogus repo → HTTP 400
+#   A) baseline           - no loras, standard output
+#   B) single lora 1.0    - LoRA applied via peft on MMDiT
+#   C) cache hit          - repeat B; same bytes, no reload
+#   D) error path         - bogus repo: HTTP 400
 #
 # Plus startup-log assertion:
 #   * "Compel skipped for sd35-medium (StableDiffusion3Pipeline)" appears
@@ -42,19 +42,19 @@ HF_CACHE="models/models--stabilityai--stable-diffusion-3.5-medium"
 READY_TIMEOUT=900  # SD3.5 + T5 download is heavier than SDXL
 
 # Default LoRA: tensorart's official turbo-distillation LoRA trained on
-# SD3.5 Medium itself. ByteDance's Hyper-SD3 is NOT compatible — it was
-# trained on SD3 Medium (2B, hidden=1536 → norm1.linear out=9216), while
-# SD3.5 Medium has hidden=2304 → norm1.linear out=13824. Same diffusers
+# SD3.5 Medium itself. ByteDance's Hyper-SD3 is NOT compatible: it was
+# trained on SD3 Medium (2B, hidden=1536, norm1.linear out=9216), while
+# SD3.5 Medium has hidden=2304, norm1.linear out=13824. Same diffusers
 # class name, different tensor widths. See ByteDance/Hyper-SD#72.
 LORA_ID="${LORA_ID:-tensorart/stable-diffusion-3.5-medium-turbo}"
 LORA_FILE="${LORA_FILE:-lora_sd3.5m_turbo_8steps.safetensors}"
 
-# 768×768 — keeps peak VRAM with drop_t5=false under 12GB budget even
+# 768x768 keeps peak VRAM with drop_t5=false under 12GB budget even
 # during LoRA injection. Visual comparison remains clear.
 #
 # No `scheduler` override here: SD3.5 uses FlowMatchEulerDiscreteScheduler,
 # which is a different family from the UNet schedulers (dpm++, euler_a,
-# ddim, …) registered in _SCHEDULERS. Sending one of those names on SD3
+# ddim, ...) registered in _SCHEDULERS. Sending one of those names on SD3
 # is rejected by the swap path, so we let the pipeline use its default.
 #
 # Turbo LoRA needs its own sampling budget: 8 steps + CFG=1.5 (tensorart's
@@ -67,7 +67,7 @@ PROMPT="a cyberpunk cat in neon Tokyo"
 # shellcheck source=../diagnose/_lib.sh
 source scripts/diagnose/_lib.sh
 
-[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found — copy from deploy/.env.example"; exit 1; }
+[[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 update_env "$ENV_FILE" SD35_MEDIUM_CPU_OFFLOAD false
@@ -76,34 +76,32 @@ update_env "$ENV_FILE" SD35_MEDIUM_DROP_T5 true
 update_env "$ENV_FILE" SD35_MEDIUM_WARMUP false
 ok "Env flags set (LORA_ID=$LORA_ID, LORA_FILE=$LORA_FILE)"
 
-log "Rebuilding gateway + worker (requirements changed: peft, compel) …"
+log "Rebuilding gateway + worker..."
 "${COMPOSE[@]}" build gateway "$SERVICE"
 "${COMPOSE[@]}" up -d gateway "$SERVICE"
 
-log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID …"
+log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
-# ── Startup-log assertion: compel must be skipped, NOT initialised ─────
-log "Verifying compel was skipped on SD3 pipeline …"
+log "Verifying compel was skipped on SD3 pipeline..."
 STARTUP_LOGS=$("${COMPOSE[@]}" logs --no-color "$SERVICE" 2>&1 || true)
 COMPEL_SKIPPED_LINE=$(grep -E "Compel skipped for ${MODEL_ID}.*StableDiffusion3" <<<"$STARTUP_LOGS" || true)
 COMPEL_INIT_LINE=$(grep -E "Compel initialised for ${MODEL_ID}" <<<"$STARTUP_LOGS" || true)
 
 if [[ -z "$COMPEL_SKIPPED_LINE" ]]; then
-    err "Expected log line 'Compel skipped for sd35-medium (StableDiffusion3Pipeline: …)' not found."
+    err "Expected log line 'Compel skipped for sd35-medium (StableDiffusion3Pipeline: ...)' not found."
     err "This would have caused a runtime [B,77,2048] vs [B,154,4096] shape mismatch."
     err "Last 60 worker log lines:"
     "${COMPOSE[@]}" logs --no-color --tail 60 "$SERVICE"
     exit 1
 fi
 if [[ -n "$COMPEL_INIT_LINE" ]]; then
-    err "Compel was initialised — regression! Guard in _init_compel missed SD3 class."
+    err "Compel was initialised; the guard in _init_compel missed the SD3 class."
     err "Offending line: $COMPEL_INIT_LINE"
     exit 1
 fi
 ok "compel-skip log present: ${COMPEL_SKIPPED_LINE#*[diag] }"
 
-# ── Generate requests ──────────────────────────────────────────────────
 fire() {
     local label="$1" body="$2" out="$3"
     log "[$label]"
@@ -126,14 +124,14 @@ fire() {
 
     local sz
     sz=$(wc -c < "$out" 2>/dev/null || echo 0)
-    echo "  HTTP $code, ${elapsed}s → $out ($sz bytes)"
+    echo "  HTTP $code, ${elapsed}s: $out ($sz bytes)"
     # On failure, surface the full error body and worker log tail so the
     # operator can diagnose without a second round-trip of "show me the body".
     if [[ "$code" != "200" ]]; then
-        echo "  ── Response body ─────────────────────────────────────"
+        echo "  --- Response body ---"
         sed 's/^/  /' "$resp"
         echo
-        echo "  ── Worker log tail (last 40 lines) ──────────────────"
+        echo "  --- Worker log tail (last 40 lines) ---"
         "${COMPOSE[@]}" logs --no-color --tail 40 "$SERVICE" 2>&1 | sed 's/^/  /'
     fi
     rm -f "$resp"
@@ -159,11 +157,11 @@ fire C "$(printf '{"model":"%s","prompt":"%s",%s,"loras":%s}' \
 CODE_C=$LAST_CODE; TIME_C_CACHED=$LAST_TIME
 
 echo
-echo "─── Feature applied? ─────────────────────────────────────"
+echo "--- Feature applied? ---"
 fail=0
 
 if [[ "$CODE_A" != "200" ]]; then
-    err "A (baseline) failed with HTTP $CODE_A — unrelated to LoRA path"
+    err "A (baseline) failed with HTTP $CODE_A; unrelated to LoRA path"
     exit 1
 fi
 
@@ -180,7 +178,7 @@ if [[ "$CODE_B" != "200" ]]; then
         err "LoRA repo not reachable (404). Override:"
         err "  LORA_ID=org/repo LORA_FILE=file.safetensors bash $0"
     else
-        err "Unexpected LoRA load failure — body already printed above."
+        err "Unexpected LoRA load failure; body already printed above."
     fi
     exit 1
 fi
@@ -196,35 +194,34 @@ LORA_LOG=$("${COMPOSE[@]}" logs --no-color --tail 200 "$SERVICE" 2>&1 | \
 if [[ -n "$LORA_LOG" ]]; then
     ok "peft-backed LoRA load reached MMDiT: ${LORA_LOG#*[diag] }"
 else
-    err "No 'Loading LoRA ${LORA_ID} into ${MODEL_ID}' log — LoRA request didn't hit load path."
+    err "No 'Loading LoRA ${LORA_ID} into ${MODEL_ID}' log; LoRA request didn't hit load path."
     fail=1
 fi
 
-# B ≠ A: LoRA must change output (distillation LoRAs change trajectory
-# even at same step count — less noise, different convergence).
+# B != A: LoRA must change output (distillation LoRAs change trajectory
+# even at same step count: less noise, different convergence).
 if cmp -s "$OUT_A" "$OUT_B"; then
-    err "A ≡ B byte-identical — LoRA had no effect on output."
+    err "A == B byte-identical: LoRA had no effect on output."
     fail=1
 else
-    ok "A ≠ B — LoRA changes output"
+    ok "A != B: LoRA changes output"
 fi
 
-# C ≡ B: cache hit, adapter already loaded, same seed → same bytes.
+# C == B: cache hit, adapter already loaded, same seed, so same bytes.
 if cmp -s "$OUT_B" "$OUT_C"; then
-    ok "B ≡ C — adapter cache hit is deterministic"
+    ok "B == C: adapter cache hit is deterministic"
 else
-    err "B ≠ C — cache-hit path produced different bytes."
+    err "B != C: cache-hit path produced different bytes."
     fail=1
 fi
 
 if (( TIME_B_FIRST > 0 && TIME_C_CACHED <= TIME_B_FIRST )); then
-    ok "cache hit latency: ${TIME_C_CACHED}s ≤ first-load ${TIME_B_FIRST}s"
+    ok "cache hit latency: ${TIME_C_CACHED}s <= first-load ${TIME_B_FIRST}s"
 else
-    log "cache hit latency: ${TIME_C_CACHED}s vs ${TIME_B_FIRST}s — noisy, not a failure"
+    log "cache hit latency: ${TIME_C_CACHED}s vs ${TIME_B_FIRST}s; noisy, not a failure"
 fi
 
-# ── Error path ─────────────────────────────────────────────────────────
-log "[D] Error path: bogus LoRA repo → HTTP 400"
+log "[D] Error path: bogus LoRA repo, expect HTTP 400"
 RESP=$(mktemp --suffix=.json)
 CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
     -X POST http://localhost:8000/v1/images/generations \
@@ -233,19 +230,19 @@ CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
     || echo 000)
 echo "  HTTP $CODE body: $(head -c 300 "$RESP")"
 if [[ "$CODE" == "400" ]] && grep -q "Failed to load LoRA" "$RESP"; then
-    ok "bogus LoRA → 400 with 'Failed to load LoRA' message"
+    ok "bogus LoRA: 400 with 'Failed to load LoRA' message"
 else
-    err "bogus LoRA → HTTP $CODE (expected 400 with structured message)"
+    err "bogus LoRA: HTTP $CODE (expected 400 with structured message)"
     fail=1
 fi
 rm -f "$RESP"
 
 echo
-(( fail )) && { err "FAIL — review output above."; exit 1; }
+(( fail )) && { err "FAIL: review output above."; exit 1; }
 
-ok "PASS — SD3.5 Medium LoRA works + compel correctly skipped."
+ok "PASS: SD3.5 Medium LoRA works + compel correctly skipped."
 echo
 echo "Open side-by-side to inspect:"
-echo "  $OUT_A — baseline (no LoRA)"
-echo "  $OUT_B — LoRA @ 1.0 (should look different — fewer effective steps / distinct style)"
-echo "  $OUT_C — repeat of B (cache hit — same bytes)"
+echo "  $OUT_A: baseline (no LoRA)"
+echo "  $OUT_B: LoRA @ 1.0 (should look different: fewer effective steps / distinct style)"
+echo "  $OUT_C: repeat of B (cache hit, same bytes)"

@@ -198,8 +198,6 @@ async def test_worker_image_generate(image_worker):
     assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-# ── /reload coverage ─────────────────────────────────────────────────
-
 @pytest.mark.asyncio
 async def test_reload_identical_config_is_noop(text_worker):
     """Posting the current config back must not trigger a swap."""
@@ -227,7 +225,7 @@ async def test_reload_metadata_only_updates_config_in_place(text_worker):
     assert resp.status_code == 200
     assert resp.json()["action"] == "metadata"
 
-    # /health reads state.config → should reflect the new model id unchanged
+    # /health reads state.config, so it should reflect the new model id unchanged
     # but the backing config is now the new one.
     h = await text_worker.get("/health")
     assert h.json()["model"] == "test-text"
@@ -261,14 +259,14 @@ async def test_reload_rejects_unknown_provider_class(text_worker):
     assert resp.status_code == 400
     assert "Unknown provider class" in resp.json()["error"]["message"]
 
-    # Still healthy — old provider untouched
+    # Still healthy, old provider untouched
     h = await text_worker.get("/health")
     assert h.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_reload_rejects_malformed_config(text_worker):
-    """Garbage body → 400 with structured error, no crash."""
+    """Garbage body: 400 with structured error, no crash."""
     resp = await text_worker.post("/reload", json={"this": "is not a ModelConfig"})
     assert resp.status_code == 400
     assert "invalid config" in resp.json()["error"]["message"]
@@ -276,7 +274,7 @@ async def test_reload_rejects_malformed_config(text_worker):
 
 @pytest.mark.asyncio
 async def test_stats_returns_usage_snapshot(text_worker):
-    """GET /stats returns the full envelope — fake-provider env has no
+    """GET /stats returns the full envelope; fake-provider env has no
     CUDA so VRAM fields are 0, but the shape must be correct."""
     resp = await text_worker.get("/stats")
     assert resp.status_code == 200
@@ -295,14 +293,14 @@ async def test_stats_returns_usage_snapshot(text_worker):
 @pytest.mark.asyncio
 async def test_stats_prefers_nvml_over_torch(text_worker, monkeypatch):
     """When pynvml is importable, /stats reports device-wide numbers
-    and marks vram_source='nvml' — catches the shared-GPU case torch
+    and marks vram_source='nvml'; catches the shared-GPU case torch
     can't see."""
     import sys
     import types
 
     class _FakeInfo:
         total = 12 * 1024 * 1024 * 1024   # 12 GB
-        used = 9 * 1024 * 1024 * 1024     # 9 GB — includes a co-tenant process
+        used = 9 * 1024 * 1024 * 1024     # 9 GB, includes a co-tenant process
         free = 3 * 1024 * 1024 * 1024
 
     fake_pynvml = types.ModuleType("pynvml")
@@ -318,9 +316,6 @@ async def test_stats_prefers_nvml_over_torch(text_worker, monkeypatch):
     assert body["vram_total_mb"] == 12 * 1024
     assert body["vram_used_mb"] == 9 * 1024
     assert body["vram_free_mb"] == 3 * 1024
-
-
-# ── Async /load + /load/status ──────────────────────────────────────
 
 
 @pytest_asyncio.fixture
@@ -413,7 +408,7 @@ async def test_inference_returns_503_when_not_ready(async_worker):
 
 @pytest.mark.asyncio
 async def test_load_failure_marks_status_failed_and_can_retry(async_worker, monkeypatch):
-    """Provider.load raises → status=failed, error set; subsequent /load can retry."""
+    """Provider.load raises: status=failed, error set; subsequent /load can retry."""
     provider = async_worker._app.state.provider
 
     fail_count = {"n": 0}
@@ -427,7 +422,7 @@ async def test_load_failure_marks_status_failed_and_can_retry(async_worker, monk
 
     monkeypatch.setattr(provider, "load", flaky_load)
 
-    # First attempt: 202 → background fails.
+    # First attempt: 202, then the background load fails.
     resp1 = await async_worker.post("/load")
     assert resp1.status_code == 202
     await async_worker._app.state.load_task
@@ -436,7 +431,7 @@ async def test_load_failure_marks_status_failed_and_can_retry(async_worker, monk
     assert status["status"] == "failed"
     assert "boom" in status["error"]
 
-    # Retry: status was 'failed' → /load enters new loading cycle.
+    # Retry: status was 'failed', so /load enters a new loading cycle.
     resp2 = await async_worker.post("/load")
     assert resp2.status_code == 202
     await async_worker._app.state.load_task
@@ -447,7 +442,7 @@ async def test_load_failure_marks_status_failed_and_can_retry(async_worker, monk
 
 @pytest.mark.asyncio
 async def test_unload_during_load_signals_cancelling(async_worker, monkeypatch):
-    """POST /unload while loading — cancels background task, transitions away from 'loading'."""
+    """POST /unload while loading: cancels background task, transitions away from 'loading'."""
     provider = async_worker._app.state.provider
 
     async def slow_load(model_dir):
@@ -465,7 +460,7 @@ async def test_unload_during_load_signals_cancelling(async_worker, monkeypatch):
     assert async_worker._app.state.load_state["status"] == "loading"
 
     unload_resp = await async_worker.post("/unload")
-    # FakeProvider.load awaits asyncio.sleep → cancellable → returns 200 status=ok.
+    # FakeProvider.load awaits asyncio.sleep, so it is cancellable and returns 200 status=ok.
     assert unload_resp.status_code in (200, 409)
     assert async_worker._app.state.load_state["status"] in ("idle", "cancelling")
 
@@ -473,10 +468,10 @@ async def test_unload_during_load_signals_cancelling(async_worker, monkeypatch):
 @pytest.mark.asyncio
 async def test_reload_serialises_with_generate(text_worker):
     """Reload must wait for an inflight /generate to finish before
-    swapping the provider — otherwise the request's provider reference
+    swapping the provider; otherwise the request's provider reference
     dangles. We can't truly fire both in parallel from one httpx client,
     but we can assert the lock is present and acquirable."""
-    # Trigger a generate, then immediately reload — with FakeTextProvider
+    # Trigger a generate, then immediately reload. With FakeTextProvider
     # returning instantly, both should succeed back-to-back without
     # corrupting state.
     g = text_worker.post("/generate", json={"messages": [{"role": "user", "content": "hi"}]})
@@ -484,7 +479,7 @@ async def test_reload_serialises_with_generate(text_worker):
     g_resp, r_resp = await asyncio.gather(g, r)
     assert g_resp.status_code == 200
     assert r_resp.status_code == 200
-    # Both land successfully — the lock serialised them correctly.
+    # Both land successfully: the lock serialised them correctly.
     assert r_resp.json()["action"] == "noop"  # same config
 
 

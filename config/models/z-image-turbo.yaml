@@ -33,5 +33,5 @@ queue:
 
 metadata:
   license: Apache-2.0
-  description: "Z-Image Turbo — 6B DiT, 8-step distilled, Apache-2.0, by Tongyi"
+  description: "Z-Image Turbo: 6B DiT, 8-step distilled, Apache-2.0, by Tongyi"
   tags: ["fast", "distilled", "apache2", "modern"]

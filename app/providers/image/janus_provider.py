@@ -63,7 +63,7 @@ class JanusImageProvider(ImageProvider):
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_compute_dtype=dtype,
                 )
-                # bnb auto-places quantized weights — do NOT call .to().cuda() after.
+                # bnb auto-places quantized weights; do NOT call .to().cuda() after.
                 kwargs["device_map"] = "cuda:0"
                 model = AutoModelForCausalLM.from_pretrained(hub_id, **kwargs).eval()
             else:
@@ -139,7 +139,7 @@ class JanusImageProvider(ImageProvider):
 
         input_ids = torch.LongTensor(self._tokenizer.encode(full_prompt)).cuda()
 
-        # CFG batch: row 0 = conditional, row 1 = unconditional (prompt → pad_id).
+        # CFG batch: row 0 = conditional, row 1 = unconditional (prompt replaced by pad_id).
         tokens = torch.zeros((2, len(input_ids)), dtype=torch.int).cuda()
         tokens[0] = input_ids
         tokens[1] = input_ids
@@ -175,7 +175,7 @@ class JanusImageProvider(ImageProvider):
                 generated_tokens.to(torch.int), shape=_VQ_SHAPE
             )
 
-        # VQ decoder output is (B, 3, 384, 384) in [-1, 1] → uint8 RGB.
+        # VQ decoder output is (B, 3, 384, 384) in [-1, 1]; convert to uint8 RGB.
         arr = dec.to(torch.float32).cpu().numpy().transpose(0, 2, 3, 1)
         arr = np.clip((arr + 1) / 2 * 255, 0, 255).astype(np.uint8)
 
