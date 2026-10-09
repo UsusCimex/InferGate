@@ -9,7 +9,7 @@
 | Метод | Путь | Назначение |
 |---|---|---|
 | `POST` | `/v1/chat/completions` | текст, потоковый вывод (SSE), картинки во входе для моделей с `capabilities.vision` |
-| `POST` | `/v1/images/generations` | генерация картинок; img2img и inpaint полями `image` и `mask` (base64) |
+| `POST` | `/v1/images/generations` | генерация картинок; img2img и inpaint полями `image` и `mask` (base64), поток с превью (`stream`) |
 | `POST` | `/v1/images/edits` | img2img и inpaint, multipart |
 | `POST` | `/v1/images/upscale` | увеличение разрешения, multipart |
 | `POST` | `/v1/audio/speech` | синтез речи |
@@ -66,9 +66,17 @@
 | `image`, `mask` | base64 | img2img и inpaint |
 | `denoising_strength` | 0-1 | сила img2img |
 | `refiner_switch_at` | 0-1 | доля шагов базы перед SDXL Refiner (нужен `refiner_hub_id` модели) |
-| `response_format` | `b64_json` или `url` (data URL) | |
+| `response_format` | `b64_json`, `url` (data URL) или `png` | `png`: ответ сама картинка (`image/png`), только при `n` 1 |
+| `stream` | `true` или `false` | события SSE вместо JSON, только при `n` 1 и без `response_format` |
+| `partial_images` | 0-3, только со `stream` | сколько превью прислать до картинки |
 
 Порядок внутри провайдера: смена планировщика, LoRA, Textual Inversion, seed, веса compel, генерация (HighresFix, img2img или inpaint, Refiner или обычный вызов).
+
+**Поток** (`stream: true`) повторяет формат OpenAI: события `image_generation.partial_image` (`b64_json`, `partial_image_index`) и в конце одно `image_generation.completed` с картинкой, у обоих `created_at`, `size` и `output_format: png`.
+
+- Превью (PNG до 512 px) рисует `DiffusersImageProvider` у конвейеров с латентами `[batch, channels, h, w]`, например SDXL и SD 3.5 Medium: VAE декодирует латенты равномерно расставленных шагов, каждое превью стоит одного декодирования. FLUX, Qwen-Image, Janus-Pro, Meissonic, HighresFix и Refiner присылают только картинку.
+- Ошибка до первого события приходит обычным ответом с кодом, после него событием `error` с `{"error": {"message", "type"}}`. Поток воркера не по протоколу (испорченная строка, нет итоговой картинки) - это 502 или событие с `upstream_error`.
+- Попадание в кэш приходит одним событием `completed`. Обрыв потока клиентом генерацию не отменяет: картинка попадает в кэш.
 
 **`/v1/images/edits`** (multipart): `image` и `prompt` (обязательны), `mask?`, `model?`, `n`, `size` (по умолчанию `1024x1024`), `response_format`, `seed`, `negative_prompt`, `num_inference_steps`, `guidance_scale`, `scheduler`, `denoising_strength`.
 
@@ -136,6 +144,7 @@
 | 413 | `upload_too_large` (лимиты `upload_limits`: картинка 20 МБ, аудио 25 МБ, видео 200 МБ, апскейл 50 МБ) |
 | 422 | `invalid_request`: ошибка валидации, `param` называет поле |
 | 429 | `rate_limit_exceeded` |
+| 502 | `upstream_error`: поток картинок воркера не по протоколу |
 | 503 | `worker_not_ready` (контейнер модели не запущен), `insufficient_resources` (модель не помещается в бюджет VRAM: мешают закреплённые модели или запросы других моделей не закончились за `queue.timeout_seconds`), `queue_full`, `model_not_ready` |
 | 504 | `timeout` |
 

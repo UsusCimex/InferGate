@@ -16,12 +16,15 @@ from starlette.responses import StreamingResponse
 from app.config import ModelConfig, load_single_model_config
 from app.monitoring.logs import configure_logging
 from app.monitoring.tracing import configure_tracing
+from app.providers._remote_protocol import image_error_line, image_frame_line
 from app.providers.base import BaseProvider
 from app.providers.registry import get_provider_class
 
 logger = logging.getLogger(__name__)
 
 _UNLOAD_CANCEL_TIMEOUT = 10.0
+# Image generations that outlive their stream's response keep a reference here.
+_STREAM_TASKS: set[asyncio.Task] = set()
 
 
 def _initial_load_state() -> dict[str, Any]:
@@ -451,6 +454,14 @@ async def generate(request: Request):
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache"},
         )
+    if stream and request.app.state.config.category == "image":
+        prompt = body.pop("prompt")
+        partial_images = int(body.pop("partial_images", 0) or 0)
+        return StreamingResponse(
+            _stream_image(request.app, prompt, partial_images, body),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
@@ -472,11 +483,7 @@ async def generate(request: Request):
                 status_code=400,
             )
         except RuntimeError as e:
-            if "CUDA error" in str(e):
-                logger.critical("Unrecoverable CUDA error, worker exiting for restart: %s", e)
-                logging.shutdown()
-                # sys.exit inside a request only raises SystemExit into uvicorn; the container must die to restart.
-                os._exit(1)
+            _exit_on_cuda_error(e)
             raise
 
         return JSONResponse(
@@ -485,11 +492,51 @@ async def generate(request: Request):
         )
 
 
+def _exit_on_cuda_error(error: RuntimeError) -> None:
+    if "CUDA error" in str(error):
+        logger.critical("Unrecoverable CUDA error, worker exiting for restart: %s", error)
+        logging.shutdown()
+        # sys.exit inside a request only raises SystemExit into uvicorn; the container must die to restart.
+        os._exit(1)
+
+
 async def _stream_text(app: FastAPI, messages: list[dict], params: dict[str, Any]):
     """Chat chunks under reload_lock for the whole stream, so /reload waits for its end."""
     async with app.state.reload_lock:
         async for chunk in app.state.provider.generate_stream(messages, **params):
             yield chunk
+
+
+async def _stream_image(app: FastAPI, prompt: str, partial_images: int, params: dict[str, Any]):
+    """NDJSON image frames of a generation that runs in its own task.
+
+    A gateway that hangs up does not release reload_lock while the GPU still works on the image.
+    """
+    lines: asyncio.Queue[bytes | None] = asyncio.Queue()
+    task = asyncio.create_task(_generate_frames(app, prompt, partial_images, params, lines))
+    _STREAM_TASKS.add(task)
+    task.add_done_callback(_STREAM_TASKS.discard)
+    while (line := await lines.get()) is not None:
+        yield line
+
+
+async def _generate_frames(
+    app: FastAPI, prompt: str, partial_images: int, params: dict[str, Any],
+    lines: asyncio.Queue[bytes | None],
+) -> None:
+    try:
+        async with app.state.reload_lock:
+            async for frame in app.state.provider.generate_stream(prompt, partial_images, **params):
+                lines.put_nowait(image_frame_line(frame))
+    except ValueError as e:
+        lines.put_nowait(image_error_line(str(e), "invalid_request"))
+    except Exception as e:
+        if isinstance(e, RuntimeError):
+            _exit_on_cuda_error(e)
+        logger.exception("Image stream failed")
+        lines.put_nowait(image_error_line(str(e), "worker_error"))
+    finally:
+        lines.put_nowait(None)
 
 
 @app.post("/synthesize")

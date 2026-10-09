@@ -3,15 +3,18 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import inspect
 import io
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
-from app.providers.base import ImageProvider
+from app.providers.base import ImageFrame, ImageProvider
 from app.providers.image._compel import CompelAdapter, has_weight_syntax, strip_weight_syntax
 from app.providers.image._highres_fix import apply_highres_fix
 from app.providers.image._lora import LoraCache
 from app.providers.image._offload import offload_mode
+from app.providers.image._previews import StepPreviews, relay_previews
 from app.providers.image._schedulers import resolve_scheduler
 from app.providers.image._size import apply_size
 from app.providers.image._textual_inversion import TextualInversionRegistry
@@ -136,6 +139,10 @@ def _maybe_enable_vae_tiling(pipe: Any, model_id: str, torch: Any) -> None:
         "VAE: %.0f MB free; tiling with tile=%d latents for %s",
         free_mb, tile_size, model_id,
     )
+
+
+def _takes_step_callback(pipe: Any) -> bool:
+    return "callback_on_step_end" in inspect.signature(pipe.__call__).parameters
 
 
 @register_provider
@@ -372,6 +379,27 @@ class DiffusersImageProvider(ImageProvider):
         logger.info("Unloaded %s", self.model_id)
 
     async def generate(self, prompt: str, **params: Any) -> bytes:
+        return await self._generate(prompt, params)
+
+    async def generate_stream(
+        self, prompt: str, partial_images: int, **params: Any
+    ) -> AsyncIterator[ImageFrame]:
+        """Previews decode the latents of evenly spaced steps with the VAE (see `_previews`)."""
+        if partial_images <= 0:
+            yield ImageFrame(await self._generate(prompt, params), final=True)
+            return
+        loop = asyncio.get_running_loop()
+        previews: asyncio.Queue[bytes] = asyncio.Queue()
+        callback = StepPreviews(
+            partial_images, lambda png: loop.call_soon_threadsafe(previews.put_nowait, png)
+        )
+        generation = asyncio.ensure_future(self._generate(prompt, params, callback))
+        async for frame in relay_previews(previews, generation):
+            yield frame
+
+    async def _generate(
+        self, prompt: str, params: dict[str, Any], previews: StepPreviews | None = None
+    ) -> bytes:
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
@@ -412,6 +440,15 @@ class DiffusersImageProvider(ImageProvider):
                 negative_prompt = defaults["negative_prompt"] = strip_weight_syntax(negative_prompt)
         use_compel = self._compel.available and has_weight_syntax(prompt, negative_prompt)
 
+        def _with_previews(pipe: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+            if previews is None or not _takes_step_callback(pipe):
+                return kwargs
+            return {
+                **kwargs,
+                "callback_on_step_end": previews,
+                "callback_on_step_end_tensor_inputs": list(previews.tensor_inputs),
+            }
+
         def _gen():
             self._pipeline.scheduler = scheduler
             self._lora.apply(self._pipeline, loras, lora_cfg, model_dir)
@@ -437,10 +474,12 @@ class DiffusersImageProvider(ImageProvider):
                     if mask.size != input_image.size:
                         mask = mask.resize(input_image.size, _Image.NEAREST)
                     pipe = self._ensure_inpaint_pipe()
+                    call_kwargs = _with_previews(pipe, call_kwargs)
                     if use_compel:
                         return pipe(image=input_image, mask_image=mask, **call_kwargs).images[0]
                     return pipe(prompt=prompt, image=input_image, mask_image=mask, **call_kwargs).images[0]
                 pipe = self._ensure_img2img_pipe()
+                call_kwargs = _with_previews(pipe, call_kwargs)
                 if use_compel:
                     return pipe(image=input_image, **call_kwargs).images[0]
                 return pipe(prompt=prompt, image=input_image, **call_kwargs).images[0]
@@ -466,10 +505,11 @@ class DiffusersImageProvider(ImageProvider):
                 # The refiner has no compel adapter and reads prompts as plain text.
                 return self._refiner(prompt=strip_weight_syntax(prompt), **ref_kwargs).images[0]
 
+            call_kwargs = _with_previews(self._pipeline, defaults)
             if use_compel:
-                return self._pipeline(**defaults).images[0]
+                return self._pipeline(**call_kwargs).images[0]
             # Pass prompt as kwarg: some pipelines (FLUX.2-klein) take `image` first positionally.
-            return self._pipeline(prompt=prompt, **defaults).images[0]
+            return self._pipeline(prompt=prompt, **call_kwargs).images[0]
 
         loop = asyncio.get_running_loop()
         image = await loop.run_in_executor(None, _gen)

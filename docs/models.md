@@ -79,7 +79,7 @@
 
 | `category` | `provider_class` | Что умеет |
 |---|---|---|
-| `image` | `DiffusersImageProvider` | любая модель diffusers: LoRA, Textual Inversion, веса compel (SDXL), смена планировщика, HighresFix, SDXL Refiner, img2img, inpaint, nf4 через bitsandbytes |
+| `image` | `DiffusersImageProvider` | любая модель diffusers: LoRA, Textual Inversion, веса compel (SDXL), смена планировщика, HighresFix, SDXL Refiner, img2img, inpaint, nf4 через bitsandbytes, превью шагов в потоке |
 | `image` | `JanusImageProvider` | DeepSeek Janus-Pro (авторегрессия) |
 | `image` | `MeissonicImageProvider` | Meissonic (пайплайн из репозитория авторов) |
 | `text` | `VllmTextProvider` | любая LLM через vLLM: потоковый вывод, шаблоны чата, картинки во входе |

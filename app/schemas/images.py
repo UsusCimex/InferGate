@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -40,7 +42,9 @@ class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=10000)
     n: int = Field(1, ge=1, le=10)
     size: str | None = None
-    response_format: str = "b64_json"
+    response_format: Literal["b64_json", "url", "png"] = "b64_json"
+    stream: bool = False
+    partial_images: int = Field(0, ge=0, le=3)
     seed: int | None = None
     negative_prompt: str | None = Field(None, max_length=10000)
     num_inference_steps: int | None = Field(None, ge=1, le=150)
@@ -73,6 +77,16 @@ class ImageGenerationRequest(BaseModel):
     def _mask_requires_image(self) -> ImageGenerationRequest:
         if self.mask is not None and self.image is None:
             raise ValueError("mask requires image: inpainting needs a base image to modify")
+        return self
+
+    @model_validator(mode="after")
+    def _one_image_per_stream_or_png(self) -> ImageGenerationRequest:
+        if self.stream and self.response_format != "b64_json":
+            raise ValueError("stream sends b64_json events: leave response_format out")
+        if (self.stream or self.response_format == "png") and self.n != 1:
+            raise ValueError("stream and response_format png carry one image: n must be 1")
+        if self.partial_images and not self.stream:
+            raise ValueError("partial_images needs stream: true")
         return self
 
 

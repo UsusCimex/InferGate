@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import contextlib
 import fnmatch
 import hashlib
+import json
+import logging
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
+from starlette.responses import StreamingResponse
 
 from app.dependencies import (
     get_allowed_adapter_repos,
@@ -19,10 +26,17 @@ from app.dependencies import (
     get_upload_limits,
 )
 from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prometheus_available
+from app.providers.base import ImageFrame, WorkerStreamError
 from app.schemas.images import ImageData, ImageGenerationRequest, ImageGenerationResponse
+from app.services.gpu_scheduler import RequestTimeoutError
 from app.utils import read_with_limit
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Streamed generations that outlive their response keep a reference here.
+_STREAMS: set[asyncio.Task] = set()
 
 
 @router.post("/v1/images/generations")
@@ -92,24 +106,16 @@ async def generate_images(
     if should_cache:
         cached = await cache.get(cache_key)
         if cached:
-            elapsed = int((time.monotonic() - start) * 1000)
-            b64 = base64.b64encode(cached).decode()
-            resp = ImageGenerationResponse(
-                created=int(time.time()),
-                data=[ImageData(b64_json=b64)],
-            )
+            elapsed = _elapsed_ms(start)
             if is_prometheus_available():
                 CACHE_HITS.labels(model_id=model_id).inc()
             if history is not None:
                 history.record(_history_entry(body, model_id, "HIT", elapsed, cache_key))
-            return JSONResponse(
-                resp.model_dump(),
-                headers={
-                    "X-InferGate-Cache": "HIT",
-                    "X-InferGate-Model": model_id,
-                    "X-InferGate-Generation-Ms": str(elapsed),
-                },
-            )
+            return _image_response(body, [cached], {
+                "X-InferGate-Cache": "HIT",
+                "X-InferGate-Model": model_id,
+                "X-InferGate-Generation-Ms": str(elapsed),
+            })
         cache_status = "MISS"
         await cache.record_miss(model_id)
         if is_prometheus_available():
@@ -121,41 +127,180 @@ async def generate_images(
     timeout = config.queue.timeout_seconds
     priority = priority or config.queue.priority
 
-    data_list = []
+    if body.stream:
+        async def finish(png_bytes: bytes) -> None:
+            if should_cache:
+                await cache.put(cache_key, png_bytes, model_id, cache_cfg)
+            if history is not None:
+                history.record(_history_entry(
+                    body, model_id, cache_status, _elapsed_ms(start),
+                    cache_key if should_cache else None,
+                ))
+
+        return await _stream_image(
+            body, params, provider, manager, scheduler, priority, timeout, finish,
+            {"X-InferGate-Cache": cache_status, "X-InferGate-Model": model_id},
+        )
+
+    images = []
     for _ in range(body.n):
         inference_start = time.monotonic()
         async with manager.active_request(model_id):
             png_bytes = await scheduler.submit(
                 model_id, priority, provider.generate(body.prompt, **params), timeout
             )
-        if is_prometheus_available():
-            INFERENCE_DURATION.labels(model_id=model_id, category="image").observe(
-                time.monotonic() - inference_start
-            )
+        _observe_inference(model_id, inference_start)
         if should_cache:
             await cache.put(cache_key, png_bytes, model_id, cache_cfg)
+        images.append(png_bytes)
 
-        b64 = base64.b64encode(png_bytes).decode()
-        if body.response_format == "url":
-            data_list.append(ImageData(url=f"data:image/png;base64,{b64}"))
-        else:
-            data_list.append(ImageData(b64_json=b64))
-
-    elapsed = int((time.monotonic() - start) * 1000)
+    elapsed = _elapsed_ms(start)
     if history is not None:
         history.record(_history_entry(
             body, model_id, cache_status, elapsed, cache_key if should_cache else None,
         ))
-    resp = ImageGenerationResponse(created=int(time.time()), data=data_list)
-    return JSONResponse(
-        resp.model_dump(),
+    return _image_response(body, images, {
+        "X-InferGate-Cache": cache_status,
+        "X-InferGate-Model": model_id,
+        "X-InferGate-Queue-Position": str(scheduler.last_position),
+        "X-InferGate-Generation-Ms": str(elapsed),
+    })
+
+
+async def _stream_image(
+    body: ImageGenerationRequest, params: dict, provider, manager, scheduler, priority,
+    timeout_s: float, finish: Callable[[bytes], Awaitable[None]], headers: dict[str, str],
+) -> Response:
+    """Server-sent events of the previews and the final image.
+
+    The generation runs in its own task: a client that hangs up still gets the image cached.
+    Errors before the first frame answer with their HTTP status (502 for a broken worker stream),
+    later ones with an error event.
+    """
+    model_id = provider.model_id
+    frames: asyncio.Queue[ImageFrame | Exception] = asyncio.Queue()
+    final: list[bytes] = []
+
+    async def pump() -> None:
+        async for frame in provider.generate_stream(body.prompt, body.partial_images, **params):
+            frames.put_nowait(frame)
+            if frame.final:
+                final.append(frame.png)
+        if not final:
+            raise WorkerStreamError("the image stream ended without the final image")
+
+    async def run() -> None:
+        inference_start = time.monotonic()
+        try:
+            async with manager.active_request(model_id):
+                await scheduler.submit(model_id, priority, pump(), timeout_s)
+        except Exception as e:
+            frames.put_nowait(e)
+            return
+        _observe_inference(model_id, inference_start)
+        try:
+            await finish(final[0])
+        except Exception:
+            logger.exception("Could not store the streamed image of %s", model_id)
+
+    task = asyncio.create_task(run())
+    _STREAMS.add(task)
+    task.add_done_callback(_STREAMS.discard)
+
+    first = await frames.get()
+    if isinstance(first, WorkerStreamError):
+        return JSONResponse({"error": _stream_error(first)}, status_code=502)
+    if isinstance(first, ValueError):
+        return JSONResponse({"error": _stream_error(first)}, status_code=400)
+    if isinstance(first, Exception):
+        raise first
+    return StreamingResponse(
+        _image_events(body, first, frames),
+        media_type="text/event-stream",
         headers={
-            "X-InferGate-Cache": cache_status,
-            "X-InferGate-Model": model_id,
+            **headers,
             "X-InferGate-Queue-Position": str(scheduler.last_position),
-            "X-InferGate-Generation-Ms": str(elapsed),
+            "Cache-Control": "no-cache",
         },
     )
+
+
+async def _image_events(
+    body: ImageGenerationRequest, first: ImageFrame, frames: asyncio.Queue
+) -> AsyncIterator[str]:
+    item: ImageFrame | Exception = first
+    index = 0
+    while True:
+        if isinstance(item, Exception):
+            yield _sse("error", {"error": _stream_error(item)})
+            return
+        if item.final:
+            yield _sse("image_generation.completed", _image_event(body, item.png, "completed"))
+            return
+        event = _image_event(body, item.png, "partial_image")
+        yield _sse("image_generation.partial_image", {**event, "partial_image_index": index})
+        index += 1
+        item = await frames.get()
+
+
+def _image_event(body: ImageGenerationRequest, png: bytes, kind: str) -> dict:
+    return {
+        "type": f"image_generation.{kind}",
+        "b64_json": base64.b64encode(png).decode(),
+        "created_at": int(time.time()),
+        "size": body.size,
+        "output_format": "png",
+    }
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def _stream_error(error: Exception) -> dict:
+    """The OpenAI-style error of a failed stream; a worker's own error body passes as is."""
+    if isinstance(error, httpx.HTTPStatusError):
+        with contextlib.suppress(ValueError, KeyError, TypeError):
+            return dict(error.response.json()["error"])
+    if isinstance(error, (RequestTimeoutError, httpx.TimeoutException)):
+        kind = "timeout"
+    elif isinstance(error, WorkerStreamError):
+        kind = "upstream_error"
+    elif isinstance(error, ValueError):
+        kind = "invalid_request"
+    else:
+        kind = "server_error"
+    return {"message": str(error) or type(error).__name__, "type": kind}
+
+
+def _image_response(
+    body: ImageGenerationRequest, images: list[bytes], headers: dict[str, str]
+) -> Response:
+    if body.stream:
+        event = _sse("image_generation.completed", _image_event(body, images[0], "completed"))
+        return Response(event, media_type="text/event-stream", headers=headers)
+    if body.response_format == "png":
+        return Response(images[0], media_type="image/png", headers=headers)
+    data = []
+    for png in images:
+        b64 = base64.b64encode(png).decode()
+        if body.response_format == "url":
+            data.append(ImageData(url=f"data:image/png;base64,{b64}"))
+        else:
+            data.append(ImageData(b64_json=b64))
+    resp = ImageGenerationResponse(created=int(time.time()), data=data)
+    return JSONResponse(resp.model_dump(), headers=headers)
+
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.monotonic() - start) * 1000)
+
+
+def _observe_inference(model_id: str, inference_start: float) -> None:
+    if is_prometheus_available():
+        INFERENCE_DURATION.labels(model_id=model_id, category="image").observe(
+            time.monotonic() - inference_start
+        )
 
 
 @router.post("/v1/images/edits")

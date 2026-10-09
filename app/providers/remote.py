@@ -16,10 +16,12 @@ from app.providers._remote_protocol import (
     MultipartEndpoint,
     call_json,
     call_multipart,
+    parse_image_frame,
 )
 from app.providers.base import (
     AudioEmbeddingProvider,
     BaseProvider,
+    ImageFrame,
     ImageProvider,
     ImageUpscaleProvider,
     MultimodalEmbeddingProvider,
@@ -460,6 +462,23 @@ class RemoteImageProvider(BaseRemoteMixin, ImageProvider):
 
     async def generate(self, prompt: str, **params: Any) -> bytes:
         return await self._call_json(GENERATE_IMAGE, prompt, **params)
+
+    async def generate_stream(
+        self, prompt: str, partial_images: int, **params: Any
+    ) -> AsyncIterator[ImageFrame]:
+        client = self._client_required()
+        async with client.stream(
+            "POST", "/generate",
+            json={"prompt": prompt, "stream": True, "partial_images": partial_images, **params},
+            headers=_request_id_headers(),
+        ) as resp:
+            if resp.is_error:
+                # The error handler forwards the worker's JSON body, so read it before raising.
+                await resp.aread()
+                resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if line:
+                    yield parse_image_frame(line)
 
 
 class RemoteTtsProvider(BaseRemoteMixin, TtsProvider):

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from app.config import ModelConfig
 
 
@@ -46,12 +48,28 @@ class BaseProvider(ABC):
         }
 
 
+class ImageFrame(NamedTuple):
+    """A PNG of a streamed generation: a preview of the running steps or the final image."""
+    png: bytes
+    final: bool
+
+
+class WorkerStreamError(RuntimeError):
+    """A worker image stream that breaks the protocol: a malformed line or no final image."""
+
+
 class ImageProvider(BaseProvider):
     """Interface for text-to-image models."""
 
     @abstractmethod
     async def generate(self, prompt: str, **params: Any) -> bytes:
         """Generate an image from `prompt`. Returns PNG bytes."""
+
+    async def generate_stream(
+        self, prompt: str, partial_images: int, **params: Any
+    ) -> AsyncIterator[ImageFrame]:
+        """Up to `partial_images` previews, then the final image; by default only the final one."""
+        yield ImageFrame(await self.generate(prompt, **params), final=True)
 
 
 class TextProvider(BaseProvider):

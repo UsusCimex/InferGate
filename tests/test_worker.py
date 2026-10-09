@@ -9,7 +9,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
-from app.providers.base import TextProvider
+from app.providers._remote_protocol import parse_image_frame
+from app.providers.base import ImageFrame, TextProvider, WorkerStreamError
 from app.providers.registry import register_provider
 from tests.conftest import FakeImageProvider, FakeTextProvider, FakeTtsProvider
 
@@ -673,3 +674,92 @@ def test_worker_without_model_gpu_sees_every_gpu(cuda_env):
     _pin_gpu(_gpu_config())
     assert "CUDA_VISIBLE_DEVICES" not in os.environ
     assert _nvml_index() == 0
+
+
+class _PreviewingImageProvider(FakeImageProvider):
+    """One preview, then the final image once `gate` opens; the prompt "bad" fails after the preview."""
+
+    gate: asyncio.Event | None = None
+
+    async def generate_stream(self, prompt, partial_images, **params):
+        self.last_stream = (partial_images, params)
+        yield ImageFrame(b"preview", final=False)
+        if self.gate is not None:
+            await self.gate.wait()
+        if prompt == "bad":
+            raise ValueError("size must be WxH")
+        yield ImageFrame(await self.generate(prompt, **params), final=True)
+
+
+@pytest_asyncio.fixture
+async def previewing_worker():
+    from fastapi import FastAPI
+
+    from app.worker import generate
+
+    provider = _PreviewingImageProvider(_make_config("image", "FakeImageProvider"))
+    await provider.load(".")
+    app = FastAPI()
+    app.state.provider = provider
+    app.state.config = provider.config
+    app.state.reload_lock = asyncio.Lock()
+    app.add_api_route("/generate", generate, methods=["POST"])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://worker") as client:
+        yield app, client
+
+
+@pytest.mark.asyncio
+async def test_image_stream_sends_ndjson_frames(previewing_worker):
+    app, client = previewing_worker
+
+    resp = await client.post("/generate", json={
+        "prompt": "cat", "stream": True, "partial_images": 1, "seed": 3,
+    })
+
+    assert resp.headers["content-type"] == "application/x-ndjson"
+    frames = [parse_image_frame(line) for line in resp.text.splitlines()]
+    assert [frame.final for frame in frames] == [False, True]
+    assert frames[0].png == b"preview"
+    assert frames[1].png.startswith(b"\x89PNG")
+    assert app.state.provider.last_stream == (1, {"seed": 3})
+
+
+@pytest.mark.asyncio
+async def test_image_stream_ends_with_an_error_line(previewing_worker):
+    _, client = previewing_worker
+
+    resp = await client.post("/generate", json={"prompt": "bad", "stream": True, "partial_images": 1})
+
+    lines = resp.text.splitlines()
+    assert parse_image_frame(lines[0]).png == b"preview"
+    with pytest.raises(ValueError, match="size must be WxH") as refused:
+        parse_image_frame(lines[1])
+    assert not isinstance(refused.value, WorkerStreamError)
+
+
+@pytest.mark.parametrize("line", [
+    "not json",
+    "[1, 2]",
+    '{"final": true}',
+    '{"final": true, "b64_json": "not base64!"}',
+    '{"error": "boom"}',
+])
+def test_a_malformed_stream_line_is_a_worker_stream_error(line):
+    with pytest.raises(WorkerStreamError):
+        parse_image_frame(line)
+
+
+@pytest.mark.asyncio
+async def test_image_stream_keeps_the_reload_lock_after_the_gateway_hangs_up(previewing_worker):
+    import app.worker as worker_module
+
+    app, _ = previewing_worker
+    app.state.provider.gate = asyncio.Event()
+    stream = worker_module._stream_image(app, "cat", 1, {})
+    assert parse_image_frame((await anext(stream)).decode()).png == b"preview"
+    await stream.aclose()
+    assert app.state.reload_lock.locked()
+
+    app.state.provider.gate.set()
+    await asyncio.wait(set(worker_module._STREAM_TASKS))
+    assert not app.state.reload_lock.locked()

@@ -17,6 +17,7 @@ from httpx import ASGITransport
 
 from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
 from app.providers import remote as remote_module
+from app.providers.base import ImageFrame, ImageProvider
 
 
 def _make_remote_config(
@@ -683,5 +684,86 @@ async def test_e2e_load_cancellation_during_polling(monkeypatch):
     assert not provider.is_loaded()
     # httpx client must be closed so a second load() rebuilds it without error.
     assert provider._client is None
+
+
+class _PreviewingImageProvider(ImageProvider):
+    async def load(self, model_dir: str) -> None:
+        self._loaded = True
+
+    async def unload(self) -> None:
+        self._loaded = False
+
+    async def generate(self, prompt: str, **params: Any) -> bytes:
+        return b"final:" + prompt.encode()
+
+    async def generate_stream(self, prompt: str, partial_images: int, **params: Any):
+        self.last_stream = (partial_images, params)
+        for i in range(partial_images):
+            yield ImageFrame(f"preview{i}".encode(), final=False)
+        if prompt == "bad":
+            raise ValueError("size must be WxH")
+        yield ImageFrame(await self.generate(prompt), final=True)
+
+
+@pytest_asyncio.fixture
+async def image_stream_worker(monkeypatch):
+    """The real worker /generate with a previewing image provider behind it."""
+    import asyncio as _asyncio
+
+    from app.worker import _ready_guard, generate
+
+    config = _make_remote_config("image")
+    worker = FastAPI()
+    worker.state.provider = _PreviewingImageProvider(config)
+    worker.state.config = config
+    worker.state.reload_lock = _asyncio.Lock()
+    worker.state.load_state = {"status": "ready"}
+    worker.middleware("http")(_ready_guard)
+    worker.add_api_route("/generate", generate, methods=["POST"])
+    worker.add_api_route("/health", lambda: {"status": "ok"}, methods=["GET"])
+    worker.add_api_route("/load", lambda: {"status": "ok"}, methods=["POST"])
+    transport = ASGITransport(app=worker)
+
+    def _build(self, timeout):
+        return httpx.AsyncClient(base_url=self._worker_url, timeout=timeout, transport=transport)
+
+    monkeypatch.setattr(remote_module.BaseRemoteMixin, "_build_client", _build)
+    provider = remote_module.RemoteImageProvider(config)
+    await provider.load("/tmp")
+    yield worker, provider
+
+
+@pytest.mark.asyncio
+async def test_e2e_image_stream_passes_previews_and_the_final_image(image_stream_worker):
+    worker, provider = image_stream_worker
+
+    frames = [frame async for frame in provider.generate_stream("cat", 2, seed=3)]
+
+    assert frames == [
+        ImageFrame(b"preview0", final=False),
+        ImageFrame(b"preview1", final=False),
+        ImageFrame(b"final:cat", final=True),
+    ]
+    assert worker.state.provider.last_stream == (2, {"seed": 3})
+
+
+@pytest.mark.asyncio
+async def test_e2e_image_stream_error_reaches_the_gateway(image_stream_worker):
+    _, provider = image_stream_worker
+
+    with pytest.raises(ValueError, match="size must be WxH"):
+        [frame async for frame in provider.generate_stream("bad", 1)]
+
+
+@pytest.mark.asyncio
+async def test_e2e_image_stream_refused_by_the_worker_keeps_its_error_body(image_stream_worker):
+    worker, provider = image_stream_worker
+    worker.state.load_state = {"status": "loading"}
+
+    with pytest.raises(httpx.HTTPStatusError) as refused:
+        [frame async for frame in provider.generate_stream("cat", 1)]
+
+    assert refused.value.response.status_code == 503
+    assert refused.value.response.json()["error"]["type"] == "model_not_ready"
 
 

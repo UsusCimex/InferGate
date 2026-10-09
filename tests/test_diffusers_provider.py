@@ -1,3 +1,4 @@
+import io
 import sys
 import types
 
@@ -102,3 +103,72 @@ async def test_weights_become_plain_text_without_compel(provider):
     _, kwargs = provider._pipeline.calls[-1]
     assert kwargs["prompt"] == "A single bat, an animal"
     assert kwargs["negative_prompt"] == "blurry, text"
+
+
+class _Latents:
+    """Latents of one step: every tensor operation the preview decode makes keeps the step."""
+
+    ndim = 4
+
+    def __init__(self, step):
+        self.step = step
+
+    def __getitem__(self, _index):
+        return self
+
+    def to(self, _dtype):
+        return self
+
+    def __truediv__(self, _factor):
+        return self
+
+    def __add__(self, _shift):
+        return self
+
+
+class _PreviewPipeline(_Pipeline):
+    """Runs four steps through callback_on_step_end; the VAE paints step x 60 into the red channel."""
+
+    num_timesteps = 4
+
+    def __init__(self, scheduler):
+        super().__init__(scheduler)
+        self.vae = types.SimpleNamespace(
+            config=types.SimpleNamespace(scaling_factor=0.13, shift_factor=None),
+            dtype=None,
+            decode=lambda sample, return_dict=False: (sample,),
+        )
+        self.image_processor = types.SimpleNamespace(
+            postprocess=lambda decoded, output_type: [
+                Image.new("RGB", (8, 8), (decoded.step * 60, 0, 0))
+            ],
+        )
+
+    def __call__(self, callback_on_step_end=None, callback_on_step_end_tensor_inputs=None, **kwargs):
+        self.calls.append((type(self.scheduler).__name__, {
+            **kwargs, "callback_on_step_end_tensor_inputs": callback_on_step_end_tensor_inputs,
+        }))
+        for step in range(self.num_timesteps):
+            if callback_on_step_end is not None:
+                callback_on_step_end(self, step, 0, {"latents": _Latents(step)})
+        return types.SimpleNamespace(images=[Image.new("RGB", (8, 8))])
+
+
+async def test_stream_sends_vae_previews_of_evenly_spaced_steps(provider):
+    provider._pipeline = _PreviewPipeline(provider._pipeline.scheduler)
+
+    frames = [frame async for frame in provider.generate_stream("a cat", 2)]
+
+    assert [frame.final for frame in frames] == [False, False, True]
+    reds = [Image.open(io.BytesIO(frame.png)).getpixel((0, 0))[0] for frame in frames[:2]]
+    assert reds == [0, 60]
+    _, kwargs = provider._pipeline.calls[-1]
+    assert kwargs["callback_on_step_end_tensor_inputs"] == ["latents"]
+
+
+async def test_stream_without_previews_or_step_callbacks_sends_the_final_image(provider):
+    frames = [frame async for frame in provider.generate_stream("a cat", 2)]
+
+    assert [frame.final for frame in frames] == [True]
+    _, kwargs = provider._pipeline.calls[-1]
+    assert "callback_on_step_end" not in kwargs
