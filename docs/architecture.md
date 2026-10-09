@@ -63,7 +63,7 @@
 
 ## Middleware
 
-Чистый ASGI: `RequestIdMiddleware` (`X-Request-ID`), `PrometheusMiddleware`, `AccessLogMiddleware` (`INFERGATE_ACCESS_LOG_JSON=true` пишет журнал в JSON), по настройке `ApiKeyMiddleware` и `RateLimitMiddleware`; CORS стандартный из Starlette.
+Чистый ASGI: `RequestIdMiddleware` (`X-Request-ID`), `PrometheusMiddleware`, `AccessLogMiddleware`, по настройке `ApiKeyMiddleware` и `RateLimitMiddleware`; CORS стандартный из Starlette.
 
 Порядок снаружи внутрь: request id, журнал, метрики, CORS, лимит запросов, ключ API. Поэтому preflight `OPTIONS` проходит без ключа, а ответы 401 и 429 несут заголовки CORS и `X-Request-ID`. В Starlette внешним становится последний добавленный middleware, поэтому `create_app` добавляет их в обратном порядке.
 

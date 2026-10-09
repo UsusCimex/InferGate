@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.responses import StreamingResponse
 
 from app.config import ModelConfig, load_single_model_config
+from app.monitoring.logs import configure_logging
 from app.providers.base import BaseProvider
 from app.providers.registry import get_provider_class
 
@@ -68,10 +69,7 @@ async def lifespan(app: FastAPI):
     config_path = os.environ.get("WORKER_MODEL_CONFIG", "config/models/model.yaml")
     models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    configure_logging(logging.INFO)
     warnings.filterwarnings("ignore", category=UserWarning)
     warnings.filterwarnings("ignore", category=FutureWarning)
 

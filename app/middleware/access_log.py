@@ -1,28 +1,19 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
 import time
 
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+from app.monitoring.logs import json_logs_enabled
 
 logger = logging.getLogger(__name__)
 
 _SKIP_PATHS = frozenset({"/health", "/v1/health", "/openapi.json"})
 
 
-def _format_enabled() -> bool:
-    """Read INFERGATE_ACCESS_LOG_JSON each call so tests can flip it via monkeypatch."""
-    return os.environ.get("INFERGATE_ACCESS_LOG_JSON", "").lower() in {"1", "true", "yes"}
-
-
 class AccessLogMiddleware:
-    """Log method, path, status, latency and request id for every HTTP request.
-
-    Default format is human-readable. Set INFERGATE_ACCESS_LOG_JSON=true for
-    structured single-line JSON suitable for ingest into Loki / Elastic / etc.
-    """
+    """Log method, path, status, latency and request id for every HTTP request."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -49,27 +40,12 @@ class AccessLogMiddleware:
         path = scope["path"]
         request_id = (scope.get("state") or {}).get("request_id")
 
-        if _format_enabled():
-            payload = {
-                "msg": "http_access",
-                "client": client,
-                "method": method,
-                "path": path,
-                "status": status_code,
-                "latency_ms": elapsed_ms,
-            }
-            if request_id:
-                payload["request_id"] = request_id
-            logger.info(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
-            return
-
-        if request_id:
-            logger.info(
-                "%s %s %s -> %d (%d ms) [%s]",
-                client, method, path, status_code, elapsed_ms, request_id,
-            )
+        if json_logs_enabled():
+            logger.info("http_access", extra={
+                "client": client, "method": method, "path": path,
+                "status": status_code, "latency_ms": elapsed_ms, "request_id": request_id,
+            })
+        elif request_id:
+            logger.info("%s %s %s %d (%d ms) [%s]", client, method, path, status_code, elapsed_ms, request_id)
         else:
-            logger.info(
-                "%s %s %s -> %d (%d ms)",
-                client, method, path, status_code, elapsed_ms,
-            )
+            logger.info("%s %s %s %d (%d ms)", client, method, path, status_code, elapsed_ms)

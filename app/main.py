@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from app.config import load_model_configs, load_server_config
 from app.middleware import AccessLogMiddleware, ApiKeyMiddleware, RateLimitMiddleware
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
+from app.monitoring.logs import configure_logging
 from app.routers import admin, audio, cache, chat, embeddings, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.config_watcher import ConfigWatcher
@@ -40,10 +41,7 @@ async def lifespan(app: FastAPI):
     server_cfg = app.state.server_config
     model_cfgs = load_model_configs()
 
-    logging.basicConfig(
-        level=getattr(logging, server_cfg.log_level.value.upper(), logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    configure_logging(getattr(logging, server_cfg.log_level.value.upper(), logging.INFO))
     # /stats poller would log a line per worker per tick at httpx INFO.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
