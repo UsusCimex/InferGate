@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import fnmatch
 import hashlib
 import time
 
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from app.dependencies import (
+    get_allowed_adapter_repos,
     get_cache_manager,
     get_defaults,
     get_gpu_scheduler,
@@ -31,10 +33,20 @@ async def generate_images(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
     priority=Depends(get_priority),
+    allowed_repos=Depends(get_allowed_adapter_repos),
 ):
     model_id = body.model or defaults.get("image")
     if not model_id:
         return JSONResponse({"error": {"message": "No model specified"}}, status_code=400)
+    blocked = _blocked_adapter_repos(body, allowed_repos)
+    if blocked:
+        return JSONResponse(
+            {"error": {
+                "message": f"adapter repos not allowed: {', '.join(blocked)} (adapters.allowed_repos)",
+                "type": "adapter_not_allowed",
+            }},
+            status_code=403,
+        )
 
     start = time.monotonic()
     config = manager.get_config(model_id)
@@ -160,6 +172,7 @@ async def edit_images(
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
     priority=Depends(get_priority),
+    allowed_repos=Depends(get_allowed_adapter_repos),
 ):
     """Multipart img2img/inpaint: delegates to the same path as /v1/images/generations."""
     image_bytes = await read_with_limit(image, limits.max_image_mb * 1024 * 1024)
@@ -197,7 +210,7 @@ async def edit_images(
     return await generate_images(
         body=body, request=request,
         manager=manager, scheduler=scheduler_dep, cache=cache, defaults=defaults,
-        priority=priority,
+        priority=priority, allowed_repos=allowed_repos,
     )
 
 
@@ -275,6 +288,13 @@ async def upscale_image(
     elapsed = int((time.monotonic() - start) * 1000)
     return _upscale_response(png_bytes, response_format, model_id, elapsed, cache_status,
                               scheduler.last_position)
+
+
+def _blocked_adapter_repos(body: ImageGenerationRequest, allowed: list[str]) -> list[str]:
+    """Repos of the requested LoRAs and textual inversions that no allowed pattern matches."""
+    repos = [spec.id for spec in (body.loras or [])]
+    repos += [spec.id for spec in (body.textual_inversions or [])]
+    return [repo for repo in repos if not any(fnmatch.fnmatchcase(repo, p) for p in allowed)]
 
 
 def _upscale_response(

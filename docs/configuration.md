@@ -19,7 +19,9 @@
 | `cache.enabled`, `directory`, `max_total_size_gb`, `cleanup_interval_minutes` | `true`, `./cache`, 10, 30 | дисковый кэш ответов |
 | `cache.backend` | `local` (`CACHE_BACKEND`) | `local` (SQLite и файлы) или `redis` |
 | `cache.redis_url`, `redis_prefix` | `redis://localhost:6379/0` (`CACHE_REDIS_URL`), `infergate:cache` | адрес Redis и префикс ключей |
-| `cors.*` | `*` | разрешённые источники, методы, заголовки |
+| `cors.allow_origins`, `allow_methods`, `allow_headers` | `*` | разрешённые источники, методы, заголовки |
+| `cors.allow_credentials` | `false` | куки и HTTP-авторизация в запросах с других источников; с `allow_origins: ["*"]` шлюз не запускается |
+| `adapters.allowed_repos` | `["*"]` | шаблоны репозиториев Hugging Face (`ostris/*`), из которых `loras` и `textual_inversions` скачивают веса, остальные получают 403 `adapter_not_allowed` |
 | `models_dir` | `./models` | папка весов для локального режима и `scripts/download_models.py` |
 | `defaults.image`, `text`, `tts`, `stt`, `upscale` | `sdxl-base`, `qwen3.5-4b`, `kokoro-82m`, `whisper-base`, `realesrgan-x4` | модель, если в запросе нет `model` |
 | `defaults.embedding_text`, `_audio`, `_image`, `_video` | E5, CLAP, CLIP, CLIP4Clip | то же для эмбеддингов |

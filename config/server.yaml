@@ -30,6 +30,10 @@ cors:
   allow_origins: ["*"]
   allow_methods: ["*"]
   allow_headers: ["*"]
+  allow_credentials: false
+
+adapters:
+  allowed_repos: ["*"]
 
 models_dir: "./models"
 

@@ -38,6 +38,10 @@ def get_upload_limits(request: Request) -> UploadLimitsConfig:
     return request.app.state.upload_limits
 
 
+def get_allowed_adapter_repos(request: Request) -> list[str]:
+    return request.app.state.allowed_adapter_repos
+
+
 def get_priority(
     priority: Priority | None = Header(None, alias="X-InferGate-Priority"),
 ) -> Priority | None:

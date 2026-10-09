@@ -79,6 +79,7 @@ async def lifespan(app: FastAPI):
     app.state.cache_manager = cache_mgr
     app.state.defaults = defaults
     app.state.upload_limits = server_cfg.upload_limits
+    app.state.allowed_adapter_repos = server_cfg.adapters.allowed_repos
     app.state.start_time = time.time()
 
     manager.start_worker_monitor()
@@ -160,6 +161,8 @@ def create_app() -> FastAPI:
     )
 
     server_cfg = load_server_config()
+    if server_cfg.cors.allow_credentials and "*" in server_cfg.cors.allow_origins:
+        raise ValueError("cors.allow_credentials needs explicit cors.allow_origins, not *")
     # Stash so lifespan() doesn't re-parse YAML on every startup.
     app.state.server_config = server_cfg
 
@@ -179,7 +182,7 @@ def create_app() -> FastAPI:
         allow_origins=server_cfg.cors.allow_origins,
         allow_methods=server_cfg.cors.allow_methods,
         allow_headers=server_cfg.cors.allow_headers,
-        allow_credentials=True,
+        allow_credentials=server_cfg.cors.allow_credentials,
     )
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(AccessLogMiddleware)

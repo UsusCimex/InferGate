@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from app.config import (
     ModelConfig,
     ServerConfig,
@@ -42,6 +44,17 @@ def test_redis_cache_is_configurable(monkeypatch):
     assert cache["backend"] == "redis"
     assert cache["redis_url"] == "redis://redis:6379/1"
     assert cache["redis_prefix"] == "infergate:cache"
+
+
+def test_credentials_with_any_origin_refuse_to_start(monkeypatch):
+    import app.main as main
+    from app.config import CorsConfig
+
+    monkeypatch.setattr(
+        main, "load_server_config", lambda: ServerConfig(cors=CorsConfig(allow_credentials=True))
+    )
+    with pytest.raises(ValueError, match="allow_credentials"):
+        main.create_app()
 
 
 def test_defaults_name_stt_and_upscale_models():

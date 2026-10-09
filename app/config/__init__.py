@@ -8,6 +8,7 @@ from app.config.models import (
     ModelQueueConfig,
 )
 from app.config.server import (
+    AdaptersConfig,
     AuthConfig,
     CacheConfig,
     CorsConfig,
@@ -20,6 +21,7 @@ from app.config.server import (
 )
 
 __all__ = [
+    "AdaptersConfig",
     "AuthConfig",
     "CacheConfig",
     "CacheStrategy",

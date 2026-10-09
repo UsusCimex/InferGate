@@ -295,6 +295,7 @@ async def client(services):
     app.state.cache_manager = services["cache"]
     app.state.defaults = services["defaults"]
     app.state.upload_limits = services.get("upload_limits", UploadLimitsConfig())
+    app.state.allowed_adapter_repos = ["*"]
     app.state.start_time = time.time()
 
     @app.exception_handler(ModelNotFoundError)

@@ -129,6 +129,7 @@
 |---|---|
 | 400 | `vision_not_supported`, `invalid_image`, `voice_clone_required`, `invalid_request` |
 | 401 | `authentication_error` |
+| 403 | `adapter_not_allowed`: репозиторий `loras` или `textual_inversions` не входит в `adapters.allowed_repos` |
 | 404 | `not_found` |
 | 413 | `upload_too_large` (лимиты `upload_limits`: картинка 20 МБ, аудио 25 МБ, видео 200 МБ, апскейл 50 МБ) |
 | 422 | `invalid_request`: ошибка валидации, `param` называет поле |

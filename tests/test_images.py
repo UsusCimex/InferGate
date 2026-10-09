@@ -92,6 +92,33 @@ async def test_changed_model_defaults_miss_the_cache(client, services):
 
 
 @pytest.mark.asyncio
+async def test_adapters_outside_the_allowed_repos_are_refused(client):
+    client._transport.app.state.allowed_adapter_repos = ["ostris/*"]
+    resp = await client.post(
+        "/v1/images/generations",
+        json={"model": "test-image", "prompt": "a cat",
+              "loras": [{"id": "ostris/crayon_style_lora_sdxl"}],
+              "textual_inversions": [{"id": "someone/else"}]},
+    )
+    assert resp.status_code == 403
+    error = resp.json()["error"]
+    assert error["type"] == "adapter_not_allowed"
+    assert "someone/else" in error["message"]
+    assert "ostris" not in error["message"]
+
+
+@pytest.mark.asyncio
+async def test_adapters_from_allowed_repos_pass(client):
+    client._transport.app.state.allowed_adapter_repos = ["ostris/*"]
+    resp = await client.post(
+        "/v1/images/generations",
+        json={"model": "test-image", "prompt": "a cat",
+              "loras": [{"id": "ostris/crayon_style_lora_sdxl"}]},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_image_no_cache_without_seed(client):
     resp = await client.post(
         "/v1/images/generations",

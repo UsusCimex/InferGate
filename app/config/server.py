@@ -43,6 +43,12 @@ class CorsConfig(BaseModel):
     allow_origins: list[str] = ["*"]
     allow_methods: list[str] = ["*"]
     allow_headers: list[str] = ["*"]
+    allow_credentials: bool = False
+
+
+class AdaptersConfig(BaseModel):
+    """Hugging Face repos that `loras` and `textual_inversions` may download from (fnmatch patterns)."""
+    allowed_repos: list[str] = ["*"]
 
 
 class DefaultsConfig(BaseModel):
@@ -77,6 +83,7 @@ class ServerConfig(BaseModel):
     queue: QueueConfig = QueueConfig()
     cache: CacheConfig = CacheConfig()
     cors: CorsConfig = CorsConfig()
+    adapters: AdaptersConfig = AdaptersConfig()
     models_dir: str = "./models"
     defaults: DefaultsConfig = DefaultsConfig()
     rate_limit: RateLimitConfig = RateLimitConfig()
