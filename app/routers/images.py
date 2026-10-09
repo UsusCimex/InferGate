@@ -11,6 +11,7 @@ from app.dependencies import (
     get_cache_manager,
     get_defaults,
     get_gpu_scheduler,
+    get_priority,
     get_provider_manager,
     get_upload_limits,
 )
@@ -29,6 +30,7 @@ async def generate_images(
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
+    priority=Depends(get_priority),
 ):
     model_id = body.model or defaults.get("image")
     if not model_id:
@@ -101,7 +103,7 @@ async def generate_images(
 
     provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
-    priority = config.queue.priority
+    priority = priority or config.queue.priority
 
     data_list = []
     for _ in range(body.n):
@@ -157,6 +159,7 @@ async def edit_images(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     """Multipart img2img/inpaint: delegates to the same path as /v1/images/generations."""
     image_bytes = await read_with_limit(image, limits.max_image_mb * 1024 * 1024)
@@ -194,6 +197,7 @@ async def edit_images(
     return await generate_images(
         body=body, request=request,
         manager=manager, scheduler=scheduler_dep, cache=cache, defaults=defaults,
+        priority=priority,
     )
 
 
@@ -208,6 +212,7 @@ async def upscale_image(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     """Upscale an uploaded image; returns b64_json (default) or raw PNG bytes."""
     if response_format not in {"b64_json", "png"}:
@@ -252,7 +257,7 @@ async def upscale_image(
 
     provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
-    priority = config.queue.priority
+    priority = priority or config.queue.priority
 
     inference_start = time.monotonic()
     async with manager.active_request(model_id):

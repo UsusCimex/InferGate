@@ -15,7 +15,7 @@ pytest --cov=app --cov-branch   # покрытие, нужен pytest-cov
 | Что | Файлы |
 |---|---|
 | роутеры и схемы | `test_chat*.py`, `test_images.py`, `test_audio.py`, `test_embeddings.py`, `test_cache.py`, `test_health_metrics.py`, `test_schema_forbid.py`, `test_upload_limits.py`, `test_tts_voices.py`, `test_voice_clone_only.py` |
-| сервисы | `test_provider_manager.py` (вытеснение, бюджет, монитор воркеров, перезагрузка), `test_concurrency.py`, `test_cache_manager.py`, `test_cache_backends.py` (локальный и Redis через fakeredis), `test_config*.py`, `test_memory_watchdog.py` |
+| сервисы | `test_provider_manager.py` (вытеснение, бюджет, монитор воркеров, перезагрузка), `test_concurrency.py`, `test_priority.py`, `test_cache_manager.py`, `test_cache_backends.py` (локальный и Redis через fakeredis), `test_config*.py`, `test_memory_watchdog.py` |
 | шлюз и воркер | `test_remote_e2e.py` (`RemoteProvider` против поддельного воркера через ASGITransport), `test_remote_provider.py`, `test_worker.py` (настоящие обработчики `app.worker`) |
 | провайдеры без GPU | `test_diffusers_provider.py` (два теста пропускаются без torch), `test_weight_syntax.py`, `test_lora_cache.py`; `test_voxcpm2_provider.py` пропускается без numpy, soundfile и pyloudnorm |
 | middleware и метрики | `test_middleware.py`, `test_monitoring.py` |

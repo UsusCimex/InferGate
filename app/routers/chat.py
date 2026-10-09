@@ -13,6 +13,7 @@ from app.dependencies import (
     get_cache_manager,
     get_defaults,
     get_gpu_scheduler,
+    get_priority,
     get_provider_manager,
     get_upload_limits,
 )
@@ -57,6 +58,7 @@ async def chat_completions(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     model_id = body.model or defaults.get("text")
     if not model_id:
@@ -131,7 +133,7 @@ async def chat_completions(
     t_loaded = time.monotonic()
 
     timeout = config.queue.timeout_seconds
-    priority = config.queue.priority
+    priority = priority or config.queue.priority
 
     inference_start = time.monotonic()
     async with manager.active_request(model_id):

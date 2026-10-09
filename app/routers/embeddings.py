@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.dependencies import (
     get_defaults,
     get_gpu_scheduler,
+    get_priority,
     get_provider_manager,
     get_upload_limits,
 )
@@ -31,6 +32,7 @@ async def create_embeddings(
     manager=Depends(get_provider_manager),
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
+    priority=Depends(get_priority),
 ):
     """OpenAI-compatible text-embeddings endpoint."""
     model_id = body.model or defaults.get("embedding_text")
@@ -52,7 +54,7 @@ async def create_embeddings(
     async with manager.active_request(model_id):
         vecs = await scheduler.submit(
             model_id,
-            config.queue.priority,
+            priority or config.queue.priority,
             provider.embed(inputs),
             config.queue.timeout_seconds,
         )
@@ -76,6 +78,7 @@ async def create_audio_embedding(
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     """Encode an audio file into a single embedding vector."""
     model_id = model or defaults.get("embedding_audio")
@@ -95,7 +98,7 @@ async def create_audio_embedding(
     async with manager.active_request(model_id):
         vec = await scheduler.submit(
             model_id,
-            config.queue.priority,
+            priority or config.queue.priority,
             provider.embed(audio_bytes, filename=file.filename or "audio.wav"),
             config.queue.timeout_seconds,
         )
@@ -115,6 +118,7 @@ async def create_image_embedding(
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     """Encode an image into a single embedding vector."""
     model_id = model or defaults.get("embedding_image")
@@ -134,7 +138,7 @@ async def create_image_embedding(
     async with manager.active_request(model_id):
         vec = await scheduler.submit(
             model_id,
-            config.queue.priority,
+            priority or config.queue.priority,
             provider.embed_image(image_bytes, filename=file.filename or "image.jpg"),
             config.queue.timeout_seconds,
         )
@@ -154,6 +158,7 @@ async def create_video_embedding(
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     """Encode a video clip into a single embedding vector."""
     model_id = model or defaults.get("embedding_video")
@@ -173,7 +178,7 @@ async def create_video_embedding(
     async with manager.active_request(model_id):
         vec = await scheduler.submit(
             model_id,
-            config.queue.priority,
+            priority or config.queue.priority,
             provider.embed_video(video_bytes, filename=file.filename or "clip.mp4"),
             config.queue.timeout_seconds,
         )

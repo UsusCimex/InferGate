@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import Request
+from fastapi import Header, Request
+
+from app.config import Priority
 
 if TYPE_CHECKING:
     from app.config import UploadLimitsConfig
@@ -34,3 +36,10 @@ def get_start_time(request: Request) -> float:
 
 def get_upload_limits(request: Request) -> UploadLimitsConfig:
     return request.app.state.upload_limits
+
+
+def get_priority(
+    priority: Priority | None = Header(None, alias="X-InferGate-Priority"),
+) -> Priority | None:
+    """Queue priority of this request; None keeps the model's `queue.priority`."""
+    return priority

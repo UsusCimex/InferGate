@@ -10,6 +10,7 @@ from app.dependencies import (
     get_cache_manager,
     get_defaults,
     get_gpu_scheduler,
+    get_priority,
     get_provider_manager,
     get_upload_limits,
 )
@@ -35,6 +36,7 @@ async def create_speech(
     scheduler=Depends(get_gpu_scheduler),
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
+    priority=Depends(get_priority),
 ):
     model_id = body.model or defaults.get("tts")
     if not model_id:
@@ -118,7 +120,7 @@ async def create_speech(
     # Generate
     provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
-    priority = config.queue.priority
+    priority = priority or config.queue.priority
 
     inference_start = time.monotonic()
     async with manager.active_request(model_id):
@@ -200,6 +202,7 @@ async def create_transcription(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     """OpenAI-compatible multipart transcription endpoint."""
     if response_format not in _TRANSCRIPTION_FORMATS:
@@ -256,7 +259,7 @@ async def create_transcription(
 
     provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
-    priority = config.queue.priority
+    priority = priority or config.queue.priority
 
     inference_start = time.monotonic()
     async with manager.active_request(model_id):
@@ -330,6 +333,7 @@ async def create_speech_voice_clone(
     cache=Depends(get_cache_manager),
     defaults=Depends(get_defaults),
     limits=Depends(get_upload_limits),
+    priority=Depends(get_priority),
 ):
     """Synthesise `input` in the voice from `reference_audio` (multipart upload)."""
     model_id = model or defaults.get("tts")
@@ -393,7 +397,7 @@ async def create_speech_voice_clone(
 
     provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
-    priority = config.queue.priority
+    priority = priority or config.queue.priority
 
     inference_start = time.monotonic()
     async with manager.active_request(model_id):
