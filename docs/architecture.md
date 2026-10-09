@@ -47,7 +47,7 @@
 
 ## `GpuScheduler` (`app/services/gpu_scheduler.py`)
 
-Слоты на модель (`queue.max_concurrent`) и очередь ожидающих; общий предел `queue.max_size` (503 `queue_full`). Тайм-аут `queue.timeout_seconds` отсчитывается от получения слота (504). Очередь у каждой модели своя: ждущие запросы выходят по приоритету (`X-InferGate-Priority`, без заголовка `queue.priority` модели), при равном приоритете по порядку прихода.
+Слоты на модель (`queue.max_concurrent`) и очередь ожидающих; общий предел `queue.max_size` (503 `queue_full`). Тайм-аут `queue.timeout_seconds` отсчитывается от получения слота (504). Очередь у каждой модели своя: ждущие запросы выходят по приоритету (`X-InferGate-Priority`, без заголовка `queue.priority` модели), при равном приоритете по порядку прихода. Запросы `/v1/embeddings` к модели с `batching.enabled` встают в очередь пакетом, одним вызовом провайдера ([configuration.md](configuration.md#yaml-модели)).
 
 ## Кэш (`app/services/cache_manager.py`, `cache_backends/`)
 

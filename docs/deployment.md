@@ -74,6 +74,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.
 | `infergate_worker_disconnects_total` | counter | model_id, reason |
 | `infergate_http_pool_connections` | gauge | model_id, state |
 | `infergate_http_pool_waiting_requests` | gauge | model_id |
+| `infergate_embedding_batch_inputs` | histogram | model_id |
 
 Gauge-метрики шлюз обновляет при каждом чтении `/metrics/prometheus` и `/metrics`; VRAM берётся из `/stats` загруженных воркеров.
 

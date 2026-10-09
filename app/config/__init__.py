@@ -1,6 +1,7 @@
 from app.config.enums import CacheStrategy, EvictionPolicy, LogLevel, Priority
 from app.config.loader import load_model_configs, load_server_config, load_single_model_config
 from app.config.models import (
+    ModelBatchingConfig,
     ModelCacheConfig,
     ModelCapabilities,
     ModelConfig,
@@ -30,6 +31,7 @@ __all__ = [
     "EvictionPolicy",
     "GpuConfig",
     "LogLevel",
+    "ModelBatchingConfig",
     "ModelCacheConfig",
     "ModelCapabilities",
     "ModelConfig",

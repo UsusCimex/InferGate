@@ -74,6 +74,8 @@ metadata:
 
 Необязательные ключи верхнего уровня: `worker_url` (адрес воркера вместо `WORKER_URL_*`) и `capabilities`: `vision` (картинки во входе chat/completions), `voice_clone_only` (синтез только через `/audio/speech/voice-clone`), `voices` (список разрешённых голосов `/audio/speech`). Тег `voice-clone` в `metadata.tags` отмечает модели клонирования для клиентов, PictoLex строит по нему их список. `category`: `image`, `text`, `tts`, `stt`, `upscale`, `embedding-text`, `embedding-audio`, `embedding-multimodal` или `embedding-video`.
 
+Блок `batching` (эмбеддинги текста): `enabled` (по умолчанию `false`), `max_batch_size` (32 строки), `max_wait_ms` (5 мс). Одновременные запросы `/v1/embeddings` к модели с одним приоритетом собираются в один вызов, пока в пакете меньше `max_batch_size` строк и с первого запроса прошло меньше `max_wait_ms`; ошибка вызова достаётся всем запросам пакета.
+
 Ключи блока `model` у `DiffusersImageProvider`: `hub_id`, `torch_dtype`, `variant`, `revision`, `drop_t5`, `quantization` (`nf4` или `int4` через bitsandbytes, `fp8` через optimum-quanto), `quantize_components`, `offload`, `page_text_encoders` (текстовые энкодеры на GPU только на время кодирования), `vae_tiling`, `vae_hub_id`, `compel`, `refiner_hub_id`, `refiner_variant`, `warmup`, `lora.{max_loaded,max_per_request}`, `default_params`.
 
 Правки YAML подхватываются на ходу: `ConfigWatcher` раз в 2 с сверяет время изменения файлов и перезагружает модель. Загруженному удалённому воркеру шлюз передаёт новый конфиг через `/reload`; воркер без загруженной модели увидит правки только после перезапуска контейнера.

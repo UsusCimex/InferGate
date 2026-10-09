@@ -10,6 +10,7 @@ from app.config import Priority
 if TYPE_CHECKING:
     from app.config import UploadLimitsConfig
     from app.services.cache_manager import CacheManager
+    from app.services.embedding_batcher import EmbeddingBatcher
     from app.services.gpu_scheduler import GpuScheduler
     from app.services.provider_manager import ProviderManager
 
@@ -24,6 +25,10 @@ def get_gpu_scheduler(request: Request) -> GpuScheduler:
 
 def get_cache_manager(request: Request) -> CacheManager:
     return request.app.state.cache_manager
+
+
+def get_embedding_batcher(request: Request) -> EmbeddingBatcher:
+    return request.app.state.embedding_batcher
 
 
 def get_defaults(request: Request) -> dict[str, str]:

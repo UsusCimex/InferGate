@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.dependencies import (
     get_defaults,
+    get_embedding_batcher,
     get_gpu_scheduler,
     get_priority,
     get_provider_manager,
@@ -33,6 +34,7 @@ async def create_embeddings(
     scheduler=Depends(get_gpu_scheduler),
     defaults=Depends(get_defaults),
     priority=Depends(get_priority),
+    batcher=Depends(get_embedding_batcher),
 ):
     """OpenAI-compatible text-embeddings endpoint."""
     model_id = body.model or defaults.get("embedding_text")
@@ -49,15 +51,22 @@ async def create_embeddings(
 
     provider = await manager.ensure_loaded(model_id)
     config = manager.get_config(model_id)
+    priority = priority or config.queue.priority
+
+    async def run(batch: list[str]) -> list[list[float]]:
+        return await scheduler.submit(
+            model_id, priority, provider.embed(batch), config.queue.timeout_seconds
+        )
 
     inference_start = time.monotonic()
     async with manager.active_request(model_id):
-        vecs = await scheduler.submit(
-            model_id,
-            priority or config.queue.priority,
-            provider.embed(inputs),
-            config.queue.timeout_seconds,
-        )
+        if config.batching.enabled:
+            vecs = await batcher.embed(
+                (model_id, str(priority)), inputs, run,
+                config.batching.max_batch_size, config.batching.max_wait_ms,
+            )
+        else:
+            vecs = await run(inputs)
     if is_prometheus_available():
         INFERENCE_DURATION.labels(model_id=model_id, category="embedding-text").observe(
             time.monotonic() - inference_start

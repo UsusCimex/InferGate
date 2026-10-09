@@ -21,6 +21,7 @@ from app.monitoring.logs import configure_logging
 from app.routers import admin, audio, cache, chat, embeddings, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.config_watcher import ConfigWatcher
+from app.services.embedding_batcher import EmbeddingBatcher
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError, RequestTimeoutError
 from app.services.memory_watchdog import MemoryWatchdog
 from app.services.provider_manager import (
@@ -75,6 +76,7 @@ async def lifespan(app: FastAPI):
     app.state.provider_manager = manager
     app.state.gpu_scheduler = scheduler
     app.state.cache_manager = cache_mgr
+    app.state.embedding_batcher = EmbeddingBatcher()
     app.state.defaults = defaults
     app.state.upload_limits = server_cfg.upload_limits
     app.state.allowed_adapter_repos = server_cfg.adapters.allowed_repos

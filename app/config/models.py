@@ -25,6 +25,13 @@ class ModelQueueConfig(BaseModel):
     max_concurrent: int = Field(1, ge=1)
 
 
+class ModelBatchingConfig(BaseModel):
+    """Micro-batching of concurrent /v1/embeddings requests to one model."""
+    enabled: bool = False
+    max_batch_size: int = Field(32, ge=1)
+    max_wait_ms: float = Field(5, ge=0, le=1000)
+
+
 class ModelMetadata(BaseModel):
     """Human-facing model metadata surfaced in /v1/models."""
     license: str = ""
@@ -50,5 +57,6 @@ class ModelConfig(BaseModel):
     model: dict[str, Any] = {}
     cache: ModelCacheConfig = ModelCacheConfig()
     queue: ModelQueueConfig = ModelQueueConfig()
+    batching: ModelBatchingConfig = ModelBatchingConfig()
     metadata: ModelMetadata = ModelMetadata()
     capabilities: ModelCapabilities = ModelCapabilities()

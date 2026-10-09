@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import struct
 
@@ -50,6 +51,48 @@ async def test_embeddings_text_batch_input(client):
     # Different-length strings produce different vectors via the fake provider.
     assert body["data"][0]["embedding"] != body["data"][1]["embedding"]
     assert body["data"][1]["embedding"] != body["data"][2]["embedding"]
+
+
+async def test_embeddings_batching_merges_concurrent_requests(client, services, monkeypatch):
+    provider = services["manager"].get("test-embed-text")
+    provider.config.batching.enabled = True
+    provider.config.batching.max_wait_ms = 50
+    original = provider.embed
+    calls: list[list[str]] = []
+
+    async def counting_embed(inputs, **params):
+        calls.append(list(inputs))
+        return await original(inputs, **params)
+
+    monkeypatch.setattr(provider, "embed", counting_embed)
+    texts = ["a", "bb", "ccc"]
+    responses = await asyncio.gather(*(
+        client.post("/v1/embeddings", json={"model": "test-embed-text", "input": text})
+        for text in texts
+    ))
+
+    assert len(calls) == 1
+    assert sorted(calls[0]) == texts
+    for text, resp, expected in zip(texts, responses, await original(texts), strict=True):
+        assert resp.status_code == 200, text
+        assert resp.json()["data"][0]["embedding"] == expected
+
+
+async def test_embeddings_without_batching_call_once_per_request(client, services, monkeypatch):
+    provider = services["manager"].get("test-embed-text")
+    original = provider.embed
+    calls: list[list[str]] = []
+
+    async def counting_embed(inputs, **params):
+        calls.append(list(inputs))
+        return await original(inputs, **params)
+
+    monkeypatch.setattr(provider, "embed", counting_embed)
+    await asyncio.gather(*(
+        client.post("/v1/embeddings", json={"model": "test-embed-text", "input": text})
+        for text in ["a", "bb"]
+    ))
+    assert sorted(calls) == [["a"], ["bb"]]
 
 
 async def test_embeddings_text_uses_default_model(client):

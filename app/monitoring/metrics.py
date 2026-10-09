@@ -70,6 +70,12 @@ try:
         "Requests waiting for a free connection to a worker",
         labelnames=["model_id"],
     )
+    EMBEDDING_BATCH_INPUTS = Histogram(
+        "infergate_embedding_batch_inputs",
+        "Inputs per micro-batched /v1/embeddings call",
+        labelnames=["model_id"],
+        buckets=[1, 2, 4, 8, 16, 32, 64, 128, 256],
+    )
 
     _PROMETHEUS_AVAILABLE = True
 
@@ -90,6 +96,7 @@ except ImportError:
     WORKER_DISCONNECTS = None  # type: ignore[assignment]
     HTTP_POOL_CONNECTIONS = None  # type: ignore[assignment]
     HTTP_POOL_WAITING = None  # type: ignore[assignment]
+    EMBEDDING_BATCH_INPUTS = None  # type: ignore[assignment]
 
 
 def is_prometheus_available() -> bool:
@@ -126,6 +133,11 @@ def update_pool_gauges(pools: dict[str, dict[str, int]]) -> None:
         HTTP_POOL_CONNECTIONS.labels(model_id=model_id, state="active").set(stats["active"])
         HTTP_POOL_CONNECTIONS.labels(model_id=model_id, state="idle").set(stats["idle"])
         HTTP_POOL_WAITING.labels(model_id=model_id).set(stats["waiting"])
+
+
+def record_embedding_batch(model_id: str, inputs: int) -> None:
+    if _PROMETHEUS_AVAILABLE:
+        EMBEDDING_BATCH_INPUTS.labels(model_id=model_id).observe(inputs)
 
 
 def update_runtime_gauges(

@@ -20,6 +20,7 @@ from app.providers.base import (
 )
 from app.providers.registry import register_provider
 from app.services.cache_manager import CacheManager
+from app.services.embedding_batcher import EmbeddingBatcher
 from app.services.gpu_scheduler import GpuScheduler
 from app.services.provider_manager import ProviderManager
 
@@ -293,6 +294,7 @@ async def client(services):
     app.state.provider_manager = services["manager"]
     app.state.gpu_scheduler = services["scheduler"]
     app.state.cache_manager = services["cache"]
+    app.state.embedding_batcher = EmbeddingBatcher()
     app.state.defaults = services["defaults"]
     app.state.upload_limits = services.get("upload_limits", UploadLimitsConfig())
     app.state.allowed_adapter_repos = ["*"]
