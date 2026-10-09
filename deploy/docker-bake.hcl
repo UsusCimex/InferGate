@@ -12,6 +12,7 @@
 #   1. Create deploy/workers/<id>/requirements.txt
 #   2. Add one tuple to the `item` matrix below
 #   3. Add a service stanza in docker-compose.yml (~10 lines)
+# A GGUF model on llama.cpp gets its own target below instead of a matrix tuple.
 #
 # Build-arg semantics are documented in deploy/Dockerfile.worker.
 
@@ -27,9 +28,22 @@ variable "VLLM_IMAGE" {
 variable "CPU_BASE_IMAGE" {
   default = "python:3.12-slim"
 }
+variable "LLAMACPP_IMAGE" {
+  default = "ghcr.io/ggml-org/llama.cpp:server-cuda-b11277"
+}
 
 group "default" {
-  targets = ["worker"]
+  targets = ["worker", "worker-gemma-4-12b"]
+}
+
+target "worker-gemma-4-12b" {
+  context    = ".."
+  dockerfile = "deploy/Dockerfile.llamacpp"
+  tags       = ["${REGISTRY}/worker-gemma-4-12b:${TAG}"]
+  args = {
+    BASE_IMAGE          = LLAMACPP_IMAGE
+    WORKER_REQUIREMENTS = "deploy/workers/gemma-4-12b/requirements.txt"
+  }
 }
 
 # The gateway image; the Helm chart pulls it as ${REGISTRY}/gateway:${TAG}.

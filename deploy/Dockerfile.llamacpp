@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.6
+# Worker for GGUF text models: the llama.cpp server image with the InferGate worker in front of llama-server
+# (LlamaCppTextProvider starts it on /load). Parameterised like Dockerfile.worker.
+
+ARG BASE_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda-b11277
+FROM ${BASE_IMAGE}
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Ubuntu marks its Python as externally managed; nothing else in this image uses it.
+ENV UV_HTTP_TIMEOUT=600 \
+    UV_BREAK_SYSTEM_PACKAGES=1
+
+COPY requirements/base.txt requirements/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --no-cache-dir --system -r requirements/base.txt
+
+ARG WORKER_REQUIREMENTS
+COPY ${WORKER_REQUIREMENTS} requirements/worker.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --no-cache-dir --system -r requirements/worker.txt
+
+COPY app/ ./app/
+
+RUN mkdir -p /app/models
+
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    LLAMA_SERVER=/app/llama-server
+
+EXPOSE 8001
+
+ENTRYPOINT []
+CMD ["python3", "-m", "uvicorn", "app.worker:app", "--host", "0.0.0.0", "--port", "8001", \
+     "--workers", "1", "--no-access-log"]

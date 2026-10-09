@@ -1,0 +1,2 @@
+# llama-server comes with the base image; the worker needs the HF client only to fetch a missing GGUF.
+huggingface-hub>=0.30

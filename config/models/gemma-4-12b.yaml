@@ -1,0 +1,36 @@
+id: gemma-4-12b
+display_name: "Gemma 4 12B"
+category: text
+provider_class: LlamaCppTextProvider
+enabled: ${oc.decode:${oc.env:GEMMA_4_12B_ENABLED,true}}
+
+model:
+  hub_id: "google/gemma-4-12B-it-qat-q4_0-gguf"
+  gguf_file: "gemma-4-12b-it-qat-q4_0.gguf"
+  revision: "main"
+  gpu: ${oc.decode:${oc.env:GEMMA_4_12B_GPU,0}}
+  # 7.3 GB measured with the 8K q8_0 KV cache on an RTX 5070.
+  vram_mb: ${oc.decode:${oc.env:GEMMA_4_12B_VRAM_MB,8192}}
+  context_length: ${oc.decode:${oc.env:GEMMA_4_12B_CONTEXT_LENGTH,8192}}
+  load_timeout: ${oc.decode:${oc.env:GEMMA_4_12B_LOAD_TIMEOUT,900}}
+  # Thinking off, sampling by temperature and top_p only, weights read once instead of mmap over the bind mount.
+  server_args: ["-ngl", "all", "-np", "1", "-ub", "512", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0",
+                "--jinja", "--reasoning", "off", "--load-mode", "none", "--top-k", "0", "--min-p", "0", "--no-webui"]
+  default_params:
+    max_tokens: ${oc.decode:${oc.env:GEMMA_4_12B_MAX_TOKENS,4096}}
+    temperature: ${oc.decode:${oc.env:GEMMA_4_12B_TEMPERATURE,0.7}}
+    top_p: ${oc.decode:${oc.env:GEMMA_4_12B_TOP_P,0.95}}
+
+cache:
+  enabled: false
+  strategy: never
+
+queue:
+  priority: ${oc.env:GEMMA_4_12B_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:GEMMA_4_12B_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:GEMMA_4_12B_MAX_CONCURRENT,1}}
+
+metadata:
+  license: Apache-2.0
+  description: "Gemma 4 12B instruct, Google's QAT Q4_0 GGUF on llama.cpp"
+  tags: ["multilingual", "quantized", "gguf"]

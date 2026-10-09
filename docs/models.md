@@ -24,7 +24,7 @@
 
 Три архитектурных семейства работают за одним интерфейсом `ImageProvider`: диффузия и flow matching (SD, FLUX, Qwen-Image, Hunyuan-DiT, Z-Image), авторегрессия (Janus-Pro) и маскированное моделирование (Meissonic).
 
-**Текст** (`category: text`, vLLM)
+**Текст** (`category: text`, vLLM и llama.cpp)
 
 | id | Модель | VRAM, МБ | По умолчанию | Лицензия |
 |---|---|---|---|---|
@@ -32,6 +32,7 @@
 | `qwen3.5-9b` | Qwen 3.5 9B | 8000 | выключена | Apache-2.0 |
 | `qwen3-8b` | Qwen 3 8B | 7000 | выключена | Apache-2.0 |
 | `llama3.1-8b` | Llama 3.1 8B (gated) | 8000 | выключена | Llama 3.1 Community |
+| `gemma-4-12b` | Gemma 4 12B (GGUF QAT Q4_0, llama.cpp) | 8192 | включена; контекст 8192, без размышлений; загрузка около 1 мин, около 60 токенов/с на RTX 5070 | Apache-2.0 |
 
 **Озвучка** (`category: tts`)
 
@@ -83,6 +84,7 @@
 | `image` | `JanusImageProvider` | DeepSeek Janus-Pro (авторегрессия) |
 | `image` | `MeissonicImageProvider` | Meissonic (пайплайн из репозитория авторов) |
 | `text` | `VllmTextProvider` | любая LLM через vLLM: потоковый вывод, шаблоны чата, картинки во входе |
+| `text` | `LlamaCppTextProvider` | GGUF через llama-server: воркер запускает его на `/load` и передаёт запросы чата; флаги сервера в `model.server_args`, образ `deploy/Dockerfile.llamacpp` |
 | `tts` | `KokoroTtsProvider`, `VoxCpm2TtsProvider`, `Qwen3TtsProvider`, `XttsTtsProvider`, `FishSpeechTtsProvider` | синтез и клонирование голоса |
 | `stt` | `WhisperProvider` | faster-whisper (CTranslate2) |
 | `upscale` | `SpandrelUpscaleProvider` | spandrel: Real-ESRGAN, SwinIR и др. |
@@ -96,7 +98,7 @@
 
 1. `config/models/<id>.yaml`: `id`, `display_name`, `category`, `provider_class`, `enabled`, блок `model` (`hub_id`, `vram_mb`, `gpu`, `torch_dtype`, квантизация, выгрузка, `default_params`), `cache`, `queue`, `metadata`, при необходимости `capabilities`. Значения, зависящие от железа, пишутся как `${oc.env:<ID>_<FIELD>,default}`, чтобы их можно было менять в `deploy/.env` ([configuration.md](configuration.md#yaml-модели)).
 2. `deploy/workers/<id>/requirements.txt`: pip-зависимости воркера.
-3. Строка в матрице `deploy/docker-bake.hcl`.
+3. Строка в матрице `deploy/docker-bake.hcl`; для GGUF на llama.cpp - отдельная цель по образцу `worker-gemma-4-12b`.
 4. Сервис `worker-<id>` в `deploy/docker-compose.yml` (по образцу соседнего) с профилем `<id>` и, если нужно, профилем категории.
 5. Переменная у сервиса `gateway`: `WORKER_URL_<ID>=http://worker-<id>:8001`. В имени переменной id в верхнем регистре, всё, кроме букв и цифр, заменено на `_`; в имени сервиса точки заменены дефисами (`WORKER_URL_QWEN3_5_4B=http://worker-qwen3-5-4b:8001`). Без неё шлюз считает модель локальной и пытается загрузить её в своём процессе, где нет torch.
 

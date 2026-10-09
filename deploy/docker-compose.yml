@@ -125,6 +125,7 @@ services:
       - WORKER_URL_QWEN3_5_9B=http://worker-qwen3-5-9b:8001
       - WORKER_URL_QWEN3_8B=http://worker-qwen3-8b:8001
       - WORKER_URL_LLAMA3_1_8B=http://worker-llama3-1-8b:8001
+      - WORKER_URL_GEMMA_4_12B=http://worker-gemma-4-12b:8001
       - WORKER_URL_SD35_MEDIUM=http://worker-sd35-medium:8001
       - WORKER_URL_SDXL_BASE=http://worker-sdxl-base:8001
       - WORKER_URL_FLUX1_DEV=http://worker-flux1-dev:8001
@@ -219,6 +220,23 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/llama3.1-8b/requirements.txt
     volumes:
       - ../config/models/llama3.1-8b.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-text
+
+  # Text workers (llama.cpp, GGUF)
+  worker-gemma-4-12b:
+    <<: *gpu
+    profiles: ["text", "gemma-4-12b"]
+    build:
+      <<: *build
+      dockerfile: deploy/Dockerfile.llamacpp
+      args:
+        BASE_IMAGE: ${LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-b11277}
+        WORKER_REQUIREMENTS: deploy/workers/gemma-4-12b/requirements.txt
+    volumes:
+      - ../config/models/gemma-4-12b.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env
