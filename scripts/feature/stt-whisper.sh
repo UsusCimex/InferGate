@@ -154,11 +154,11 @@ else
     fail=1
 fi
 
-log "[5] response_format=srt, expect 400"
+log "[5] response_format=xml, expect 400"
 http_post bad-fmt "$RESP_FILE" -F "file=@${AUDIO_WAV}" -F "model=${MODEL_ID}" \
-                               -F "response_format=srt"
+                               -F "response_format=xml"
 if [[ "$LAST_CODE" == "400" ]] && grep -q "response_format" "$RESP_FILE"; then
-    ok "srt rejected with 400 + structured message"
+    ok "xml rejected with 400 + structured message"
 else
     err "expected 400, got $LAST_CODE (body: $(head -c 200 "$RESP_FILE"))"
     fail=1

@@ -77,15 +77,14 @@ ok "PASS: all three schedulers produce distinct PNGs."
 echo "Open feature_sched_*.png side-by-side to see how sampler choice"
 echo "affects the same-seed same-prompt generation."
 
-# Sanity: an unknown name should give HTTP 500 (worker raises ValueError).
-log "Error path: unknown scheduler 'nonsense' should produce HTTP 500..."
+log "Error path: unknown scheduler 'nonsense' should produce HTTP 400..."
 RESP=$(mktemp --suffix=.json)
 CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
     -X POST http://localhost:8000/v1/images/generations \
     -H 'Content-Type: application/json' \
     -d "{\"model\":\"$MODEL_ID\",\"prompt\":\"x\",\"scheduler\":\"nonsense\"}" || echo 000)
-if [[ "$CODE" == "500" ]]; then
-    ok "unknown scheduler: HTTP 500 (worker log should contain ValueError)"
+if [[ "$CODE" == "400" ]]; then
+    ok "unknown scheduler: HTTP 400"
 else
     err "unknown scheduler: unexpected HTTP $CODE, body: $(cat "$RESP")"
 fi

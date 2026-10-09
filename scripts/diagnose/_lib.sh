@@ -3,9 +3,6 @@
 # Source at top of each script AFTER setting:
 #   - PROJECT_ROOT (cd'd to)
 #   - COMPOSE      (array, e.g. `COMPOSE=(docker compose -f deploy/docker-compose.yml)`)
-#
-# Convention: log/ok/err colourise stderr for humans; the rest of the script
-# keeps stdout for machine-readable output (HTTP code, elapsed, etc.).
 
 log() { printf '\033[1;36m[diag]\033[0m %s\n' "$*"; }
 ok()  { printf '\033[1;32m[ ok ]\033[0m %s\n' "$*"; }
