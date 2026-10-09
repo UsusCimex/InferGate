@@ -7,3 +7,4 @@ sentencepiece>=0.2.0
 protobuf>=4.25.0
 optimum-quanto>=0.2.5
 bitsandbytes>=0.46.0
+peft>=0.10.0

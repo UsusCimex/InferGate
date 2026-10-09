@@ -58,7 +58,7 @@
 | `num_inference_steps` | 1-150 | |
 | `guidance_scale` | 0-30 | |
 | `scheduler` | `euler`, `euler_a`, `dpm++_2m`, `dpm++_2m_karras`, `dpm++_sde`, `ddim`, `ddpm`, `lms`, `heun`, `pndm`, `unipc` | модели на flow matching отвечают 400 |
-| `loras` | до 5 `{id, weight, weight_file?, adapter_name?}` | горячая загрузка LoRA с Hugging Face (нужен `peft`, он есть в воркерах sdxl-base и sd35-medium) |
+| `loras` | до 5 `{id, weight, weight_file?, adapter_name?}` | горячая загрузка LoRA с Hugging Face во всех моделях diffusers, где конвейер умеет `load_lora_weights`; остальные отвечают 400 |
 | `textual_inversions` | до 10 `{id, token?, weight_file?}` | |
 | `highres_fix` | `{scale (1, 4], denoising_strength, steps?, upscaler}` | двухпроходная генерация |
 | `image`, `mask` | base64 | img2img и inpaint |
