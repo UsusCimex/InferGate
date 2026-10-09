@@ -17,26 +17,41 @@ class KokoroTtsProvider(TtsProvider):
 
     def __init__(self, config):
         super().__init__(config)
-        self._pipeline = None
+        self._pipelines: dict[str, Any] = {}
+        self._pipelines_lock = asyncio.Lock()
+        default_voice = str(config.model.get("default_params", {}).get("voice", "af_heart"))
+        self._default_lang = _lang_code(_resolve_voice(default_voice), "a")
 
     async def load(self, model_dir: str) -> None:
-        import kokoro
-
-        hub_id = self.config.model["hub_id"]
-        logger.info("Loading %s from %s", self.model_id, hub_id)
-
-        loop = asyncio.get_running_loop()
-        self._pipeline = await loop.run_in_executor(
-            None, lambda: kokoro.KPipeline(lang_code="a")
-        )
+        logger.info("Loading %s from %s", self.model_id, self.config.model["hub_id"])
+        await self._pipeline_for(self._default_lang)
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
+
+    async def _pipeline_for(self, lang_code: str) -> Any:
+        """The G2P pipeline of `lang_code`; every pipeline shares the first one's model."""
+        async with self._pipelines_lock:
+            pipeline = self._pipelines.get(lang_code)
+            if pipeline is None:
+                import kokoro
+
+                shared = next(iter(self._pipelines.values()), None)
+                kwargs: dict[str, Any] = {
+                    "lang_code": lang_code,
+                    "repo_id": self.config.model["hub_id"],
+                    "device": self.config.model.get("device"),
+                }
+                if shared is not None:
+                    kwargs["model"] = shared.model
+                loop = asyncio.get_running_loop()
+                pipeline = await loop.run_in_executor(None, lambda: kokoro.KPipeline(**kwargs))
+                self._pipelines[lang_code] = pipeline
+            return pipeline
 
     async def unload(self) -> None:
         import gc
 
-        del self._pipeline
-        self._pipeline = None
+        self._pipelines.clear()
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, gc.collect)
@@ -63,11 +78,12 @@ class KokoroTtsProvider(TtsProvider):
         voice = _resolve_voice(defaults.pop("voice", "af_heart"))
         speed = defaults.pop("speed", 1.0)
         output_format = defaults.pop("output_format", "mp3")
+        pipeline = await self._pipeline_for(_lang_code(voice, self._default_lang))
 
         loop = asyncio.get_running_loop()
         samples_list = await loop.run_in_executor(
             None,
-            lambda: list(self._pipeline(text, voice=voice, speed=speed)),
+            lambda: list(pipeline(text, voice=voice, speed=speed)),
         )
 
         import numpy as np
@@ -95,6 +111,16 @@ _VOICE_MAP = {
 def _resolve_voice(voice: str) -> str:
     """Map OpenAI voice aliases onto Kokoro voice IDs."""
     return _VOICE_MAP.get(voice, voice)
+
+
+_LANG_CODES = frozenset("abefhijpz")
+
+
+def _lang_code(voice: str, fallback: str) -> str:
+    """Kokoro voice ids open with their language: `bf_emma` is British English, `ef_dora` Spanish."""
+    if len(voice) > 3 and voice[0] in _LANG_CODES and voice[1] in "fm" and voice[2] == "_":
+        return voice[0]
+    return fallback
 
 
 def _sf_format(fmt: str) -> str:

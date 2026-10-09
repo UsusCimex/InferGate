@@ -37,7 +37,7 @@
 
 | id | Модель | Провайдер | VRAM, МБ | Особенности | Лицензия |
 |---|---|---|---|---|---|
-| `kokoro-82m` | Kokoro 82M | `KokoroTtsProvider` | 0 (CPU) | английские голоса (`af_heart` и др.) | MIT |
+| `kokoro-82m` | Kokoro 82M | `KokoroTtsProvider` | 0 (CPU) | английские голоса, американские `a*` и британские `b*`: язык по первой букве голоса | MIT |
 | `voxcpm2` | VoxCPM2 | `VoxCpm2TtsProvider` | 8000 | четыре рассказчика (`vox_clara`, `vox_arthur`, `vox_lily`, `vox_daniel`) из `app/providers/tts/voxcpm2_voices/`, клонирование голоса, mp3 48 кГц, громкость -25 LUFS, seed 42, `torch.compile` | Apache-2.0 |
 | `qwen3-tts-06b` | Qwen3-TTS 0.6B | `Qwen3TtsProvider` | 2500 | только клонирование (`voice_clone_only`), 10 языков, нужен `reference_text` | Apache-2.0 |
 | `xtts-v2` | XTTS v2 (Coqui) | `XttsTtsProvider` | 2000 | выключена; только клонирование, 17 языков | CPML (некоммерческая) |
