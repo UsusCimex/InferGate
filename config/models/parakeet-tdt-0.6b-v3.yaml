@@ -1,0 +1,29 @@
+id: parakeet-tdt-0.6b-v3
+display_name: "Parakeet TDT 0.6B v3"
+category: stt
+provider_class: ParakeetProvider
+enabled: ${oc.decode:${oc.env:PARAKEET_TDT_06B_V3_ENABLED,true}}
+
+model:
+  hub_id: "istupakov/parakeet-tdt-0.6b-v3-onnx"
+  asr_model: "nemo-parakeet-tdt-0.6b-v3"
+  # int8 weights take ~0.7 GB instead of ~2.4 GB; an empty value loads the full-precision export.
+  quantization: ${oc.env:PARAKEET_TDT_06B_V3_QUANTIZATION,int8}
+  cpu_threads: ${oc.decode:${oc.env:PARAKEET_TDT_06B_V3_CPU_THREADS,0}}
+  vram_mb: 0
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 512
+
+queue:
+  priority: ${oc.env:PARAKEET_TDT_06B_V3_PRIORITY,high}
+  timeout_seconds: ${oc.decode:${oc.env:PARAKEET_TDT_06B_V3_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:PARAKEET_TDT_06B_V3_MAX_CONCURRENT,2}}
+
+metadata:
+  license: CC-BY-4.0
+  description: "NVIDIA Parakeet TDT 0.6B v3 (onnx-asr): speech-to-text in 25 European languages, Russian among them, language found by itself"
+  tags: ["parakeet", "stt", "cpu", "multilingual"]

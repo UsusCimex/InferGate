@@ -49,6 +49,8 @@
 | id | Категория | Провайдер | VRAM, МБ | Особенности | Лицензия |
 |---|---|---|---|---|---|
 | `whisper-base` | `stt` | `WhisperProvider` (faster-whisper) | 0 (CPU, int8) | `json`, `text`, `verbose_json`, `srt`, `vtt` | MIT |
+| `parakeet-tdt-0.6b-v2` | `stt` | `ParakeetProvider` (onnx-asr) | 0 (CPU, int8) | только английский, с пунктуацией; `prompt`, `temperature` и `vad_filter` не нужны | CC-BY-4.0 |
+| `parakeet-tdt-0.6b-v3` | `stt` | `ParakeetProvider` (onnx-asr) | 0 (CPU, int8) | 25 европейских языков, в том числе русский, язык определяет сама | CC-BY-4.0 |
 | `realesrgan-x4` | `upscale` | `SpandrelUpscaleProvider` | 1500 | x4, вход до 2048 px по стороне, больше 1024 px идёт тайлами | BSD-3-Clause |
 | `multilingual-e5-base` | `embedding-text` | `SentenceTransformerEmbeddingProvider` | 0 (CPU) | выключена | MIT |
 | `clip-vit-base-patch32` | `embedding-multimodal` | `CLIPProvider` | 1500 | выключена; текст и картинки, 512 измерений | MIT |
@@ -68,7 +70,7 @@
 | `image` | `sdxl-base` |
 | `tts` | `kokoro-82m`, `voxcpm2` |
 | `voice-clone` | `qwen3-tts-06b`, `xtts-v2` |
-| `stt` | `whisper-base` |
+| `stt` | `whisper-base`, `parakeet-tdt-0.6b-v2`, `parakeet-tdt-0.6b-v3` |
 | `upscale` | `realesrgan-x4` |
 | `embedding` | E5, CLAP, CLIP, CLIP4Clip |
 | `embedding-text`, `embedding-audio`, `embedding-image`, `embedding-video` | по одному эмбеддеру |
@@ -86,7 +88,7 @@
 | `text` | `VllmTextProvider` | любая LLM через vLLM: потоковый вывод, шаблоны чата, картинки во входе |
 | `text` | `LlamaCppTextProvider` | GGUF через llama-server: воркер запускает его на `/load` и передаёт запросы чата; флаги сервера в `model.server_args`, образ `deploy/Dockerfile.llamacpp` |
 | `tts` | `KokoroTtsProvider`, `VoxCpm2TtsProvider`, `Qwen3TtsProvider`, `XttsTtsProvider`, `FishSpeechTtsProvider` | синтез и клонирование голоса |
-| `stt` | `WhisperProvider` | faster-whisper (CTranslate2) |
+| `stt` | `WhisperProvider`, `ParakeetProvider` | faster-whisper (CTranslate2); Parakeet TDT из ONNX-экспорта через onnx-asr, звук любого формата читает PyAV |
 | `upscale` | `SpandrelUpscaleProvider` | spandrel: Real-ESRGAN, SwinIR и др. |
 | `embedding-*` | `SentenceTransformerEmbeddingProvider`, `CLIPProvider`, `SigLIPProvider`, `ClapEmbeddingProvider`, `CLIP4ClipProvider` | эмбеддинги текста, картинок, аудио, видео |
 

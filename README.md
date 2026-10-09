@@ -11,7 +11,7 @@ Self-hosted OpenAI-совместимый шлюз к локальным мод�
 | Картинки | SDXL, SD 3.5 Medium, FLUX.1 Schnell и Dev, FLUX.2 Klein 4B, Qwen-Image, Hunyuan-DiT, Z-Image Turbo (диффузия и flow matching), Janus-Pro 1B и 7B (авторегрессия), Meissonic (маскированная генерация) |
 | Текст (vLLM) | Qwen 3.5 4B (с картинками во входе), Qwen 3.5 9B, Qwen 3 8B, Llama 3.1 8B |
 | Озвучка | Kokoro 82M, VoxCPM2 (четыре рассказчика и клонирование голоса), Qwen3-TTS 0.6B и XTTS v2 (клонирование), OpenAudio S1 Mini |
-| Распознавание | Whisper Base (faster-whisper) |
+| Распознавание | Whisper Base (faster-whisper), Parakeet TDT 0.6B v2 и v3 (onnx-asr) |
 | Апскейл | Real-ESRGAN x4 |
 | Эмбеддинги | Multilingual E5, CLIP, SigLIP, CLAP, CLIP4Clip |
 

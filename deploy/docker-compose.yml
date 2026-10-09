@@ -102,7 +102,7 @@ x-gpu: &gpu
 
 x-cpu-worker: &cpu-worker
   restart: unless-stopped
-  # Symmetric cap for CPU-only workers (kokoro, whisper). These don't touch
+  # Symmetric cap for CPU-only workers (kokoro, whisper, parakeet). These don't touch
   # VRAM but can still pin multi-GB RAM under concurrent load. Default is
   # lower than GPU workers because CPU-only models are smaller.
   mem_limit: ${CPU_WORKER_MEM_LIMIT:-6g}
@@ -140,6 +140,8 @@ services:
       - WORKER_URL_KOKORO_82M=http://worker-kokoro-82m:8001
       - WORKER_URL_OPENAUDIO_S1_MINI=http://worker-openaudio-s1-mini:8001
       - WORKER_URL_WHISPER_BASE=http://worker-whisper-base:8001
+      - WORKER_URL_PARAKEET_TDT_0_6B_V2=http://worker-parakeet-tdt-0-6b-v2:8001
+      - WORKER_URL_PARAKEET_TDT_0_6B_V3=http://worker-parakeet-tdt-0-6b-v3:8001
       - WORKER_URL_REALESRGAN_X4=http://worker-realesrgan-x4:8001
       - WORKER_URL_XTTS_V2=http://worker-xtts-v2:8001
       - WORKER_URL_QWEN3_TTS_06B=http://worker-qwen3-tts-06b:8001
@@ -518,6 +520,38 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/whisper-base/requirements.txt
     volumes:
       - ../config/models/whisper-base.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts
+
+  worker-parakeet-tdt-0-6b-v2:
+    <<: *cpu-worker
+    profiles: ["stt", "parakeet-tdt-0.6b-v2"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: python:3.12-slim
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/parakeet-tdt-0.6b-v2/requirements.txt
+    volumes:
+      - ../config/models/parakeet-tdt-0.6b-v2.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-tts
+
+  worker-parakeet-tdt-0-6b-v3:
+    <<: *cpu-worker
+    profiles: ["stt", "parakeet-tdt-0.6b-v3"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: python:3.12-slim
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/parakeet-tdt-0.6b-v3/requirements.txt
+    volumes:
+      - ../config/models/parakeet-tdt-0.6b-v3.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env

@@ -93,6 +93,8 @@ target "worker" {
       { id = "voxcpm2",           base = GPU_BASE_IMAGE, apt = "build-essential", post = "uv pip install --no-cache-dir --system --no-deps voxcpm==2.0.3" },
       # STT
       { id = "whisper-base",      base = CPU_BASE_IMAGE, apt = "",                post = "" },
+      { id = "parakeet-tdt-0.6b-v2", base = CPU_BASE_IMAGE, apt = "",             post = "" },
+      { id = "parakeet-tdt-0.6b-v3", base = CPU_BASE_IMAGE, apt = "",             post = "" },
       # Upscale (super-resolution)
       { id = "realesrgan-x4",     base = GPU_BASE_IMAGE, apt = "",                post = "" },
       # Embeddings

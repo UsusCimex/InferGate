@@ -100,7 +100,7 @@
 
 **`/v1/audio/speech/voice-clone`** (multipart): `reference_audio` (файл), `input`, `model?`, `reference_text?`, `response_format`, `speed`, `language`, `seed`. С `reference_text` voxcpm2 продолжает референс, без него берёт только тембр; qwen3-tts требует `reference_text`, xtts его игнорирует.
 
-**`/v1/audio/transcriptions`** (multipart): `file`, `model` (например `whisper-base`), `language?`, `prompt?`, `temperature` (0-1), `vad_filter?`, `response_format`: `json` (`{text}`), `text`, `verbose_json` (`{text, language, duration, segments}`), `srt`, `vtt` (последние два шлюз собирает из `verbose_json`).
+**`/v1/audio/transcriptions`** (multipart): `file`, `model` (например `whisper-base`), `language?`, `prompt?`, `temperature` (0-1), `vad_filter?`, `response_format`: `json` (`{text}`), `text`, `verbose_json` (`{text, language, duration, segments}`), `srt`, `vtt` (последние два шлюз собирает из `verbose_json`). Parakeet (`parakeet-tdt-0.6b-v2`, `parakeet-tdt-0.6b-v3`) отдаёт в `verbose_json` один сегмент на весь звук.
 
 ## Эмбеддинги
 
