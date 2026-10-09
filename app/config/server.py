@@ -13,6 +13,8 @@ class AuthConfig(BaseModel):
 class GpuConfig(BaseModel):
     max_loaded_models: int = Field(3, ge=1)
     max_vram_budget_mb: int = Field(0, ge=0)
+    # GPU index to its budget; GPUs not listed get max_vram_budget_mb.
+    vram_budgets_mb: dict[int, int] = {}
     vram_headroom_mb: int = Field(0, ge=0)
     pinned_models: list[str] = []
     category_reservations: dict[str, int] = {}

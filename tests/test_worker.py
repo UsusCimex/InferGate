@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 import pytest
 import pytest_asyncio
@@ -631,3 +632,44 @@ async def test_closed_stream_releases_the_reload_lock(swap_worker):
     await anext(stream)
     await stream.aclose()
     assert not app.state.reload_lock.locked()
+
+
+def _gpu_config(gpu=None) -> ModelConfig:
+    model = {"hub_id": "test/test"} if gpu is None else {"hub_id": "test/test", "gpu": gpu}
+    return ModelConfig(id="test-gpu", display_name="t", category="image",
+                       provider_class="FakeImageProvider", model=model)
+
+
+@pytest.fixture
+def cuda_env(monkeypatch):
+    """No CUDA variables during the test, and none left behind after it."""
+    for name in ("CUDA_VISIBLE_DEVICES", "CUDA_DEVICE_ORDER"):
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+    return monkeypatch
+
+
+def test_worker_pins_the_gpu_of_its_model(cuda_env):
+    from app.worker import _nvml_index, _pin_gpu
+
+    _pin_gpu(_gpu_config(1))
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "1"
+    assert os.environ["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"
+    assert _nvml_index() == 1
+
+
+def test_worker_keeps_a_gpu_set_by_the_deployment(cuda_env):
+    from app.worker import _nvml_index, _pin_gpu
+
+    cuda_env.setenv("CUDA_VISIBLE_DEVICES", "0")
+    _pin_gpu(_gpu_config(1))
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"
+    assert _nvml_index() == 0
+
+
+def test_worker_without_model_gpu_sees_every_gpu(cuda_env):
+    from app.worker import _nvml_index, _pin_gpu
+
+    _pin_gpu(_gpu_config())
+    assert "CUDA_VISIBLE_DEVICES" not in os.environ
+    assert _nvml_index() == 0

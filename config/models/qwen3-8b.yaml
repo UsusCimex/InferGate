@@ -7,6 +7,7 @@ enabled: ${oc.decode:${oc.env:QWEN3_8B_ENABLED,false}}
 model:
   hub_id: "Qwen/Qwen3-8B"
   vram_mb: ${oc.decode:${oc.env:QWEN3_8B_VRAM_MB,7000}}
+  gpu: ${oc.decode:${oc.env:QWEN3_8B_GPU,0}}
   torch_dtype: ${oc.env:QWEN3_8B_TORCH_DTYPE,float16}
   quantization: ${oc.decode:${oc.env:QWEN3_8B_QUANTIZATION,null}}
   trust_remote_code: ${oc.decode:${oc.env:QWEN3_8B_TRUST_REMOTE_CODE,true}}

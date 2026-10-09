@@ -9,6 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:SD35_MEDIUM_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:SD35_MEDIUM_VRAM_MB,5000}}
+  gpu: ${oc.decode:${oc.env:SD35_MEDIUM_GPU,0}}
   offload: ${oc.env:SD35_MEDIUM_OFFLOAD,sequential}
   warmup: ${oc.decode:${oc.env:SD35_MEDIUM_WARMUP,true}}
   drop_t5: ${oc.decode:${oc.env:SD35_MEDIUM_DROP_T5,true}}

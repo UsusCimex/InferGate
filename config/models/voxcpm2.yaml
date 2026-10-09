@@ -8,6 +8,7 @@ model:
   hub_id: "openbmb/VoxCPM2"
   device: ${oc.env:VOXCPM2_DEVICE,cuda}
   vram_mb: ${oc.decode:${oc.env:VOXCPM2_VRAM_MB,8000}}
+  gpu: ${oc.decode:${oc.env:VOXCPM2_GPU,0}}
   optimize: ${oc.decode:${oc.env:VOXCPM2_OPTIMIZE,true}}
   default_params:
     voice: ${oc.env:VOXCPM2_VOICE,vox_daniel}

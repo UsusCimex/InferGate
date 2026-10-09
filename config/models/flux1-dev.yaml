@@ -9,6 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:FLUX1_DEV_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:FLUX1_DEV_VRAM_MB,11000}}
+  gpu: ${oc.decode:${oc.env:FLUX1_DEV_GPU,0}}
   offload: ${oc.env:FLUX1_DEV_OFFLOAD,sequential}
   page_text_encoders: ${oc.decode:${oc.env:FLUX1_DEV_PAGE_TEXT_ENCODERS,false}}
   warmup: ${oc.decode:${oc.env:FLUX1_DEV_WARMUP,true}}

@@ -91,12 +91,13 @@ x-gpu: &gpu
   # Tune via deploy/.env: GPU_WORKER_MEM_LIMIT=24g on a 64 GB server.
   mem_limit: ${GPU_WORKER_MEM_LIMIT:-16g}
   memswap_limit: ${GPU_WORKER_MEM_LIMIT:-16g}
+  # Every GPU is visible; the worker keeps one, model.gpu in its YAML (<ID>_GPU, default 0).
   deploy:
     resources:
       reservations:
         devices:
           - driver: nvidia
-            count: 1
+            count: all
             capabilities: [gpu]
 
 x-cpu-worker: &cpu-worker

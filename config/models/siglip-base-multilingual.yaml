@@ -8,6 +8,7 @@ model:
   hub_id: "google/siglip-base-patch16-256-multilingual"
   device: ${oc.env:SIGLIP_DEVICE,cuda}
   vram_mb: ${oc.decode:${oc.env:SIGLIP_VRAM_MB,2000}}
+  gpu: ${oc.decode:${oc.env:SIGLIP_GPU,0}}
 
 cache:
   enabled: false

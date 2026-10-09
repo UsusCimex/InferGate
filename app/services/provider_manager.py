@@ -44,6 +44,16 @@ def resolve_worker_url(model_id: str, template: str | None = None) -> str | None
     return None
 
 
+def _gpu_index(config: ModelConfig) -> int:
+    """GPU of the model's worker: `model.gpu`, 0 when absent."""
+    value = config.model.get("gpu", 0)
+    if isinstance(value, str) and value.isdigit():
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"model.gpu must be a GPU index (0, 1, ...), got {value!r}")
+    return value
+
+
 class ModelNotFoundError(Exception):
     pass
 
@@ -72,11 +82,13 @@ class ProviderManager:
         vram_headroom_mb: int = 0,
         category_reservations: dict[str, int] | None = None,
         worker_url_template: str | None = None,
+        vram_budgets_mb: dict[int, int] | None = None,
     ):
         self._registry: dict[str, BaseProvider] = {}
         self._loaded_order: OrderedDict[str, None] = OrderedDict()
         self._max_loaded = max_loaded
         self._max_vram_budget_mb = max_vram_budget_mb
+        self._vram_budgets_mb = dict(vram_budgets_mb or {})
         self._vram_headroom_mb = vram_headroom_mb
         self._model_dir = model_dir
         self._pinned = set(pinned or [])
@@ -100,14 +112,16 @@ class ProviderManager:
                 f"gpu.max_loaded_models in server.yaml to at least "
                 f"{len(gpu_pinned) + 1} or remove a pinned model."
             )
-        if self._max_vram_budget_mb > 0:
-            pinned_vram = sum(self._registry[m].vram_mb for m in gpu_pinned
-                              if m in self._registry)
-            effective_budget = self._max_vram_budget_mb - self._vram_headroom_mb
+        for gpu in sorted({self.gpu_of(m) for m in gpu_pinned}):
+            effective_budget = self._effective_budget(gpu)
+            if effective_budget <= 0:
+                continue
+            pinned_vram = sum(self._registry[m].vram_mb for m in gpu_pinned if self.gpu_of(m) == gpu)
             if pinned_vram >= effective_budget:
+                key = f"vram_budgets_mb[{gpu}]" if gpu in self._vram_budgets_mb else "max_vram_budget_mb"
                 raise ConfigError(
-                    f"Pinned GPU models declare {pinned_vram} MB VRAM, which "
-                    f"meets or exceeds max_vram_budget_mb={self._max_vram_budget_mb} "
+                    f"Pinned GPU models on GPU {gpu} declare {pinned_vram} MB VRAM, which "
+                    f"meets or exceeds {key}={self._vram_budget_mb(gpu)} "
                     f"(minus headroom {self._vram_headroom_mb} MB). "
                     f"Increase the budget or drop a pinned model."
                 )
@@ -125,6 +139,7 @@ class ProviderManager:
                 )
 
             try:
+                _gpu_index(config)
                 if config.worker_url:
                     provider = self._create_remote_provider(config)
                     logger.info("Registered remote model: %s at %s", config.id, config.worker_url)
@@ -161,6 +176,10 @@ class ProviderManager:
     def _is_gpu_model(self, model_id: str) -> bool:
         provider = self._registry.get(model_id)
         return provider is not None and provider.vram_mb > 0
+
+    def gpu_of(self, model_id: str) -> int:
+        """GPU whose VRAM budget the model counts against."""
+        return _gpu_index(self.get(model_id).config)
 
     def _is_remote(self, model_id: str) -> bool:
         provider = self._registry.get(model_id)
@@ -284,6 +303,7 @@ class ProviderManager:
                     await self._make_room(
                         incoming_vram_mb=provider.vram_mb,
                         wait_s=provider.config.queue.timeout_seconds,
+                        gpu=self.gpu_of(model_id),
                     )
 
             try:
@@ -335,6 +355,12 @@ class ProviderManager:
 
         if existing is not None and existing.config.model_dump() == config.model_dump():
             # Editor touch with no content diff: no-op.
+            return False
+
+        try:
+            _gpu_index(config)
+        except ValueError as e:
+            logger.error("reload_model(%s) rejected new config: %s", model_id, e)
             return False
 
         # Remote hot-path: keep the httpx pool, push the new config via the worker's /reload.
@@ -405,21 +431,22 @@ class ProviderManager:
         )
         return True
 
-    def _loaded_vram_mb(self) -> int:
+    def _loaded_vram_mb(self, gpu: int | None = None) -> int:
+        """Declared VRAM of the loaded GPU models, on one GPU or on all of them."""
         return sum(
             self._registry[m].vram_mb
             for m in self._loaded_order
-            if self._is_gpu_model(m) and m in self._registry
+            if self._is_gpu_model(m) and (gpu is None or self.gpu_of(m) == gpu)
         )
 
-    async def _make_room(self, incoming_vram_mb: int = 0, wait_s: float = 0) -> None:
-        """Evict models to fit `incoming_vram_mb` in the VRAM budget; the caller holds `_room_freed`.
+    async def _make_room(self, incoming_vram_mb: int = 0, wait_s: float = 0, gpu: int = 0) -> None:
+        """Evict models to fit `incoming_vram_mb` in the budget of `gpu`; the caller holds `_room_freed`.
 
         When only models with in-flight requests stand in the way, waits up to `wait_s` for those requests to end.
         """
-        plan = self._plan_eviction(incoming_vram_mb)
-        if plan is None and self._effective_budget() > 0 and wait_s > 0 \
-                and self._plan_eviction(incoming_vram_mb, busy_evictable=True) is not None:
+        plan = self._plan_eviction(incoming_vram_mb, gpu=gpu)
+        if plan is None and self._effective_budget(gpu) > 0 and wait_s > 0 \
+                and self._plan_eviction(incoming_vram_mb, busy_evictable=True, gpu=gpu) is not None:
             logger.info("Waiting up to %ss for in-flight requests to free room for %d MB", wait_s, incoming_vram_mb)
             deadline = asyncio.get_running_loop().time() + wait_s
             while plan is None:
@@ -428,15 +455,15 @@ class ProviderManager:
                     break
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self._room_freed.wait(), remaining)
-                plan = self._plan_eviction(incoming_vram_mb)
+                plan = self._plan_eviction(incoming_vram_mb, gpu=gpu)
         if plan is None:
-            effective_budget = self._effective_budget()
+            effective_budget = self._effective_budget(gpu)
             if effective_budget > 0:
                 raise InsufficientResourcesError(
-                    f"Cannot fit {incoming_vram_mb} MB: "
-                    f"{self._loaded_vram_mb()} MB loaded, budget {effective_budget} MB, "
+                    f"Cannot fit {incoming_vram_mb} MB on GPU {gpu}: "
+                    f"{self._loaded_vram_mb(gpu)} MB loaded, budget {effective_budget} MB, "
                     f"remaining models all pinned or in-flight. "
-                    f"Unpin a model or raise gpu.max_vram_budget_mb."
+                    f"Unpin a model or raise the VRAM budget of the GPU."
                 )
             logger.warning(
                 "Cannot make room: every loaded model is pinned or in-flight"
@@ -450,49 +477,56 @@ class ProviderManager:
             await self._registry[victim].unload()
             del self._loaded_order[victim]
 
-    def _effective_budget(self) -> int:
-        if self._max_vram_budget_mb <= 0:
+    def _vram_budget_mb(self, gpu: int) -> int:
+        return self._vram_budgets_mb.get(gpu, self._max_vram_budget_mb)
+
+    def _effective_budget(self, gpu: int = 0) -> int:
+        budget = self._vram_budget_mb(gpu)
+        if budget <= 0:
             return 0
-        return self._max_vram_budget_mb - self._vram_headroom_mb
+        return budget - self._vram_headroom_mb
 
-    def _plan_eviction(self, incoming_vram_mb: int, busy_evictable: bool = False) -> list[str] | None:
-        """Return the ordered LRU eviction plan, [] if it already fits, None if infeasible.
+    def _plan_eviction(
+        self, incoming_vram_mb: int, busy_evictable: bool = False, gpu: int = 0,
+    ) -> list[str] | None:
+        """Return the ordered LRU eviction plan for a load onto `gpu`, [] if it already fits, None if infeasible.
 
+        `max_loaded_models` counts every GPU and the VRAM budget only `gpu`, whose own models alone free VRAM.
         `busy_evictable` plans as if the in-flight requests had ended, to tell a wait from a dead end.
         """
-        effective_budget = self._effective_budget()
+        effective_budget = self._effective_budget(gpu)
         excluded: set[str] = set()
         plan: list[str] = []
 
-        def fits() -> bool:
-            gpu_loaded = [
-                m for m in self._loaded_order
-                if self._is_gpu_model(m) and m not in excluded
-            ]
-            if len(gpu_loaded) >= self._max_loaded:
-                return False
-            if effective_budget > 0:
-                loaded_vram = sum(self._registry[m].vram_mb for m in gpu_loaded)
-                if loaded_vram + max(incoming_vram_mb, 0) > effective_budget:
-                    return False
-            return True
+        def gpu_loaded() -> list[str]:
+            return [m for m in self._loaded_order if self._is_gpu_model(m) and m not in excluded]
 
-        if fits():
-            return []
-        while True:
-            victim = self._find_lru_victim(excluded=excluded, busy_evictable=busy_evictable)
+        def over_vram() -> bool:
+            if effective_budget <= 0:
+                return False
+            loaded_vram = sum(self._registry[m].vram_mb for m in gpu_loaded() if self.gpu_of(m) == gpu)
+            return loaded_vram + max(incoming_vram_mb, 0) > effective_budget
+
+        while len(gpu_loaded()) >= self._max_loaded or over_vram():
+            victim = self._find_lru_victim(
+                excluded=excluded, busy_evictable=busy_evictable, gpu=gpu if over_vram() else None,
+            )
             if victim is None:
                 return None
             plan.append(victim)
             excluded.add(victim)
-            if fits():
-                return plan
+        return plan
 
-    def _find_lru_victim(self, excluded: set[str] | None = None, busy_evictable: bool = False) -> str | None:
-        """Return the LRU evictable GPU model, first honouring reservations, then ignoring them."""
+    def _find_lru_victim(
+        self, excluded: set[str] | None = None, busy_evictable: bool = False, gpu: int | None = None,
+    ) -> str | None:
+        """Return the LRU evictable GPU model (on `gpu` when given), first honouring reservations, then ignoring them."""
         excluded = excluded or set()
         # A model on the CPU frees no VRAM: evicting it would only force a reload.
-        candidates = [m for m in self._loaded_order if m not in excluded and self._is_gpu_model(m)]
+        candidates = [
+            m for m in self._loaded_order
+            if m not in excluded and self._is_gpu_model(m) and (gpu is None or self.gpu_of(m) == gpu)
+        ]
         for model_id in candidates:
             if not self._evictable(model_id, busy_evictable):
                 continue
@@ -566,11 +600,13 @@ class ProviderManager:
                 "id": model_id,
                 "category": self._registry[model_id].config.category,
                 "vram_mb": self._registry[model_id].vram_mb,
+                "gpu": self.gpu_of(model_id),
                 "pinned": model_id in self._pinned,
                 "active_requests": self._active_counts.get(model_id, 0),
             }
             for model_id in self._loaded_order
         ]
+        gpus = {self.gpu_of(m) for m in self._loaded_order if self._is_gpu_model(m)} | set(self._vram_budgets_mb)
         return {
             "loaded": loaded,
             "total_declared_vram_mb": self._loaded_vram_mb(),
@@ -578,6 +614,13 @@ class ProviderManager:
             "max_vram_budget_mb": self._max_vram_budget_mb,
             "vram_headroom_mb": self._vram_headroom_mb,
             "effective_budget_mb": self._effective_budget(),
+            "gpus": {
+                gpu: {
+                    "declared_vram_mb": self._loaded_vram_mb(gpu),
+                    "effective_budget_mb": self._effective_budget(gpu),
+                }
+                for gpu in sorted(gpus)
+            },
             "pinned_models": sorted(self._pinned),
             "category_reservations": dict(self._category_reservations),
         }
@@ -586,14 +629,16 @@ class ProviderManager:
         """Dry-run `ensure_loaded(model_id)`: return the eviction plan without mutating state."""
         provider = self.get(model_id)
         incoming_mb = provider.vram_mb
+        gpu = self.gpu_of(model_id)
         base: dict[str, Any] = {
             "model_id": model_id,
             "incoming_vram_mb": incoming_mb,
+            "gpu": gpu,
             "already_loaded": provider.is_loaded(),
         }
         if provider.is_loaded() or not self._is_gpu_model(model_id):
             return {**base, "feasible": True, "plan": [], "freed_mb": 0}
-        plan = self._plan_eviction(incoming_mb)
+        plan = self._plan_eviction(incoming_mb, gpu=gpu)
         if plan is None:
             return {
                 **base,

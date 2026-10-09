@@ -9,6 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:QWEN_IMAGE_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:QWEN_IMAGE_VRAM_MB,11000}}
+  gpu: ${oc.decode:${oc.env:QWEN_IMAGE_GPU,0}}
   quantization: ${oc.decode:${oc.env:QWEN_IMAGE_QUANTIZATION,nf4}}
   quantize_components: ["transformer", "text_encoder"]
   offload: ${oc.env:QWEN_IMAGE_OFFLOAD,sequential}

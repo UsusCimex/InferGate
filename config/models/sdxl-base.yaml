@@ -9,6 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:SDXL_BASE_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:SDXL_BASE_VRAM_MB,7000}}
+  gpu: ${oc.decode:${oc.env:SDXL_BASE_GPU,0}}
   offload: ${oc.env:SDXL_BASE_OFFLOAD,none}
   vae_hub_id: ${oc.env:SDXL_BASE_VAE_HUB_ID,madebyollin/sdxl-vae-fp16-fix}
   vae_tiling: ${oc.decode:${oc.env:SDXL_BASE_VAE_TILING,false}}

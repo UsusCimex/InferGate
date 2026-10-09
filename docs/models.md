@@ -94,7 +94,7 @@
 
 Модель, которой хватает существующего провайдера, добавляется без кода Python:
 
-1. `config/models/<id>.yaml`: `id`, `display_name`, `category`, `provider_class`, `enabled`, блок `model` (`hub_id`, `vram_mb`, `torch_dtype`, квантизация, выгрузка, `default_params`), `cache`, `queue`, `metadata`, при необходимости `capabilities`. Значения, зависящие от железа, пишутся как `${oc.env:<ID>_<FIELD>,default}`, чтобы их можно было менять в `deploy/.env` ([configuration.md](configuration.md#yaml-модели)).
+1. `config/models/<id>.yaml`: `id`, `display_name`, `category`, `provider_class`, `enabled`, блок `model` (`hub_id`, `vram_mb`, `gpu`, `torch_dtype`, квантизация, выгрузка, `default_params`), `cache`, `queue`, `metadata`, при необходимости `capabilities`. Значения, зависящие от железа, пишутся как `${oc.env:<ID>_<FIELD>,default}`, чтобы их можно было менять в `deploy/.env` ([configuration.md](configuration.md#yaml-модели)).
 2. `deploy/workers/<id>/requirements.txt`: pip-зависимости воркера.
 3. Строка в матрице `deploy/docker-bake.hcl`.
 4. Сервис `worker-<id>` в `deploy/docker-compose.yml` (по образцу соседнего) с профилем `<id>` и, если нужно, профилем категории.

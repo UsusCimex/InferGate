@@ -7,6 +7,7 @@ enabled: ${oc.decode:${oc.env:LLAMA3_1_8B_ENABLED,false}}
 model:
   hub_id: "meta-llama/Llama-3.1-8B-Instruct"
   vram_mb: ${oc.decode:${oc.env:LLAMA3_1_8B_VRAM_MB,8000}}
+  gpu: ${oc.decode:${oc.env:LLAMA3_1_8B_GPU,0}}
   torch_dtype: ${oc.env:LLAMA3_1_8B_TORCH_DTYPE,float16}
   quantization: ${oc.decode:${oc.env:LLAMA3_1_8B_QUANTIZATION,null}}
   gpu_memory_utilization: ${oc.decode:${oc.env:LLAMA3_1_8B_GPU_MEM_UTIL,0.90}}

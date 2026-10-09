@@ -9,7 +9,8 @@
 | `log_level` | `info` | уровень журнала шлюза |
 | `auth.enabled`, `auth.api_keys` | `false`, `[]` | проверка `Authorization: Bearer <key>`, работает только с непустым списком ключей; `/health`, `/v1/health` и документация FastAPI открыты всегда |
 | `gpu.max_loaded_models` | 3 (`GPU_MAX_LOADED_MODELS`) | сколько GPU-моделей (с `vram_mb > 0`) держать загруженными |
-| `gpu.max_vram_budget_mb`, `gpu.vram_headroom_mb` | 0, 0 (`GPU_MAX_VRAM_BUDGET_MB`, `GPU_VRAM_HEADROOM_MB`) | бюджет объявленной VRAM, 0 выключает его. Для 12 ГБ 10000, для 24 ГБ 22000, для 48 ГБ 44000 |
+| `gpu.max_vram_budget_mb`, `gpu.vram_headroom_mb` | 0, 0 (`GPU_MAX_VRAM_BUDGET_MB`, `GPU_VRAM_HEADROOM_MB`) | бюджет объявленной VRAM каждой GPU, 0 выключает его. Для 12 ГБ 10000, для 24 ГБ 22000, для 48 ГБ 44000 |
+| `gpu.vram_budgets_mb` | `{}` | свой бюджет отдельных GPU: `{1: 22000}`; GPU без записи получают `max_vram_budget_mb` |
 | `gpu.pinned_models` | `[]` | модели, которые никогда не выгружаются |
 | `gpu.category_reservations` | `{}` | минимум загруженных моделей категории, который вытеснение старается не нарушать |
 | `gpu.watchdog_interval_seconds` | 15 (`GPU_WATCHDOG_INTERVAL_SECONDS`) | период `MemoryWatchdog`, 0 выключает его |
@@ -78,6 +79,8 @@ metadata:
   tags: ["fast", "flux2", "apache2", "open"]
 ```
 
+Ключ `model.gpu` (`<ID>_GPU`, 0) у GPU-моделей: номер GPU воркера в нумерации `nvidia-smi` ([несколько GPU](#несколько-gpu)).
+
 Необязательные ключи верхнего уровня: `worker_url` (адрес воркера вместо `WORKER_URL_*`) и `capabilities`: `vision` (картинки во входе chat/completions), `voice_clone_only` (синтез только через `/audio/speech/voice-clone`), `voices` (список разрешённых голосов `/audio/speech`). Тег `voice-clone` в `metadata.tags` отмечает модели клонирования для клиентов, PictoLex строит по нему их список. `category`: `image`, `text`, `tts`, `stt`, `upscale`, `embedding-text`, `embedding-audio`, `embedding-multimodal` или `embedding-video`.
 
 Блок `batching` (эмбеддинги текста): `enabled` (по умолчанию `false`), `max_batch_size` (32 строки), `max_wait_ms` (5 мс). Одновременные запросы `/v1/embeddings` к модели с одним приоритетом собираются в один вызов, пока в пакете меньше `max_batch_size` строк и с первого запроса прошло меньше `max_wait_ms`; ошибка вызова достаётся всем запросам пакета.
@@ -107,7 +110,7 @@ metadata:
 | Общие | `HF_TOKEN` (gated-модели), `GPU_BASE_IMAGE`, `VLLM_IMAGE`, `PORT`, `MODELS_DIR` (папка весов на хосте), `COMPOSE_PROFILES`, `INFERGATE_LOG_JSON` (журнал шлюза и воркеров строками JSON), `OTEL_EXPORTER_OTLP_ENDPOINT` ([трассировка](deployment.md#трассировка)) |
 | Пределы контейнеров | `GPU_WORKER_MEM_LIMIT` (16g), `CPU_WORKER_MEM_LIMIT` (6g), `GATEWAY_MEM_LIMIT` (2g), `GPU_WORKER_SHM_SIZE`, `PYTORCH_CUDA_ALLOC_CONF` |
 | VRAM и сторож | `GPU_MAX_VRAM_BUDGET_MB`, `GPU_VRAM_HEADROOM_MB`, `GPU_MAX_LOADED_MODELS`, `GPU_WATCHDOG_*` |
-| Модели | `<ID>_ENABLED`, `<ID>_QUANTIZATION`, `<ID>_OFFLOAD`, `<ID>_STEPS`, `<ID>_CFG`, `<ID>_VRAM_MB`, `<ID>_MAX_CONCURRENT`, `<ID>_GPU_MEM_UTIL`, `<ID>_CONTEXT_LENGTH`, голоса и форматы TTS и др. |
+| Модели | `<ID>_ENABLED`, `<ID>_GPU`, `<ID>_QUANTIZATION`, `<ID>_OFFLOAD`, `<ID>_STEPS`, `<ID>_CFG`, `<ID>_VRAM_MB`, `<ID>_MAX_CONCURRENT`, `<ID>_GPU_MEM_UTIL`, `<ID>_CONTEXT_LENGTH`, голоса и форматы TTS и др. |
 | Связь шлюза с воркерами | `GATEWAY_REMOTE_CONNECT_TIMEOUT` (5 с), `GATEWAY_REMOTE_LOAD_TIMEOUT` (1800 с), `GATEWAY_REMOTE_GENERATE_TIMEOUT` (300 с), `GATEWAY_REMOTE_QUICK_TIMEOUT` (5 с), `GATEWAY_REMOTE_RETRY_ATTEMPTS`, `GATEWAY_REMOTE_RETRY_BACKOFF`, пул соединений |
 
 Выгрузка на CPU, `offload` (`<ID>_OFFLOAD`): `none` - модель целиком на GPU, `model` - части модели попадают на GPU только на время своей работы, `sequential` - послойно. У `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image` и `sd35-medium` по умолчанию `sequential`, у остальных `none`, Meissonic знает только `none` и `model`. Прежние `cpu_offload`, `sequential_cpu_offload` и переменные `<ID>_CPU_OFFLOAD`, `<ID>_SEQUENTIAL_OFFLOAD` воркер не принимает: загрузка падает с ошибкой. На 12 ГБ послойная выгрузка стоит минут на картинку, поэтому FLUX.2 klein, FLUX.1-dev и Z-Image там работают в nf4 без неё (подсказки в `.env.example`).
@@ -117,12 +120,21 @@ metadata:
 ## Защита памяти
 
 1. **Пределы контейнеров** (`*_MEM_LIMIT`): при переполнении OOM killer убивает контейнер, а не хост.
-2. **Бюджет VRAM** (`gpu.max_vram_budget_mb` и `vram_headroom_mb`): перед загрузкой `ProviderManager` выгружает давно не использованные модели, пока сумма объявленных `vram_mb` не уложится в бюджет; если выгружать нечего, ответ 503 `insufficient_resources` вместо CUDA OOM. Закреплённые модели и модели с запросами в работе не выгружаются; если мешают только вторые, загрузка ждёт конца их запросов до `queue.timeout_seconds` загружаемой модели и только потом отвечает 503. Модель с `device: cpu` бюджет не занимает (`vram_mb` считается нулём) и не выгружается. `device` шлюз читает из YAML со своими переменными окружения, поэтому `<ID>_DEVICE=cpu` нужен и шлюзу, а не только воркеру.
-3. **`MemoryWatchdog`**: раз в `watchdog_interval_seconds` спрашивает у воркеров живую VRAM (`/stats`: NVML, иначе torch) и при превышении порога выгружает самую давнюю GPU-модель, если таких загружено больше одной (vLLM заранее резервирует около 90% видеопамяти, так что одна модель порог превышает всегда). Модели на CPU в подсчёт не входят и не выгружаются. RAM хоста только пишется в журнал.
+2. **Бюджет VRAM** (`gpu.max_vram_budget_mb` и `vram_headroom_mb`): перед загрузкой `ProviderManager` выгружает давно не использованные модели той же GPU, пока сумма объявленных `vram_mb` её моделей не уложится в бюджет; если выгружать нечего, ответ 503 `insufficient_resources` вместо CUDA OOM. Закреплённые модели и модели с запросами в работе не выгружаются; если мешают только вторые, загрузка ждёт конца их запросов до `queue.timeout_seconds` загружаемой модели и только потом отвечает 503. Модель с `device: cpu` бюджет не занимает (`vram_mb` считается нулём) и не выгружается. `device` шлюз читает из YAML со своими переменными окружения, поэтому `<ID>_DEVICE=cpu` нужен и шлюзу, а не только воркеру.
+3. **`MemoryWatchdog`**: раз в `watchdog_interval_seconds` спрашивает у воркеров живую VRAM (`/stats`: NVML, иначе torch) и при превышении порога на какой-то GPU выгружает самую давнюю модель этой GPU, если их там загружено больше одной (vLLM заранее резервирует около 90% видеопамяти, так что одна модель порог превышает всегда). Модели на CPU в подсчёт не входят и не выгружаются. RAM хоста только пишется в журнал.
+
+## Несколько GPU
+
+Воркеры в Compose видят все GPU и оставляют себе одну: `model.gpu` из YAML (`<ID>_GPU` в `deploy/.env`, по умолчанию 0) становится их `CUDA_VISIBLE_DEVICES` в нумерации `nvidia-smi`, если окружение не задало его само. Шлюз читает тот же YAML и считает модель в бюджете её GPU (`gpu.max_vram_budget_mb` или `gpu.vram_budgets_mb`), так что вытеснение на одной GPU не трогает модели другой; `gpu.max_loaded_models` общий на все GPU. Смена `<ID>_GPU` требует пересоздать воркер и шлюз.
+
+```bash
+# deploy/.env: LLM на GPU 0, картинки на GPU 1
+FLUX2_KLEIN_4B_GPU=1
+```
 
 ## Файлы переопределения Compose
 
-Что не выражается переменными (несколько GPU, тома, секции `deploy`), задаётся файлом поверх базового:
+Что не выражается переменными (тома, секции `deploy`), задаётся файлом поверх базового:
 
 ```bash
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.server.yml up -d

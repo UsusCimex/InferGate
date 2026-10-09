@@ -9,6 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:MEISSONIC_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:MEISSONIC_VRAM_MB,10000}}
+  gpu: ${oc.decode:${oc.env:MEISSONIC_GPU,0}}
   offload: ${oc.env:MEISSONIC_OFFLOAD,none}
   default_params:
     num_inference_steps: ${oc.decode:${oc.env:MEISSONIC_STEPS,64}}

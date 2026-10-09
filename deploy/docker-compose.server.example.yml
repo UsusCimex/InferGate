@@ -11,18 +11,12 @@
 # `environment:` and `deploy:` are merged by key, so you only write what differs.
 #
 # Prefer tuning via deploy/.env (simple key=value) when the change applies to
-# all hosts. Use this file for host-specific layout: GPU count, volumes,
-# pinned-model overrides, profile defaults.
+# all hosts. Use this file for host-specific layout: volumes, pinned-model
+# overrides, profile defaults. The GPU of a model is <ID>_GPU in deploy/.env,
+# which the gateway reads as well.
 
 services:
   worker-qwen-image:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     environment:
       QWEN_IMAGE_QUANTIZATION: "null"
       QWEN_IMAGE_OFFLOAD: "none"

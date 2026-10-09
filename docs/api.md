@@ -19,7 +19,7 @@
 | `POST` | `/v1/embeddings/audio`, `/v1/embeddings/image`, `/v1/embeddings/video` | эмбеддинг одного файла, multipart |
 | `GET` | `/v1/models` | все модели: категория, включена ли, загружена ли, метаданные и теги |
 | `POST` | `/v1/models/{id}/load`, `/v1/models/{id}/unload` | загрузить или выгрузить модель |
-| `GET` | `/v1/admin/memory/status` | загруженные модели, объявленная VRAM, бюджет, закреплённые модели |
+| `GET` | `/v1/admin/memory/status` | загруженные модели, объявленная VRAM и бюджет всего и по GPU (`gpus`), закреплённые модели |
 | `GET` | `/v1/admin/memory/preview-load/{id}` | план вытеснения при загрузке модели |
 | `GET` | `/cache/stats`, `/cache/stats/{model_id}` | статистика кэша |
 | `DELETE` | `/cache`, `/cache/{model_id}`, `/cache/entry/{key}` | очистка кэша |

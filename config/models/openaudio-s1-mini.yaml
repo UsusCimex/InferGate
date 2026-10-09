@@ -7,6 +7,7 @@ enabled: ${oc.decode:${oc.env:OPENAUDIO_S1_MINI_ENABLED,false}}
 model:
   hub_id: "fishaudio/openaudio-s1-mini"
   vram_mb: ${oc.decode:${oc.env:OPENAUDIO_S1_MINI_VRAM_MB,4000}}
+  gpu: ${oc.decode:${oc.env:OPENAUDIO_S1_MINI_GPU,0}}
   default_params:
     voice: ${oc.env:OPENAUDIO_S1_MINI_VOICE,default}
     speed: ${oc.decode:${oc.env:OPENAUDIO_S1_MINI_SPEED,1.0}}

@@ -11,8 +11,9 @@ class _StubProvider:
     aggregation + eviction logic."""
     def __init__(
         self, vram_used_mb: int, vram_total_mb: int, loaded: bool = True,
-        declared_mb: int | None = None,
+        declared_mb: int | None = None, gpu: int = 0,
     ):
+        self.gpu = gpu
         self._vram_used = vram_used_mb
         self._vram_total = vram_total_mb
         self._declared = vram_used_mb if declared_mb is None else declared_mb
@@ -46,9 +47,12 @@ class _StubManager:
     def get(self, model_id):
         return self._registry[model_id]
 
-    def _find_lru_victim(self):
+    def gpu_of(self, model_id):
+        return self._registry[model_id].gpu
+
+    def _find_lru_victim(self, gpu=None):
         for m in self._loaded_order:
-            if m not in self._pinned:
+            if m not in self._pinned and (gpu is None or self.gpu_of(m) == gpu):
                 return m
         return None
 
@@ -69,7 +73,7 @@ async def test_watchdog_evicts_on_vram_over_threshold():
 
     summary = await wd.scan_once()
     assert summary["vram_over_threshold"] is True
-    assert summary["evicted"] == "old"  # LRU first
+    assert summary["evicted"] == ["old"]  # LRU first
     assert providers["old"].unload_calls == 1
 
 
@@ -84,7 +88,7 @@ async def test_watchdog_noop_below_threshold():
 
     summary = await wd.scan_once()
     assert summary["vram_over_threshold"] is False
-    assert summary["evicted"] is None
+    assert summary["evicted"] == []
     assert providers["m1"].unload_calls == 0
 
 
@@ -101,7 +105,7 @@ async def test_watchdog_cannot_evict_when_all_pinned(caplog):
     with caplog.at_level("WARNING"):
         summary = await wd.scan_once()
     assert summary["vram_over_threshold"] is True
-    assert summary["evicted"] is None
+    assert summary["evicted"] == []
     assert all(p.unload_calls == 0 for p in providers.values())
     assert any("all loaded models are pinned" in r.message for r in caplog.records)
 
@@ -116,7 +120,7 @@ async def test_watchdog_keeps_lone_model_that_reserves_the_gpu(caplog):
     with caplog.at_level("WARNING"):
         summary = await wd.scan_once()
     assert summary["vram_over_threshold"] is True
-    assert summary["evicted"] is None
+    assert summary["evicted"] == []
     assert providers["vllm"].unload_calls == 0
     assert not any("VRAM" in r.message for r in caplog.records)
 
@@ -133,7 +137,7 @@ async def test_watchdog_keeps_cpu_models_next_to_a_lone_gpu_model():
 
     summary = await wd.scan_once()
     assert summary["vram_over_threshold"] is True
-    assert summary["evicted"] is None
+    assert summary["evicted"] == []
     assert all(p.unload_calls == 0 for p in providers.values())
 
 
@@ -155,7 +159,7 @@ async def test_watchdog_ram_threshold_is_advisory(caplog, monkeypatch):
     with caplog.at_level("WARNING"):
         summary = await wd.scan_once()
     assert summary["ram_over_threshold"] is True
-    assert summary["evicted"] is None
+    assert summary["evicted"] == []
     assert providers["m1"].unload_calls == 0
     assert any("host RAM" in r.message for r in caplog.records)
 
@@ -174,7 +178,7 @@ async def test_watchdog_handles_empty_stats():
     summary = await wd.scan_once()
     # No data: no eviction, no thresholds tripped
     assert summary["vram_over_threshold"] is False
-    assert summary["evicted"] is None
+    assert summary["evicted"] == []
 
 
 @pytest.mark.asyncio
@@ -200,3 +204,51 @@ async def test_watchdog_lifecycle():
     await wd.stop()
     assert wd._task is None
     assert first.cancelled() or first.done()
+
+
+@pytest.mark.asyncio
+async def test_watchdog_judges_each_gpu_on_its_own():
+    """A lone vLLM model filling GPU 0 must not cost a model on GPU 1 its slot."""
+    providers = {
+        "llm": _StubProvider(vram_used_mb=11500, vram_total_mb=12000, gpu=0),
+        "image-a": _StubProvider(vram_used_mb=6000, vram_total_mb=24000, gpu=1),
+        "image-b": _StubProvider(vram_used_mb=6000, vram_total_mb=24000, gpu=1),
+    }
+    manager = _StubManager(providers)
+    wd = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.9, ram_threshold=0.99)
+
+    summary = await wd.scan_once()
+    assert summary["vram_over_threshold"] is True
+    assert summary["evicted"] == []
+    assert summary["vram_used_mb"] == 11500 + 6000
+    assert summary["vram_total_mb"] == 12000 + 24000
+
+
+@pytest.mark.asyncio
+async def test_watchdog_evicts_on_the_gpu_over_threshold():
+    providers = {
+        "llm": _StubProvider(vram_used_mb=3000, vram_total_mb=12000, gpu=0),
+        "image-a": _StubProvider(vram_used_mb=23000, vram_total_mb=24000, gpu=1),
+        "image-b": _StubProvider(vram_used_mb=23000, vram_total_mb=24000, gpu=1),
+    }
+    manager = _StubManager(providers)
+    wd = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.9, ram_threshold=0.99)
+
+    summary = await wd.scan_once()
+    assert summary["evicted"] == ["image-a"]
+    assert providers["llm"].unload_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_watchdog_reports_every_gpu_it_evicted_from():
+    providers = {
+        "text-a": _StubProvider(vram_used_mb=11000, vram_total_mb=12000, gpu=0),
+        "image-a": _StubProvider(vram_used_mb=23000, vram_total_mb=24000, gpu=1),
+        "text-b": _StubProvider(vram_used_mb=11000, vram_total_mb=12000, gpu=0),
+        "image-b": _StubProvider(vram_used_mb=23000, vram_total_mb=24000, gpu=1),
+    }
+    manager = _StubManager(providers)
+    wd = MemoryWatchdog(manager, interval_seconds=0, vram_threshold=0.9, ram_threshold=0.99)
+
+    summary = await wd.scan_once()
+    assert summary["evicted"] == ["text-a", "image-a"]

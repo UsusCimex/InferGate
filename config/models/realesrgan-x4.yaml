@@ -10,6 +10,7 @@ model:
   device: ${oc.env:REALESRGAN_X4_DEVICE,cuda}
   torch_dtype: ${oc.env:REALESRGAN_X4_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:REALESRGAN_X4_VRAM_MB,1500}}
+  gpu: ${oc.decode:${oc.env:REALESRGAN_X4_GPU,0}}
   max_input_side: ${oc.decode:${oc.env:REALESRGAN_X4_MAX_INPUT_SIDE,2048}}
   tile_size: ${oc.decode:${oc.env:REALESRGAN_X4_TILE_SIZE,1024}}
 

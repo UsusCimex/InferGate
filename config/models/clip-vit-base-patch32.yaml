@@ -8,6 +8,7 @@ model:
   hub_id: "openai/clip-vit-base-patch32"
   device: ${oc.env:CLIP_DEVICE,cuda}
   vram_mb: ${oc.decode:${oc.env:CLIP_VRAM_MB,1500}}
+  gpu: ${oc.decode:${oc.env:CLIP_GPU,0}}
 
 cache:
   enabled: false

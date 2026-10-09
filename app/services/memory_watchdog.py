@@ -11,19 +11,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def live_vram(manager: ProviderManager) -> tuple[int, int]:
-    """Used and total GPU MB from the loaded models' `/stats`; workers on one host share the GPU."""
-    used = total = 0
+async def live_vram_by_gpu(manager: ProviderManager) -> dict[int, tuple[int, int]]:
+    """Used and total MB of each GPU from the loaded models' `/stats`; workers on one GPU share its numbers."""
+    by_gpu: dict[int, tuple[int, int]] = {}
     for model_id in list(manager.loaded_models()):
         try:
             stats = await manager.get(model_id).get_stats()
+            gpu = manager.gpu_of(model_id)
         except Exception as e:
             logger.debug("get_stats(%s) failed: %s", model_id, e)
             continue
         if stats:
-            used = max(used, stats.get("vram_used_mb", 0))
-            total = max(total, stats.get("vram_total_mb", 0))
-    return used, total
+            used, total = by_gpu.get(gpu, (0, 0))
+            by_gpu[gpu] = (
+                max(used, stats.get("vram_used_mb", 0)),
+                max(total, stats.get("vram_total_mb", 0)),
+            )
+    return by_gpu
+
+
+async def live_vram(manager: ProviderManager) -> tuple[int, int]:
+    """Used and total MB summed over the GPUs of the loaded models."""
+    by_gpu = await live_vram_by_gpu(manager)
+    return sum(used for used, _ in by_gpu.values()), sum(total for _, total in by_gpu.values())
 
 
 class MemoryWatchdog:
@@ -86,44 +96,32 @@ class MemoryWatchdog:
             "ram_total_mb": 0,
             "vram_over_threshold": False,
             "ram_over_threshold": False,
-            "evicted": None,
+            "evicted": [],
         }
 
-        gpu_models = 0
+        gpu_models: dict[int, int] = {}
         for model_id in list(self._manager.loaded_models()):
             with contextlib.suppress(Exception):
-                gpu_models += self._manager.get(model_id).vram_mb > 0
-        agg_used, agg_total = await live_vram(self._manager)
-        summary["vram_used_mb"] = agg_used
-        summary["vram_total_mb"] = agg_total
+                if self._manager.get(model_id).vram_mb > 0:
+                    gpu = self._manager.gpu_of(model_id)
+                    gpu_models[gpu] = gpu_models.get(gpu, 0) + 1
+        by_gpu = await live_vram_by_gpu(self._manager)
+        summary["vram_used_mb"] = sum(used for used, _ in by_gpu.values())
+        summary["vram_total_mb"] = sum(total for _, total in by_gpu.values())
 
         ram_used, ram_total = self._host_ram_snapshot()
         summary["ram_used_mb"] = ram_used
         summary["ram_total_mb"] = ram_total
 
-        if agg_total > 0 and agg_used >= agg_total * self._vram_threshold:
+        for gpu, (used, total) in sorted(by_gpu.items()):
+            if total <= 0 or used < total * self._vram_threshold:
+                continue
             summary["vram_over_threshold"] = True
-        # A lone GPU model can't be crowding out another one, and engines like vLLM reserve most
-        # of the GPU up front: evicting it would only force a reload on the next request. Models
-        # on the CPU hold no VRAM to free.
-        if summary["vram_over_threshold"] and gpu_models > 1:
-            logger.warning(
-                "MemoryWatchdog: VRAM %d/%d MB (%.0f%%) over threshold %.0f%%; evicting LRU",
-                agg_used, agg_total, 100 * agg_used / agg_total,
-                100 * self._vram_threshold,
-            )
-            victim = self._manager._find_lru_victim()
-            if victim is not None:
-                try:
-                    await self._manager.unload_model(victim)
-                    summary["evicted"] = victim
-                    logger.info("MemoryWatchdog: evicted %s under VRAM pressure", victim)
-                except Exception as e:
-                    logger.error("MemoryWatchdog: eviction of %s failed: %s", victim, e)
-            else:
-                logger.warning(
-                    "MemoryWatchdog: VRAM over threshold but all loaded models are pinned or busy"
-                )
+            # A lone GPU model can't be crowding out another one, and engines like vLLM reserve most
+            # of the GPU up front: evicting it would only force a reload on the next request. Models
+            # on the CPU hold no VRAM to free.
+            if gpu_models.get(gpu, 0) > 1:
+                await self._evict_from(gpu, used, total, summary)
 
         # Host RAM is advisory: the watchdog owns no host processes.
         if ram_total > 0 and ram_used >= ram_total * self._ram_threshold:
@@ -136,6 +134,24 @@ class MemoryWatchdog:
             )
 
         return summary
+
+    async def _evict_from(self, gpu: int, used: int, total: int, summary: dict) -> None:
+        logger.warning(
+            "MemoryWatchdog: GPU %d VRAM %d/%d MB (%.0f%%) over threshold %.0f%%; evicting LRU",
+            gpu, used, total, 100 * used / total, 100 * self._vram_threshold,
+        )
+        victim = self._manager._find_lru_victim(gpu=gpu)
+        if victim is None:
+            logger.warning(
+                "MemoryWatchdog: VRAM over threshold but all loaded models are pinned or busy (GPU %d)", gpu
+            )
+            return
+        try:
+            await self._manager.unload_model(victim)
+            summary["evicted"].append(victim)
+            logger.info("MemoryWatchdog: evicted %s under VRAM pressure", victim)
+        except Exception as e:
+            logger.error("MemoryWatchdog: eviction of %s failed: %s", victim, e)
 
     @staticmethod
     def _host_ram_snapshot() -> tuple[int, int]:

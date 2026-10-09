@@ -8,6 +8,7 @@ model:
   hub_id: "laion/clap-htsat-fused"
   device: ${oc.env:CLAP_DEVICE,cuda}
   vram_mb: ${oc.decode:${oc.env:CLAP_VRAM_MB,4000}}
+  gpu: ${oc.decode:${oc.env:CLAP_GPU,0}}
 
 cache:
   enabled: false

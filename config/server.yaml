@@ -9,6 +9,7 @@ gpu:
   pinned_models: []
   max_vram_budget_mb: ${oc.decode:${oc.env:GPU_MAX_VRAM_BUDGET_MB,0}}
   vram_headroom_mb: ${oc.decode:${oc.env:GPU_VRAM_HEADROOM_MB,0}}
+  vram_budgets_mb: {}
   watchdog_interval_seconds: ${oc.decode:${oc.env:GPU_WATCHDOG_INTERVAL_SECONDS,15}}
   watchdog_vram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_VRAM_THRESHOLD,0.92}}
   watchdog_ram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_RAM_THRESHOLD,0.90}}

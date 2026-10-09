@@ -7,6 +7,7 @@ enabled: ${oc.decode:${oc.env:QWEN3_5_4B_ENABLED,true}}
 model:
   hub_id: "cyankiwi/Qwen3.5-4B-AWQ-4bit"
   vram_mb: ${oc.decode:${oc.env:QWEN3_5_4B_VRAM_MB,6000}}
+  gpu: ${oc.decode:${oc.env:QWEN3_5_4B_GPU,0}}
   torch_dtype: ${oc.env:QWEN3_5_4B_TORCH_DTYPE,float16}
   quantization: ${oc.env:QWEN3_5_4B_QUANTIZATION,compressed-tensors}
   enforce_eager: ${oc.decode:${oc.env:QWEN3_5_4B_ENFORCE_EAGER,true}}

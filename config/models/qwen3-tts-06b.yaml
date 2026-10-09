@@ -8,6 +8,7 @@ model:
   hub_id: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
   device: ${oc.env:QWEN3_TTS_06B_DEVICE,cuda:0}
   vram_mb: ${oc.decode:${oc.env:QWEN3_TTS_06B_VRAM_MB,2500}}
+  gpu: ${oc.decode:${oc.env:QWEN3_TTS_06B_GPU,0}}
   torch_dtype: ${oc.env:QWEN3_TTS_06B_TORCH_DTYPE,bfloat16}
   attn_implementation: ${oc.env:QWEN3_TTS_06B_ATTN,eager}
   default_params:

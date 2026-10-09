@@ -65,6 +65,23 @@ async def _run_load(app: FastAPI, models_dir: str) -> None:
             state["duration_seconds"] = time.monotonic() - started
 
 
+def _pin_gpu(config: ModelConfig) -> None:
+    """Show the worker only the GPU of `model.gpu`, unless CUDA_VISIBLE_DEVICES is set already."""
+    gpu = config.model.get("gpu")
+    if gpu is None or "CUDA_VISIBLE_DEVICES" in os.environ:
+        return
+    # CUDA numbers GPUs fastest first by default; PCI order matches nvidia-smi and NVML.
+    os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    logger.info("Worker for %s uses GPU %s", config.id, gpu)
+
+
+def _nvml_index() -> int:
+    """NVML index of the worker's GPU: NVML ignores CUDA_VISIBLE_DEVICES and numbers the host's GPUs."""
+    first = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip()
+    return int(first) if first.isdigit() else 0
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config_path = os.environ.get("WORKER_MODEL_CONFIG", "config/models/model.yaml")
@@ -76,6 +93,7 @@ async def lifespan(app: FastAPI):
 
     config = load_single_model_config(config_path)
     logger.info("Worker starting for model: %s (%s)", config.id, config.provider_class)
+    _pin_gpu(config)
 
     vram_mb = config.model.get("vram_mb", 0)
     if vram_mb > 0:
@@ -181,7 +199,7 @@ async def stats(request: Request):
         import pynvml
         pynvml.nvmlInit()
         try:
-            h = pynvml.nvmlDeviceGetHandleByIndex(0)
+            h = pynvml.nvmlDeviceGetHandleByIndex(_nvml_index())
             info = pynvml.nvmlDeviceGetMemoryInfo(h)
             vram_total_mb = info.total // (1024 * 1024)
             vram_used_mb = info.used // (1024 * 1024)

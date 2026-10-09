@@ -9,6 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:FLUX1_SCHNELL_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:FLUX1_SCHNELL_VRAM_MB,11000}}
+  gpu: ${oc.decode:${oc.env:FLUX1_SCHNELL_GPU,0}}
   offload: ${oc.env:FLUX1_SCHNELL_OFFLOAD,sequential}
   warmup: ${oc.decode:${oc.env:FLUX1_SCHNELL_WARMUP,true}}
   quantization: ${oc.decode:${oc.env:FLUX1_SCHNELL_QUANTIZATION,null}}

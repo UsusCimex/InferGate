@@ -8,6 +8,7 @@ model:
   hub_id: "Searchium-ai/clip4clip-webvid150k"
   device: ${oc.env:CLIP4CLIP_DEVICE,cuda}
   vram_mb: ${oc.decode:${oc.env:CLIP4CLIP_VRAM_MB,2000}}
+  gpu: ${oc.decode:${oc.env:CLIP4CLIP_GPU,0}}
   num_frames: ${oc.decode:${oc.env:CLIP4CLIP_NUM_FRAMES,12}}
   fallback_processor_hub_id: "openai/clip-vit-base-patch32"
 
