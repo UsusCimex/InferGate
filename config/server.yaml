@@ -19,6 +19,8 @@ queue:
 
 cache:
   enabled: true
+  backend: ${oc.env:CACHE_BACKEND,local}
+  redis_url: ${oc.env:CACHE_REDIS_URL,'redis://localhost:6379/0'}
   directory: "./cache"
   max_total_size_gb: 10
   eviction_policy: lru

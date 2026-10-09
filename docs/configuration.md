@@ -17,7 +17,8 @@
 | `gpu.worker_url_template` | не задан | шаблон адреса воркера `http://...{id}...` вместо переменных `WORKER_URL_*` |
 | `queue.max_size` | 50 | предел запросов в работе и в очереди, сверх него 503 `queue_full` |
 | `cache.enabled`, `directory`, `max_total_size_gb`, `cleanup_interval_minutes` | `true`, `./cache`, 10, 30 | дисковый кэш ответов |
-| `cache.backend` | `local` | `local` (SQLite и файлы) или `redis` |
+| `cache.backend` | `local` (`CACHE_BACKEND`) | `local` (SQLite и файлы) или `redis` |
+| `cache.redis_url`, `redis_prefix` | `redis://localhost:6379/0` (`CACHE_REDIS_URL`), `infergate:cache` | адрес Redis и префикс ключей |
 | `cors.*` | `*` | разрешённые источники, методы, заголовки |
 | `models_dir` | `./models` | папка весов для локального режима и `scripts/download_models.py` |
 | `defaults.image`, `text`, `tts`, `stt`, `upscale` | `sdxl-base`, `qwen3.5-4b`, `kokoro-82m`, `whisper-base`, `realesrgan-x4` | модель, если в запросе нет `model` |

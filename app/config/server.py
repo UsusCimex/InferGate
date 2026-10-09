@@ -31,6 +31,8 @@ class QueueConfig(BaseModel):
 class CacheConfig(BaseModel):
     enabled: bool = True
     backend: str = "local"
+    redis_url: str = "redis://localhost:6379/0"
+    redis_prefix: str = "infergate:cache"
     directory: str = "./cache"
     max_total_size_gb: float = Field(10, ge=0)
     eviction_policy: EvictionPolicy = EvictionPolicy.LRU

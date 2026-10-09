@@ -35,6 +35,15 @@ def test_unknown_server_keys_are_reported(tmp_path, caplog):
     assert "unknown keys ignored: port, gpu.device" in caplog.text
 
 
+def test_redis_cache_is_configurable(monkeypatch):
+    monkeypatch.setenv("CACHE_BACKEND", "redis")
+    monkeypatch.setenv("CACHE_REDIS_URL", "redis://redis:6379/1")
+    cache = load_server_config("config/server.yaml").cache.model_dump()
+    assert cache["backend"] == "redis"
+    assert cache["redis_url"] == "redis://redis:6379/1"
+    assert cache["redis_prefix"] == "infergate:cache"
+
+
 def test_defaults_name_stt_and_upscale_models():
     defaults = load_server_config("config/server.yaml").defaults.model_dump()
     assert defaults["stt"] == "whisper-base"
