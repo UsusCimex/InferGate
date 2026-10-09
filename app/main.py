@@ -137,12 +137,7 @@ async def lifespan(app: FastAPI):
     )
     watchdog.start()
 
-    logger.info(
-        "InferGate started: %d models registered, listening on %s:%d",
-        len(model_cfgs),
-        server_cfg.host,
-        server_cfg.port,
-    )
+    logger.info("InferGate started: %d models registered", len(model_cfgs))
 
     yield
 

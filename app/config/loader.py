@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from omegaconf import OmegaConf
+from pydantic import BaseModel
 
 from app.config.models import ModelConfig
 from app.config.server import ServerConfig
@@ -18,12 +19,29 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)  # type: ignore[return-value]
 
 
+def _unknown_keys(model: type[BaseModel], data: dict[str, Any], prefix: str = "") -> list[str]:
+    """Dotted paths of the keys in `data` that `model` has no field for."""
+    unknown: list[str] = []
+    for key, value in data.items():
+        field = model.model_fields.get(key)
+        if field is None:
+            unknown.append(prefix + key)
+            continue
+        nested = field.annotation
+        if isinstance(value, dict) and isinstance(nested, type) and issubclass(nested, BaseModel):
+            unknown.extend(_unknown_keys(nested, value, f"{prefix}{key}."))
+    return unknown
+
+
 def load_server_config(path: str | Path = "config/server.yaml") -> ServerConfig:
     """Load `server.yaml`, returning defaults when the file is absent."""
     path = Path(path)
     if not path.exists():
         return ServerConfig()
     data = _load_yaml(path) or {}
+    unknown = _unknown_keys(ServerConfig, data)
+    if unknown:
+        logger.warning("%s: unknown keys ignored: %s", path, ", ".join(unknown))
     return ServerConfig(**data)
 
 

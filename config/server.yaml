@@ -1,7 +1,4 @@
-host: "0.0.0.0"
-port: 8000
 log_level: info
-workers: 1
 
 auth:
   enabled: false
@@ -10,7 +7,6 @@ auth:
 gpu:
   max_loaded_models: ${oc.decode:${oc.env:GPU_MAX_LOADED_MODELS,3}}
   pinned_models: []
-  device: "cuda:0"
   max_vram_budget_mb: ${oc.decode:${oc.env:GPU_MAX_VRAM_BUDGET_MB,0}}
   vram_headroom_mb: ${oc.decode:${oc.env:GPU_VRAM_HEADROOM_MB,0}}
   watchdog_interval_seconds: ${oc.decode:${oc.env:GPU_WATCHDOG_INTERVAL_SECONDS,15}}

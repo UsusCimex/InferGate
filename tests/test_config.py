@@ -1,6 +1,8 @@
 """Tests for configuration loading."""
 from __future__ import annotations
 
+import logging
+
 from app.config import (
     ModelConfig,
     ServerConfig,
@@ -13,15 +15,24 @@ from app.config import (
 def test_default_server_config():
     config = load_server_config("nonexistent.yaml")
     assert isinstance(config, ServerConfig)
-    assert config.host == "0.0.0.0"
-    assert config.port == 8000
+    assert config.queue.max_size == 50
 
 
-def test_load_server_config():
-    config = load_server_config("config/server.yaml")
-    assert config.host == "0.0.0.0"
+def test_load_server_config(caplog):
+    with caplog.at_level(logging.WARNING, logger="app.config.loader"):
+        config = load_server_config("config/server.yaml")
+    assert caplog.text == ""
     assert config.gpu.max_loaded_models == 3
     assert config.cache.enabled is True
+
+
+def test_unknown_server_keys_are_reported(tmp_path, caplog):
+    path = tmp_path / "server.yaml"
+    path.write_text("port: 8000\ngpu:\n  device: cuda:0\n  max_loaded_models: 2\n")
+    with caplog.at_level(logging.WARNING, logger="app.config.loader"):
+        config = load_server_config(path)
+    assert config.gpu.max_loaded_models == 2
+    assert "unknown keys ignored: port, gpu.device" in caplog.text
 
 
 def test_defaults_name_stt_and_upscale_models():

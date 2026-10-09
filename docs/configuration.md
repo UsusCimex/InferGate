@@ -25,7 +25,7 @@
 | `rate_limit.enabled`, `requests_per_minute` | `false`, 60 | скользящее окно на IP клиента |
 | `upload_limits.*` | картинка 20, аудио 25, видео 200, апскейл 50 МБ | предел загружаемых файлов (413) |
 
-Ключи `host`, `port`, `workers` и `gpu.device` в файле есть, но шлюз их не использует: адрес и порт задаёт команда uvicorn в `Dockerfile.gateway`.
+Адрес и порт задаёт команда uvicorn в `Dockerfile.gateway`. Неизвестный ключ шлюз пропускает и пишет о нём в журнал.
 
 ## YAML модели
 
