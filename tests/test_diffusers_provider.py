@@ -48,6 +48,7 @@ def fake_diffusers(monkeypatch):
 
 @pytest.fixture
 def provider(monkeypatch):
+    pytest.importorskip("torch")
     monkeypatch.setattr("torch.cuda.is_available", lambda: False)
     config = ModelConfig(
         id="sdxl-test", display_name="sdxl-test", category="image",
