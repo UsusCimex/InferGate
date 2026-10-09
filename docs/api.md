@@ -180,4 +180,4 @@ curl http://localhost:8000/v1/images/edits \
   -F "model=sdxl-base" -F "denoising_strength=0.8"
 ```
 
-Расхождения с OpenAI и ограничения: [roadmap.md](roadmap.md#известные-проблемы).
+Расхождения с OpenAI и ограничения: [задачи с меткой bug](https://github.com/UsusCimex/InferGate/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
