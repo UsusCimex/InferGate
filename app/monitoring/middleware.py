@@ -11,6 +11,7 @@ from app.monitoring.metrics import (
     REQUESTS_TOTAL,
 )
 from app.monitoring.request_context import set_request_id
+from app.monitoring.tracing import tag_request_id
 
 
 class RequestIdMiddleware:
@@ -34,6 +35,7 @@ class RequestIdMiddleware:
             scope["state"] = {}
         scope["state"]["request_id"] = request_id
         set_request_id(request_id)
+        tag_request_id(request_id)
 
         async def send_wrapper(message: dict) -> None:
             if message["type"] == "http.response.start":

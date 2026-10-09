@@ -23,6 +23,7 @@ from app.middleware import (
 )
 from app.monitoring import PrometheusMiddleware, RequestIdMiddleware
 from app.monitoring.logs import configure_logging
+from app.monitoring.tracing import configure_tracing
 from app.routers import admin, audio, cache, chat, embeddings, health, images, models
 from app.services.cache_manager import CacheManager
 from app.services.config_sync import ConfigSync
@@ -207,6 +208,7 @@ def create_app() -> FastAPI:
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    configure_tracing(app, "infergate-gateway")
 
     @app.exception_handler(ModelNotFoundError)
     async def model_not_found_handler(request, exc):

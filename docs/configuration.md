@@ -102,7 +102,7 @@ metadata:
 
 | Группа | Переменные |
 |---|---|
-| Общие | `HF_TOKEN` (gated-модели), `GPU_BASE_IMAGE`, `VLLM_IMAGE`, `PORT`, `MODELS_DIR` (папка весов на хосте), `COMPOSE_PROFILES`, `INFERGATE_LOG_JSON` (журнал шлюза и воркеров строками JSON) |
+| Общие | `HF_TOKEN` (gated-модели), `GPU_BASE_IMAGE`, `VLLM_IMAGE`, `PORT`, `MODELS_DIR` (папка весов на хосте), `COMPOSE_PROFILES`, `INFERGATE_LOG_JSON` (журнал шлюза и воркеров строками JSON), `OTEL_EXPORTER_OTLP_ENDPOINT` ([трассировка](deployment.md#трассировка)) |
 | Пределы контейнеров | `GPU_WORKER_MEM_LIMIT` (16g), `CPU_WORKER_MEM_LIMIT` (6g), `GATEWAY_MEM_LIMIT` (2g), `GPU_WORKER_SHM_SIZE`, `PYTORCH_CUDA_ALLOC_CONF` |
 | VRAM и сторож | `GPU_MAX_VRAM_BUDGET_MB`, `GPU_VRAM_HEADROOM_MB`, `GPU_MAX_LOADED_MODELS`, `GPU_WATCHDOG_*` |
 | Модели | `<ID>_ENABLED`, `<ID>_QUANTIZATION`, `<ID>_OFFLOAD`, `<ID>_STEPS`, `<ID>_CFG`, `<ID>_VRAM_MB`, `<ID>_MAX_CONCURRENT`, `<ID>_GPU_MEM_UTIL`, `<ID>_CONTEXT_LENGTH`, голоса и форматы TTS и др. |

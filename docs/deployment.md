@@ -82,6 +82,10 @@ Gauge-метрики шлюз обновляет при каждом чтени�
 
 `infergate_worker_*` пишет монитор воркеров при каждой проверке `/health`: `up` 1, если воркер ответил 200; `reason` у выгруженных монитором моделей `unreachable` (3 пропуска подряд) или `restarted` (воркер перезапустился без модели). `infergate_http_pool_*` описывают пул соединений шлюза к каждому подключённому воркеру: соединения `active` и `idle` и запросы, которые ждут свободного соединения (предел `GATEWAY_REMOTE_MAX_CONNECTIONS`).
 
+### Трассировка
+
+OpenTelemetry включается переменной `OTEL_EXPORTER_OTLP_ENDPOINT` в `deploy/.env` (OTLP по HTTP, например `http://jaeger:4318`). Трасса на каждый запрос к шлюзу, кроме `/health` и `/metrics`: спан шлюза (сервис `infergate-gateway`, атрибут `infergate.request_id`), в нём вызовы воркеров и их спаны (сервис `infergate-worker`). Фоновые проверки и опросы воркеров в трассы не попадают. Остальные `OTEL_*` (`OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_TRACES_SAMPLER` и др.) стандартные. Пакеты есть в образах после пересборки, без Docker нужен `pip install -e ".[tracing]"`.
+
 ## Локально без Docker
 
 ```bash

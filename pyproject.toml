@@ -53,6 +53,12 @@ monitoring = [
 redis = [
     "redis>=5.0",
 ]
+tracing = [
+    "opentelemetry-sdk>=1.29.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.29.0",
+    "opentelemetry-instrumentation-fastapi>=0.50b0",
+    "opentelemetry-instrumentation-httpx>=0.50b0",
+]
 dev = [
     "pytest>=8.4.0",
     "pytest-asyncio>=0.26.0",
@@ -64,7 +70,7 @@ dev = [
     "redis>=5.0",
     "fakeredis[lua]>=2.20",
 ]
-all = ["infergate[gpu,tts,embedding,monitoring,quant,redis,dev]"]
+all = ["infergate[gpu,tts,embedding,monitoring,quant,redis,tracing,dev]"]
 
 [build-system]
 requires = ["hatchling"]

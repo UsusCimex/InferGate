@@ -12,6 +12,10 @@ prometheus-client>=0.20.0  # /metrics/prometheus for shipped Grafana stack
 python-multipart>=0.0.20  # FastAPI File()/Form() parsing (STT transcription uploads)
 psutil>=5.9.0             # host RAM monitoring for watchdog + /stats
 redis>=5.0                # cache.backend: redis
+opentelemetry-sdk>=1.29.0  # tracing, on with OTEL_EXPORTER_OTLP_ENDPOINT
+opentelemetry-exporter-otlp-proto-http>=1.29.0
+opentelemetry-instrumentation-fastapi>=0.50b0
+opentelemetry-instrumentation-httpx>=0.50b0
 # nvidia-ml-py gives device-wide VRAM usage (ALL processes on the GPU),
 # vs torch.cuda.mem_get_info which only reports our caching allocator.
 # Essential for shared-GPU deploys. Pure-python ctypes bindings, safe

@@ -76,7 +76,7 @@
 | `app/dependencies.py` | FastAPI `Depends` поверх `app.state` |
 | `app/config/` | загрузка YAML (OmegaConf), схемы сервера и модели, перечисления |
 | `app/middleware/` | auth, rate_limit, access_log |
-| `app/monitoring/` | метрики Prometheus, `X-Request-ID` |
+| `app/monitoring/` | метрики Prometheus, `X-Request-ID`, журнал, трассировка OpenTelemetry |
 | `app/routers/` | chat, images, audio, embeddings, models, admin, cache, health |
 | `app/schemas/` | pydantic-модели запросов и ответов (`extra="forbid"`) |
 | `app/providers/` | `base.py` (базовые классы), `registry.py` (`@register_provider`), `remote.py` и `_remote_protocol.py` (удалённые провайдеры шлюза) |

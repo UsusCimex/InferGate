@@ -15,6 +15,7 @@ from starlette.responses import StreamingResponse
 
 from app.config import ModelConfig, load_single_model_config
 from app.monitoring.logs import configure_logging
+from app.monitoring.tracing import configure_tracing
 from app.providers.base import BaseProvider
 from app.providers.registry import get_provider_class
 
@@ -121,6 +122,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="InferGate Worker", lifespan=lifespan)
+configure_tracing(app, "infergate-worker")
 
 
 _INFERENCE_PATHS = frozenset({

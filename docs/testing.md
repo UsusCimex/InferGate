@@ -18,7 +18,7 @@ pytest --cov=app --cov-branch   # покрытие, нужен pytest-cov
 | сервисы | `test_provider_manager.py` (вытеснение, бюджет, монитор воркеров, перезагрузка), `test_concurrency.py`, `test_priority.py`, `test_cache_manager.py`, `test_cache_backends.py` (локальный и Redis через fakeredis), `test_config*.py`, `test_memory_watchdog.py`, `test_embedding_batcher.py` |
 | шлюз и воркер | `test_remote_e2e.py` (`RemoteProvider` против поддельного воркера через ASGITransport), `test_remote_provider.py`, `test_worker.py` (настоящие обработчики `app.worker`) |
 | провайдеры без GPU | `test_diffusers_provider.py` (два теста пропускаются без torch), `test_weight_syntax.py`, `test_lora_cache.py`; `test_voxcpm2_provider.py` пропускается без numpy, soundfile и pyloudnorm |
-| middleware и метрики | `test_middleware.py`, `test_monitoring.py` |
+| middleware и метрики | `test_middleware.py`, `test_middleware_order.py`, `test_monitoring.py`, `test_tracing.py` (трассы пропускаются без пакетов `tracing`) |
 
 CI (`.github/workflows/ci.yml`): push в `main` и PR, Python 3.11 и 3.12, `ruff check app/ tests/` и `pytest -q`.
 
