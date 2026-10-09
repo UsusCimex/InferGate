@@ -77,9 +77,8 @@ ok "compose up issued"
 log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 
-# Small grace period after "Worker ready" so the worker monitor's next
-# probe lands inside is_loaded() state before we start mutating YAML.
-sleep 2
+# A remote model takes the worker /reload path only while it is loaded.
+load_model "$MODEL_ID" "$READY_TIMEOUT"
 
 # Read a field of the kokoro-82m entry in /v1/models.
 read_field() {

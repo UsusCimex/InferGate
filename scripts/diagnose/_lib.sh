@@ -82,6 +82,19 @@ wait_for_worker() {
     done
 }
 
+# Loads a model through the gateway; returns once the worker holds it.
+# Usage: load_model <model-id> <timeout-seconds>
+load_model() {
+    local model_id="$1" timeout="$2" code
+    local url="${GATEWAY_URL:-http://localhost:8000}/v1/models/${model_id}/load"
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time "$timeout" -X POST "$url" || echo 000)
+    if [[ "$code" != "200" ]]; then
+        err "Loading $model_id failed: HTTP $code"
+        return 1
+    fi
+    ok "$model_id loaded"
+}
+
 # decode an OpenAI-compat JSON image response into a PNG file
 # Tries python3/python/py for robust decoding, falls back to sed+base64.
 # Usage: decode_b64_png <response-json> <output-png>

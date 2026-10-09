@@ -81,6 +81,7 @@ log "Rebuilding gateway + worker..."
 
 log "Waiting up to ${READY_TIMEOUT}s for $MODEL_ID..."
 wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
+load_model "$MODEL_ID" "$READY_TIMEOUT" || { "${COMPOSE[@]}" logs --no-color --tail 60 "$SERVICE"; exit 1; }
 
 log "Verifying compel was skipped on SD3 pipeline..."
 STARTUP_LOGS=$("${COMPOSE[@]}" logs --no-color "$SERVICE" 2>&1 || true)

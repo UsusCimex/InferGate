@@ -26,6 +26,6 @@ CI (`.github/workflows/ci.yml`): push в `main` и PR, Python 3.11 и 3.12, `ruf
 
 Bash-скрипты против запущенных воркеров, нужны Docker и `deploy/.env`.
 
-- **`scripts/feature/*.sh`**: LoRA и горячая загрузка, Textual Inversion, веса compel, смена планировщика, HighresFix, SDXL Refiner, img2img, параметры на запрос, апскейл, распознавание речи, озвучка VoxCPM2, клонирование голоса (XTTS, Qwen3-TTS), перезагрузка конфига и воркера, передача ошибок, провижининг Grafana. `sd35-lora.sh` и `worker-reload.sh` ждут строк журнала, которых после перехода на загрузку по требованию нет ([#14](https://github.com/UsusCimex/InferGate/issues/14)). Часть скриптов оставляет свои переменные в `deploy/.env`.
+- **`scripts/feature/*.sh`**: LoRA и горячая загрузка, Textual Inversion, веса compel, смена планировщика, HighresFix, SDXL Refiner, img2img, параметры на запрос, апскейл, распознавание речи, озвучка VoxCPM2, клонирование голоса (XTTS, Qwen3-TTS), перезагрузка конфига и воркера, передача ошибок, провижининг Grafana. Часть скриптов оставляет свои переменные в `deploy/.env`.
 - **`scripts/diagnose/<model>.sh`**: одна модель картинок. Меняет `COMPOSE_PROFILES` и флаги квантизации и выгрузки в `deploy/.env` без отката, пересобирает и поднимает воркер и шлюз, делает один запрос. Общие функции в `_lib.sh`, он ждёт строку журнала `Worker reachable: <id>`.
 - **`scripts/benchmark.py`**: последовательные замеры задержки, `--endpoint chat|images|tts --n 10 --url http://localhost:8000`.
