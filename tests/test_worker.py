@@ -613,6 +613,33 @@ async def test_reload_of_an_unloaded_worker_loads_nothing(swap_worker):
 
 
 @pytest.mark.asyncio
+async def test_unload_waits_for_the_running_generation(swap_worker):
+    from app.worker import unload
+
+    app, client = swap_worker
+    app.add_api_route("/unload", unload, methods=["POST"])
+    app.state.load_task = None
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    async def slow_generate(messages, **params):
+        started.set()
+        await finish.wait()
+        return {"choices": []}
+
+    app.state.provider.generate = slow_generate
+    generation = asyncio.create_task(client.post("/generate", json={"messages": []}))
+    await started.wait()
+    unloading = asyncio.create_task(client.post("/unload"))
+    await asyncio.sleep(0.05)
+    assert _SWAPS == []
+
+    finish.set()
+    assert (await generation).status_code == 200
+    assert (await unloading).status_code == 200
+    assert _SWAPS == ["unload test/old"]
+
+
+@pytest.mark.asyncio
 async def test_stream_holds_the_reload_lock_until_it_ends(swap_worker):
     from app.worker import _stream_text
 

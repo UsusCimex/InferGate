@@ -323,8 +323,9 @@ async def unload(request: Request):
                 status_code=409,
             )
 
-    # load_lock guarantees we don't race a freshly started load.
-    async with app_state.load_lock:
+    # reload_lock waits out a running /generate: an engine stopped under it never answers and the
+    # request would hold reload_lock forever. load_lock guarantees we don't race a freshly started load.
+    async with app_state.reload_lock, app_state.load_lock:
         await app_state.provider.unload()
 
     state.update(_initial_load_state())
