@@ -46,7 +46,7 @@ client.audio.speech.create(model="kokoro-82m", input="Hello, world!", voice="af_
 | [docs/models.md](docs/models.md) | каталог моделей, профили Compose, провайдеры, добавление модели |
 | [docs/configuration.md](docs/configuration.md) | `server.yaml`, YAML модели, переменные `deploy/.env`, защита памяти |
 | [docs/architecture.md](docs/architecture.md) | шлюз и воркеры, путь запроса, менеджер моделей, очередь, кэш |
-| [docs/deployment.md](docs/deployment.md) | Docker Compose, сборка образов, HTTPS, мониторинг, требования к железу |
+| [docs/deployment.md](docs/deployment.md) | Docker Compose, сборка образов, HTTPS, мониторинг, Kubernetes, требования к железу |
 | [docs/testing.md](docs/testing.md) | pytest, CI, проверки на живых контейнерах |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | правила задач, коммитов, веток и текстов |
 | [CLAUDE.md](CLAUDE.md) | правила для Claude Code |

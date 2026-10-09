@@ -185,6 +185,14 @@ def test_resolve_worker_url_template_fallback(monkeypatch):
     assert url == "http://worker-qwen3.5-4b.workers:8000"
 
 
+def test_resolve_worker_url_template_slug_fits_a_service_name(monkeypatch):
+    from app.services.provider_manager import resolve_worker_url
+
+    monkeypatch.delenv("WORKER_URL_QWEN3_5_4B", raising=False)
+    url = resolve_worker_url("qwen3.5-4b", template="http://infergate-worker-{slug}:8001")
+    assert url == "http://infergate-worker-qwen3-5-4b:8001"
+
+
 def test_resolve_worker_url_returns_none_without_template_or_env(monkeypatch):
     from app.services.provider_manager import resolve_worker_url
 

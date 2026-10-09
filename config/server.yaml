@@ -14,6 +14,7 @@ gpu:
   watchdog_vram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_VRAM_THRESHOLD,0.92}}
   watchdog_ram_threshold: ${oc.decode:${oc.env:GPU_WATCHDOG_RAM_THRESHOLD,0.90}}
   category_reservations: {}
+  worker_url_template: ${oc.env:GPU_WORKER_URL_TEMPLATE,''}
 
 queue:
   max_size: 50

@@ -1,0 +1,19 @@
+{{- if and .Values.workers (not .Values.weights.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "infergate.fullname" . }}-weights
+  labels:
+    {{- include "infergate.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.weights.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.weights.size }}
+  {{- with .Values.weights.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,25 @@
+{{- if .Values.models.files }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "infergate.fullname" . }}-models
+  labels:
+    {{- include "infergate.labels" . | nindent 4 }}
+data:
+  {{- range $file, $content := .Values.models.files }}
+  {{ $file | quote }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if .Values.gateway.serverConfig }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "infergate.fullname" . }}-server
+  labels:
+    {{- include "infergate.labels" . | nindent 4 }}
+data:
+  server.yaml: |
+    {{- .Values.gateway.serverConfig | nindent 4 }}
+{{- end }}

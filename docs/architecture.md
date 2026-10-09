@@ -8,7 +8,7 @@
 - **Воркер**: тот же код с точкой входа `app.worker`. Читает один YAML (`WORKER_MODEL_CONFIG`), стартует без модели и загружает её по команде шлюза. Зависимости у каждой модели свои (`deploy/workers/<id>/requirements.txt`), образы собираются из общего `deploy/Dockerfile.worker`.
 - Код Python запекается в образы: правка `app/` доходит до контейнеров только после пересборки. YAML моделей и папка весов монтируются, их правки видны сразу.
 
-**Поиск воркера** (`ProviderManager`, по порядку): `worker_url` в YAML модели, переменная `WORKER_URL_<ID>`, `gpu.worker_url_template`, иначе модель создаётся в процессе шлюза (разработка без Docker). Для удалённой модели шлюз создаёт `RemoteProvider` её категории (`app/providers/remote.py`, `CATEGORY_REGISTRY`). Compose задаёт `WORKER_URL_*` всем моделям, поэтому каждая включённая модель удалённая; запрос к модели без запущенного контейнера получает 503 `worker_not_ready`.
+**Поиск воркера** (`ProviderManager`, по порядку): `worker_url` в YAML модели, переменная `WORKER_URL_<ID>`, `gpu.worker_url_template` (так находит воркеры чарт Helm), иначе модель создаётся в процессе шлюза (разработка без Docker). Для удалённой модели шлюз создаёт `RemoteProvider` её категории (`app/providers/remote.py`, `CATEGORY_REGISTRY`). Compose задаёт `WORKER_URL_*` всем моделям, поэтому каждая включённая модель удалённая; запрос к модели без запущенного контейнера получает 503 `worker_not_ready`.
 
 ## Путь запроса
 
@@ -87,6 +87,6 @@
 | `app/services/` | provider_manager, gpu_scheduler, cache_manager (`cache_backends/`), config_watcher, config_sync, embedding_batcher, memory_watchdog |
 | `app/utils/uploads.py` | предел размера загрузок |
 | `config/` | `server.yaml`, `models/*.yaml`, `examples/` |
-| `deploy/` | Dockerfile шлюза и воркера, `docker-compose*.yml`, `docker-bake.hcl`, `workers/<id>/requirements.txt`, `monitoring/`, `Caddyfile.example`, `.env.example` |
+| `deploy/` | Dockerfile шлюза и воркера, `docker-compose*.yml`, `docker-bake.hcl`, `workers/<id>/requirements.txt`, `monitoring/`, `helm/` (чарт Kubernetes), `Caddyfile.example`, `.env.example` |
 | `scripts/` | `diagnose/` (одна модель), `feature/` (проверки на живых контейнерах), `benchmark.py`, `download_models.py` |
 | `tests/` | pytest |

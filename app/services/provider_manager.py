@@ -25,9 +25,10 @@ _WORKER_DISCONNECT_MISSES = 3
 def resolve_worker_url(model_id: str, template: str | None = None) -> str | None:
     """Pick a worker URL for `model_id` using the configured resolution chain.
 
-    Order: WORKER_URL_<ID> env var, then `template` formatted with {id}, then None.
-    Caller decides whether None means "local provider" (config.worker_url left
-    unset) or an error.
+    Order: WORKER_URL_<ID> env var, then `template` formatted with {id} or {slug}
+    (the id in lower case with every character other than a-z, 0-9 and - turned into -,
+    fit for a DNS name), then None. Caller decides whether None means "local provider"
+    (config.worker_url left unset) or an error.
     """
     env_key = "WORKER_URL_" + re.sub(r"[^A-Z0-9]", "_", model_id.upper())
     env_url = os.environ.get(env_key)
@@ -35,7 +36,7 @@ def resolve_worker_url(model_id: str, template: str | None = None) -> str | None
         return env_url
     if template:
         try:
-            return template.format(id=model_id)
+            return template.format(id=model_id, slug=re.sub(r"[^a-z0-9-]", "-", model_id.lower()))
         except (KeyError, IndexError) as e:
             logger.warning(
                 "worker_url_template %r could not be formatted for %s: %s",

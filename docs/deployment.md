@@ -96,6 +96,40 @@ WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml uvicorn app.worker:app --port 
 
 Для локальной загрузки моделей нужны их зависимости (`gpu`, `tts`, `quant`, `embedding` в `pyproject.toml` или `deploy/workers/<id>/requirements.txt`); `.[all]` включает vLLM, который ставится только на Linux с CUDA.
 
+## Kubernetes (Helm)
+
+Чарт `deploy/helm/infergate`: Deployment и Service шлюза, по Deployment и Service на воркер из списка `workers`, PVC весов `/app/models` (переживает `helm uninstall`), YAML моделей из ConfigMap. Шлюз находит воркеры по `gpu.worker_url_template` (`GPU_WORKER_URL_TEMPLATE=http://<release>-worker-{slug}:8001`), сервис воркера `qwen3.5-4b` называется `<release>-worker-qwen3-5-4b`.
+
+```bash
+REGISTRY=myreg.io/infergate TAG=v1 docker buildx bake -f deploy/docker-bake.hcl worker gateway --push
+kubectl create configmap infergate-models --from-file=config/models
+kubectl create secret generic hf-token --from-literal=HF_TOKEN=<token>     # для gated-моделей
+helm install infergate deploy/helm/infergate -f my-values.yaml
+```
+
+```yaml
+# my-values.yaml
+image: {registry: myreg.io/infergate, tag: v1}
+hfToken: {existingSecret: hf-token}
+gateway:
+  env: {GPU_MAX_LOADED_MODELS: "3", GPU_MAX_VRAM_BUDGET_MB: "22000"}
+models:
+  env: {FLUX2_KLEIN_4B_QUANTIZATION: nf4}
+workers:
+  - id: qwen3.5-4b
+  - id: flux2-klein-4b
+  - id: kokoro-82m
+    gpus: 0
+```
+
+- GPU-воркер просит `nvidia.com/gpu` (`gpus`, по умолчанию 1), и без разделения GPU в device plugin (time-slicing) каждый занимает целую GPU. Тогда `GPU_MAX_LOADED_MODELS` шлюза не меньше числа GPU-воркеров.
+- Каждый GPU-воркер получает свой индекс `<ID>_GPU` (0, 1, ... по порядку в `workers`): шлюз считает VRAM каждой карты отдельно, бюджет `GPU_MAX_VRAM_BUDGET_MB` относится к одной карте. Сам воркер работает на своих картах по `CUDA_VISIBLE_DEVICES`, который ставит чарт, а `model.gpu` ему не нужен. У эмбеддеров CLAP, CLIP, CLIP4Clip и SigLIP переменные называются иначе, их `<ID>` задаёт `envPrefix` воркера.
+- Переменные YAML моделей (`<ID>_QUANTIZATION`, `<ID>_STEPS` и др.) задаются в `models.env`, а не в `gateway.env` или `worker.env`: их получают и шлюз, и все воркеры. Шлюз читает YAML сам и по `/reload` отдаёт воркеру свой вариант конфига, поэтому настройка, известная только воркеру, пропала бы после первой правки YAML.
+- Делить одну GPU, как в Compose, можно и без device plugin: `gpus: 0` и `worker.runtimeClassName: nvidia`, воркер видит все GPU узла и берёт `model.gpu`, который тогда задаётся в `models.env` (`<ID>_GPU`).
+- PVC по умолчанию `ReadWriteOnce`: все воркеры на одном узле, иначе класс хранения с `ReadWriteMany` (`weights.storageClass`, `weights.accessModes`).
+- Правки ConfigMap моделей шлюз подхватывает сам (через минуту-две, пока kubelet обновит том), воркер с загруженной моделью получает их через `/reload`.
+- Несколько реплик шлюза: `gateway.env` с `CACHE_BACKEND=redis`, `CACHE_REDIS_URL`, `RATE_LIMIT_ENABLED=true`, `RATE_LIMIT_BACKEND=redis`, `CONFIG_SYNC_ENABLED=true`, а за Ingress ещё `FORWARDED_ALLOW_IPS` ([configuration.md](configuration.md#configserveryaml)). Свой `server.yaml` целиком: `gateway.serverConfig`.
+
 ## Требования к железу
 
 | Конфигурация | GPU | RAM | Диск |

@@ -4,9 +4,9 @@
 # Build a single model:
 #   docker buildx bake -f deploy/docker-bake.hcl worker-qwen-image
 #
-# Push to a registry:
+# Push to a registry (Kubernetes also needs the gateway target):
 #   REGISTRY=myreg.io/infergate TAG=v1 \
-#     docker buildx bake -f deploy/docker-bake.hcl --push
+#     docker buildx bake -f deploy/docker-bake.hcl worker gateway --push
 #
 # Adding a new model:
 #   1. Create deploy/workers/<id>/requirements.txt
@@ -30,6 +30,13 @@ variable "CPU_BASE_IMAGE" {
 
 group "default" {
   targets = ["worker"]
+}
+
+# The gateway image; the Helm chart pulls it as ${REGISTRY}/gateway:${TAG}.
+target "gateway" {
+  context    = ".."
+  dockerfile = "deploy/Dockerfile.gateway"
+  tags       = ["${REGISTRY}/gateway:${TAG}"]
 }
 
 target "worker" {

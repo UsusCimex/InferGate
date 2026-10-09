@@ -1,0 +1,6 @@
+InferGate gateway: {{ include "infergate.fullname" . }}-gateway:{{ .Values.gateway.service.port }}
+
+  kubectl port-forward svc/{{ include "infergate.fullname" . }}-gateway 8000:{{ .Values.gateway.service.port }}
+  curl http://localhost:8000/v1/models
+
+Workers: {{ len .Values.workers }}. Models without a worker answer 503 worker_not_ready.

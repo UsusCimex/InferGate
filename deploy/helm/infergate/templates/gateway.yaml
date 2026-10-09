@@ -1,0 +1,98 @@
+{{- $fullname := include "infergate.fullname" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-gateway
+  labels:
+    {{- include "infergate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "infergate.labels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+      annotations:
+        checksum/server-config: {{ .Values.gateway.serverConfig | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ .Values.gateway.image | default (printf "%s/gateway:%s" .Values.image.registry .Values.image.tag) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            {{- $env := dict "GPU_WORKER_URL_TEMPLATE" (printf "http://%s-worker-{slug}:8001" $fullname) }}
+            {{- range $name, $value := .Values.gateway.env }}
+            {{- $_ := set $env $name (toString $value) }}
+            {{- end }}
+            {{- range $name, $value := include "infergate.modelEnv" . | fromJson }}
+            {{- $_ := set $env $name $value }}
+            {{- end }}
+            {{- range $name, $value := $env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: models-config
+              mountPath: /app/config/models
+              readOnly: true
+            - name: cache
+              mountPath: /app/cache
+            {{- if .Values.gateway.serverConfig }}
+            - name: server-config
+              mountPath: /app/config/server.yaml
+              subPath: server.yaml
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: models-config
+          configMap:
+            name: {{ include "infergate.modelsConfigMap" . }}
+        - name: cache
+          emptyDir: {}
+        {{- if .Values.gateway.serverConfig }}
+        - name: server-config
+          configMap:
+            name: {{ $fullname }}-server
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-gateway
+  labels:
+    {{- include "infergate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: {{ .Values.gateway.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: http
+      port: {{ .Values.gateway.service.port }}
+      targetPort: http

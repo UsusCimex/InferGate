@@ -1,0 +1,73 @@
+# Images from deploy/docker-bake.hcl: <registry>/gateway:<tag> and <registry>/worker-<id with dashes>:<tag>.
+image:
+  registry: infergate
+  tag: latest
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+gateway:
+  replicas: 1
+  # Overrides <registry>/gateway:<tag>.
+  image: ""
+  # Environment of the gateway; config/server.yaml reads GPU_MAX_VRAM_BUDGET_MB, CACHE_BACKEND,
+  # CACHE_REDIS_URL, RATE_LIMIT_ENABLED, CONFIG_SYNC_ENABLED and others from it. Several replicas want
+  # CACHE_BACKEND=redis, RATE_LIMIT_ENABLED=true, RATE_LIMIT_BACKEND=redis and CONFIG_SYNC_ENABLED=true.
+  # Variables of the model YAMLs go to models.env.
+  env: {}
+  resources:
+    limits:
+      memory: 2Gi
+  service:
+    type: ClusterIP
+    port: 8000
+  # Full server.yaml replacing the one in the image (multi-line string); empty keeps the image's.
+  serverConfig: ""
+
+models:
+  # ConfigMap with the model YAMLs, one key per file:
+  #   kubectl create configmap infergate-models --from-file=config/models
+  existingConfigMap: infergate-models
+  # Or the files themselves ({"qwen3.5-4b.yaml": "..."}); the chart then makes the ConfigMap.
+  files: {}
+  # Variables the model YAMLs read (<ID>_QUANTIZATION, <ID>_STEPS, ...), given alike to the gateway
+  # and every worker: the gateway resolves the YAMLs too and sends them to a worker on /reload.
+  # Every GPU worker also gets <ID>_GPU, its own index for the gateway's VRAM accounting.
+  env: {}
+
+# One Deployment and Service per model. `gpus` is the number of nvidia.com/gpu the worker requests
+# (1 when absent, 0 for CPU models); `image`, `env`, `resources`, `nodeSelector` and `tolerations`
+# override the `worker` defaults. `envPrefix` is the <ID> of the model's variables when it differs
+# from the id in upper case with other characters as _ (CLAP, CLIP, CLIP4CLIP, SIGLIP embedders).
+workers: []
+#  - id: qwen3.5-4b
+#  - id: flux2-klein-4b
+#  - id: kokoro-82m
+#    gpus: 0
+#    resources:
+#      limits:
+#        memory: 6Gi
+
+worker:
+  # Process settings of every worker; variables of the model YAMLs go to models.env.
+  env:
+    PYTORCH_CUDA_ALLOC_CONF: garbage_collection_threshold:0.8,max_split_size_mb:512
+  resources:
+    limits:
+      memory: 16Gi
+  shmSize: 2Gi
+  runtimeClassName: ""
+  nodeSelector: {}
+  tolerations: []
+
+# Weights shared by every worker (HF cache), mounted at /app/models. The claim survives `helm uninstall`.
+weights:
+  existingClaim: ""
+  size: 200Gi
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+
+# Secret with the Hugging Face token for gated models.
+hfToken:
+  existingSecret: ""
+  key: HF_TOKEN

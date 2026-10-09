@@ -15,7 +15,7 @@
 | `gpu.category_reservations` | `{}` | минимум загруженных моделей категории, который вытеснение старается не нарушать |
 | `gpu.watchdog_interval_seconds` | 15 (`GPU_WATCHDOG_INTERVAL_SECONDS`) | период `MemoryWatchdog`, 0 выключает его |
 | `gpu.watchdog_vram_threshold`, `gpu.watchdog_ram_threshold` | 0.92, 0.90 | порог аварийного вытеснения по живой VRAM и предупреждения по RAM |
-| `gpu.worker_url_template` | не задан | шаблон адреса воркера `http://...{id}...` вместо переменных `WORKER_URL_*` |
+| `gpu.worker_url_template` | не задан (`GPU_WORKER_URL_TEMPLATE`) | шаблон адреса воркера вместо переменных `WORKER_URL_*`: `{id}` или `{slug}` (id, где всё кроме a-z, 0-9 и `-` заменено на `-`, годится для имени DNS) |
 | `queue.max_size` | 50 | предел запросов в работе и в очереди, сверх него 503 `queue_full` |
 | `cache.enabled`, `directory`, `max_total_size_gb`, `cleanup_interval_minutes` | `true`, `./cache`, 10, 30 | дисковый кэш ответов |
 | `cache.backend` | `local` (`CACHE_BACKEND`) | `local` (SQLite и файлы) или `redis` |
@@ -125,7 +125,7 @@ metadata:
 
 ## Несколько GPU
 
-Воркеры в Compose видят все GPU и оставляют себе одну: `model.gpu` из YAML (`<ID>_GPU` в `deploy/.env`, по умолчанию 0) становится их `CUDA_VISIBLE_DEVICES` в нумерации `nvidia-smi`, если окружение не задало его само. Шлюз читает тот же YAML и считает модель в бюджете её GPU (`gpu.max_vram_budget_mb` или `gpu.vram_budgets_mb`), так что вытеснение на одной GPU не трогает модели другой; `gpu.max_loaded_models` общий на все GPU. Смена `<ID>_GPU` требует пересоздать воркер и шлюз.
+Воркеры в Compose видят все GPU и оставляют себе одну: `model.gpu` из YAML (`<ID>_GPU` в `deploy/.env`, по умолчанию 0) становится их `CUDA_VISIBLE_DEVICES` в нумерации `nvidia-smi`, если окружение не задало его само. Шлюз читает тот же YAML и считает модель в бюджете её GPU (`gpu.max_vram_budget_mb` или `gpu.vram_budgets_mb`), так что вытеснение на одной GPU не трогает модели другой; `gpu.max_loaded_models` общий на все GPU. Смена `<ID>_GPU` требует пересоздать воркер и шлюз. В Kubernetes индексы задаёт чарт ([deployment.md](deployment.md#kubernetes-helm)).
 
 ```bash
 # deploy/.env: LLM на GPU 0, картинки на GPU 1

@@ -1,0 +1,143 @@
+{{- $root := . }}
+{{- $fullname := include "infergate.fullname" . }}
+{{- $modelEnv := include "infergate.modelEnv" . | fromJson }}
+{{- range .Values.workers }}
+{{- $slug := include "infergate.slug" (required "every worker needs an id" .id) }}
+{{- $name := printf "%s-worker-%s" $fullname $slug }}
+{{- $gpus := 1 }}
+{{- if hasKey . "gpus" }}
+{{- $gpus = int .gpus }}
+{{- end }}
+{{- $env := merge (deepCopy (.env | default dict)) (deepCopy ($root.Values.worker.env | default dict)) }}
+{{- range $name, $value := $modelEnv }}
+{{- $_ := set $env $name $value }}
+{{- end }}
+{{- $resources := mergeOverwrite (deepCopy ($root.Values.worker.resources | default dict)) (deepCopy (.resources | default dict)) }}
+{{- if gt $gpus 0 }}
+{{- $_ := set $resources "limits" (merge (dict "nvidia.com/gpu" $gpus) ($resources.limits | default dict)) }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "infergate.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: worker
+    infergate.io/model: {{ $slug }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+      infergate.io/model: {{ $slug }}
+  template:
+    metadata:
+      labels:
+        {{- include "infergate.labels" $root | nindent 8 }}
+        app.kubernetes.io/component: worker
+        infergate.io/model: {{ $slug }}
+    spec:
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $root.Values.worker.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      {{- with (.nodeSelector | default $root.Values.worker.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (.tolerations | default $root.Values.worker.tolerations) }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ .image | default (printf "%s/worker-%s:%s" $root.Values.image.registry $slug $root.Values.image.tag) }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8001
+          env:
+            - name: WORKER_MODEL_CONFIG
+              value: {{ printf "/app/config/models/%s.yaml" .id | quote }}
+            - name: WORKER_MODELS_DIR
+              value: /app/models
+            {{- if gt $gpus 0 }}
+            # The device plugin shows the pod only its own GPUs, numbered from 0; the worker keeps this
+            # over its model.gpu, which is the gateway's index of the card.
+            - name: CUDA_VISIBLE_DEVICES
+              value: {{ until $gpus | join "," | quote }}
+            {{- end }}
+            {{- with $root.Values.hfToken.existingSecret }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $root.Values.hfToken.key }}
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $root.Values.hfToken.key }}
+            {{- end }}
+            {{- range $key, $value := $env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            {{- toYaml $resources | nindent 12 }}
+          volumeMounts:
+            - name: models-config
+              mountPath: /app/config/models
+              readOnly: true
+            - name: weights
+              mountPath: /app/models
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: models-config
+          configMap:
+            name: {{ include "infergate.modelsConfigMap" $root }}
+        - name: weights
+          persistentVolumeClaim:
+            claimName: {{ $root.Values.weights.existingClaim | default (printf "%s-weights" $fullname) }}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ $root.Values.worker.shmSize }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "infergate.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: worker
+    infergate.io/model: {{ $slug }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    infergate.io/model: {{ $slug }}
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http
+{{- end }}
