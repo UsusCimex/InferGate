@@ -11,6 +11,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def live_vram(manager: ProviderManager) -> tuple[int, int]:
+    """Used and total GPU MB from the loaded models' `/stats`; workers on one host share the GPU."""
+    used = total = 0
+    for model_id in list(manager.loaded_models()):
+        try:
+            stats = await manager.get(model_id).get_stats()
+        except Exception as e:
+            logger.debug("get_stats(%s) failed: %s", model_id, e)
+            continue
+        if stats:
+            used = max(used, stats.get("vram_used_mb", 0))
+            total = max(total, stats.get("vram_total_mb", 0))
+    return used, total
+
+
 class MemoryWatchdog:
     """Background probe that evicts LRU models when live VRAM exceeds a threshold."""
 
@@ -74,30 +89,11 @@ class MemoryWatchdog:
             "evicted": None,
         }
 
-        loaded = list(self._manager.loaded_models())
         gpu_models = 0
-        agg_used = 0
-        agg_total = 0
-        worker_stats: dict[str, dict] = {}
-        for model_id in loaded:
-            try:
-                provider = self._manager.get(model_id)
-            except Exception:
-                continue
-            if provider.vram_mb > 0:
-                gpu_models += 1
-            try:
-                stats = await provider.get_stats()
-            except Exception as e:
-                logger.debug("get_stats(%s) failed: %s", model_id, e)
-                continue
-            if not stats:
-                continue
-            worker_stats[model_id] = stats
-            # Workers on one host share a GPU, so the max of reported totals is the physical total.
-            agg_used = max(agg_used, stats.get("vram_used_mb", 0))
-            agg_total = max(agg_total, stats.get("vram_total_mb", 0))
-
+        for model_id in list(self._manager.loaded_models()):
+            with contextlib.suppress(Exception):
+                gpu_models += self._manager.get(model_id).vram_mb > 0
+        agg_used, agg_total = await live_vram(self._manager)
         summary["vram_used_mb"] = agg_used
         summary["vram_total_mb"] = agg_total
 

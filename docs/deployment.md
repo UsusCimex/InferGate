@@ -70,7 +70,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.
 | `infergate_cache_hits_total`, `infergate_cache_misses_total` | counter | model_id |
 | `infergate_models_loaded`, `infergate_gpu_vram_used_mb`, `infergate_queue_size` | gauge | |
 
-Gauge-метрики обновляются только при запросе JSON-эндпоинта `/metrics`, а VRAM в образе шлюза (без torch) всегда 0. Живую видеопамять показывают `/v1/admin/memory/status` и `/stats` воркеров.
+Gauge-метрики шлюз обновляет при каждом чтении `/metrics/prometheus` и `/metrics`; VRAM берётся из `/stats` загруженных воркеров.
 
 ## Локально без Docker
 

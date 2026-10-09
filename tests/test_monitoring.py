@@ -71,6 +71,14 @@ async def test_json_metrics_still_works(client):
     assert "uptime_seconds" in data
 
 
+@pytest.mark.asyncio
+async def test_prometheus_scrape_refreshes_gauges(client):
+    await client.post("/v1/models/test-text/load")
+    body = (await client.get("/metrics/prometheus")).text
+    assert "infergate_models_loaded 1.0" in body
+    assert "infergate_queue_size 0.0" in body
+
+
 def test_prometheus_available():
     from app.monitoring import is_prometheus_available
     assert is_prometheus_available() is True

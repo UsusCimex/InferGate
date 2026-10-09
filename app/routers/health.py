@@ -11,6 +11,13 @@ from app.dependencies import (
     get_provider_manager,
     get_start_time,
 )
+from app.monitoring import (
+    CONTENT_TYPE_LATEST,
+    generate_latest,
+    is_prometheus_available,
+    update_runtime_gauges,
+)
+from app.services.memory_watchdog import live_vram
 
 router = APIRouter()
 
@@ -41,22 +48,7 @@ async def metrics(
         total_misses += model_stats.get("miss_count", 0)
     hit_rate = round(total_hits / (total_hits + total_misses) * 100, 1) if (total_hits + total_misses) > 0 else 0.0
 
-    gpu_vram_used = 0
-    gpu_vram_total = 0
-    try:
-        import torch
-        if torch.cuda.is_available():
-            gpu_vram_used = round(torch.cuda.memory_allocated() / (1024 * 1024))
-            gpu_vram_total = round(torch.cuda.get_device_properties(0).total_memory / (1024 * 1024))
-    except ImportError:
-        pass
-
-    from app.monitoring import update_runtime_gauges
-    update_runtime_gauges(
-        models_loaded=len(manager.loaded_models()),
-        gpu_vram_used_mb=gpu_vram_used,
-        queue_size=queue_info["queue_size"],
-    )
+    gpu_vram_used, gpu_vram_total = await _publish_gauges(manager, scheduler)
 
     return {
         "queue_size": queue_info["queue_size"],
@@ -70,13 +62,41 @@ async def metrics(
 
 
 @router.get("/metrics/prometheus")
-async def prometheus_metrics():
+async def prometheus_metrics(
+    manager=Depends(get_provider_manager),
+    scheduler=Depends(get_gpu_scheduler),
+):
     """Return metrics in Prometheus text-exposition format."""
-    from app.monitoring import CONTENT_TYPE_LATEST, generate_latest, is_prometheus_available
-
     if not is_prometheus_available():
         return JSONResponse(
             {"error": {"message": "prometheus-client not installed. pip install prometheus-client"}},
             status_code=501,
         )
+    await _publish_gauges(manager, scheduler)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+async def _publish_gauges(manager, scheduler) -> tuple[int, int]:
+    """Refresh the runtime gauges; returns the used and total GPU MB."""
+    used, total = await live_vram(manager)
+    if total == 0:
+        used, total = _in_process_vram()
+    update_runtime_gauges(
+        models_loaded=len(manager.loaded_models()),
+        gpu_vram_used_mb=used,
+        queue_size=scheduler.queue_info()["queue_size"],
+    )
+    return used, total
+
+
+def _in_process_vram() -> tuple[int, int]:
+    """VRAM of models loaded inside the gateway process; (0, 0) without torch or CUDA."""
+    try:
+        import torch
+    except ImportError:
+        return 0, 0
+    if not torch.cuda.is_available():
+        return 0, 0
+    used = round(torch.cuda.memory_allocated() / (1024 * 1024))
+    total = round(torch.cuda.get_device_properties(0).total_memory / (1024 * 1024))
+    return used, total
