@@ -9,8 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:SD35_MEDIUM_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:SD35_MEDIUM_VRAM_MB,5000}}
-  cpu_offload: ${oc.decode:${oc.env:SD35_MEDIUM_CPU_OFFLOAD,false}}
-  sequential_cpu_offload: ${oc.decode:${oc.env:SD35_MEDIUM_SEQUENTIAL_OFFLOAD,true}}
+  offload: ${oc.env:SD35_MEDIUM_OFFLOAD,sequential}
   warmup: ${oc.decode:${oc.env:SD35_MEDIUM_WARMUP,true}}
   drop_t5: ${oc.decode:${oc.env:SD35_MEDIUM_DROP_T5,true}}
   default_params:

@@ -23,8 +23,7 @@ source scripts/diagnose/_lib.sh
 [[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
-update_env "$ENV_FILE" HUNYUAN_DIT_CPU_OFFLOAD false
-update_env "$ENV_FILE" HUNYUAN_DIT_SEQUENTIAL_OFFLOAD false
+update_env "$ENV_FILE" HUNYUAN_DIT_OFFLOAD none
 update_env "$ENV_FILE" HUNYUAN_DIT_WARMUP false
 ok "Env flags set"
 

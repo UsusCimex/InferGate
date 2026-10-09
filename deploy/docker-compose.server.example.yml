@@ -25,10 +25,10 @@ services:
               capabilities: [gpu]
     environment:
       QWEN_IMAGE_QUANTIZATION: "null"
-      QWEN_IMAGE_CPU_OFFLOAD: "false"
+      QWEN_IMAGE_OFFLOAD: "none"
       QWEN_IMAGE_MAX_CONCURRENT: "2"
 
   worker-flux1-dev:
     environment:
-      FLUX1_DEV_CPU_OFFLOAD: "false"
+      FLUX1_DEV_OFFLOAD: "none"
       FLUX1_DEV_STEPS: "50"

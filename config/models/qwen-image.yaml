@@ -11,8 +11,7 @@ model:
   vram_mb: ${oc.decode:${oc.env:QWEN_IMAGE_VRAM_MB,11000}}
   quantization: ${oc.decode:${oc.env:QWEN_IMAGE_QUANTIZATION,nf4}}
   quantize_components: ["transformer", "text_encoder"]
-  cpu_offload: ${oc.decode:${oc.env:QWEN_IMAGE_CPU_OFFLOAD,false}}
-  sequential_cpu_offload: ${oc.decode:${oc.env:QWEN_IMAGE_SEQUENTIAL_OFFLOAD,true}}
+  offload: ${oc.env:QWEN_IMAGE_OFFLOAD,sequential}
   warmup: ${oc.decode:${oc.env:QWEN_IMAGE_WARMUP,true}}
   default_params:
     num_inference_steps: ${oc.decode:${oc.env:QWEN_IMAGE_STEPS,30}}

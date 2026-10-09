@@ -9,8 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:Z_IMAGE_TURBO_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:Z_IMAGE_TURBO_VRAM_MB,12000}}
-  cpu_offload: ${oc.decode:${oc.env:Z_IMAGE_TURBO_CPU_OFFLOAD,false}}
-  sequential_cpu_offload: ${oc.decode:${oc.env:Z_IMAGE_TURBO_SEQUENTIAL_OFFLOAD,false}}
+  offload: ${oc.env:Z_IMAGE_TURBO_OFFLOAD,none}
   quantization: ${oc.decode:${oc.env:Z_IMAGE_TURBO_QUANTIZATION,null}}
   quantize_components: ["text_encoder", "transformer"]
   warmup: ${oc.decode:${oc.env:Z_IMAGE_TURBO_WARMUP,false}}

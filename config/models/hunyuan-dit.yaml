@@ -9,8 +9,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:HUNYUAN_DIT_TORCH_DTYPE,float16}
   vram_mb: ${oc.decode:${oc.env:HUNYUAN_DIT_VRAM_MB,7000}}
-  cpu_offload: ${oc.decode:${oc.env:HUNYUAN_DIT_CPU_OFFLOAD,false}}
-  sequential_cpu_offload: ${oc.decode:${oc.env:HUNYUAN_DIT_SEQUENTIAL_OFFLOAD,false}}
+  offload: ${oc.env:HUNYUAN_DIT_OFFLOAD,none}
   quantization: ${oc.decode:${oc.env:HUNYUAN_DIT_QUANTIZATION,null}}
   warmup: ${oc.decode:${oc.env:HUNYUAN_DIT_WARMUP,false}}
   default_params:

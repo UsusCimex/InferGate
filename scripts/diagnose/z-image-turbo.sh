@@ -20,8 +20,7 @@ source scripts/diagnose/_lib.sh
 [[ -f "$ENV_FILE" ]] || { err "$ENV_FILE not found; copy it from deploy/.env.example"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
-update_env "$ENV_FILE" Z_IMAGE_TURBO_CPU_OFFLOAD false
-update_env "$ENV_FILE" Z_IMAGE_TURBO_SEQUENTIAL_OFFLOAD false
+update_env "$ENV_FILE" Z_IMAGE_TURBO_OFFLOAD none
 update_env "$ENV_FILE" Z_IMAGE_TURBO_WARMUP false
 if ! grep -q '^Z_IMAGE_TURBO_QUANTIZATION=' "$ENV_FILE"; then
     update_env "$ENV_FILE" Z_IMAGE_TURBO_QUANTIZATION null

@@ -11,6 +11,7 @@ from app.providers.base import ImageProvider
 from app.providers.image._compel import CompelAdapter, has_weight_syntax, strip_weight_syntax
 from app.providers.image._highres_fix import apply_highres_fix
 from app.providers.image._lora import LoraCache
+from app.providers.image._offload import offload_mode
 from app.providers.image._schedulers import resolve_scheduler
 from app.providers.image._textual_inversion import TextualInversionRegistry
 from app.providers.registry import register_provider
@@ -188,8 +189,7 @@ class DiffusersImageProvider(ImageProvider):
                 quantization, dtype
             )
 
-        cpu_offload = self.config.model.get("cpu_offload", False)
-        sequential_offload = self.config.model.get("sequential_cpu_offload", False)
+        offload = offload_mode(self.model_id, self.config.model)
         page_text_encoders = self.config.model.get("page_text_encoders", False)
 
         logger.info("Loading %s from %s", self.model_id, hub_id)
@@ -210,9 +210,9 @@ class DiffusersImageProvider(ImageProvider):
                 )
 
             pipe = DiffusionPipeline.from_pretrained(hub_id, **pipe_kwargs)
-            if sequential_offload:
+            if offload == "sequential":
                 pipe.enable_sequential_cpu_offload()
-            elif cpu_offload:
+            elif offload == "model":
                 pipe.enable_model_cpu_offload()
             else:
                 pipe.to("cuda")
@@ -245,9 +245,9 @@ class DiffusersImageProvider(ImageProvider):
                 if variant := self.config.model.get("refiner_variant", self.config.model.get("variant")):
                     ref_kwargs["variant"] = variant
                 ref = StableDiffusionXLImg2ImgPipeline.from_pretrained(refiner_hub_id, **ref_kwargs)
-                if sequential_offload:
+                if offload == "sequential":
                     ref.enable_sequential_cpu_offload()
-                elif cpu_offload:
+                elif offload == "model":
                     ref.enable_model_cpu_offload()
                 else:
                     ref.to("cuda")

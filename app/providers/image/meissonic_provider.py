@@ -8,6 +8,7 @@ import sys
 from typing import Any
 
 from app.providers.base import ImageProvider
+from app.providers.image._offload import offload_mode
 from app.providers.registry import register_provider
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ class MeissonicImageProvider(ImageProvider):
         hub_id = self.config.model["hub_id"]
         dtype_name = self.config.model.get("torch_dtype", "float16")
         dtype = getattr(torch, dtype_name)
-        cpu_offload = self.config.model.get("cpu_offload", False)
+        offload = offload_mode(self.model_id, self.config.model, allowed=("none", "model"))
 
         # Blackwell (sm_120): eagerly init CUDA before first alloc to avoid cudaErrorNotReady.
         if torch.cuda.is_available():
@@ -97,7 +98,7 @@ class MeissonicImageProvider(ImageProvider):
                 transformer=transformer,
                 scheduler=scheduler,
             )
-            if cpu_offload:
+            if offload == "model":
                 pipe.enable_model_cpu_offload()
             else:
                 pipe.to("cuda")

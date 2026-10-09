@@ -18,7 +18,7 @@
 #
 # VRAM note: fp16 base (~7GB) + fp16 refiner (~6GB) = ~13GB. RTX 4090/3090
 # fit bare. On 12GB cards (3060/3080/4070/5070) enable
-#   SDXL_BASE_SEQUENTIAL_OFFLOAD=true
+#   SDXL_BASE_OFFLOAD=sequential
 # in deploy/.env before running.
 #
 # Run from project root: bash scripts/feature/sdxl-refiner.sh
@@ -47,15 +47,15 @@ command -v curl >/dev/null 2>&1 || { err "curl required"; exit 1; }
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 update_env "$ENV_FILE" SDXL_BASE_REFINER_HUB_ID "$REFINER_HUB"
-# 12 GB cards can't hold base + refiner in VRAM; sequential_cpu_offload
+# 12 GB cards can't hold base + refiner in VRAM; sequential offload
 # streams layers on demand (slower but safe).
-if [[ "${SDXL_BASE_SEQUENTIAL_OFFLOAD:-}" != "false" ]]; then
-    update_env "$ENV_FILE" SDXL_BASE_SEQUENTIAL_OFFLOAD true
+if [[ -z "${SDXL_BASE_OFFLOAD:-}" ]]; then
+    update_env "$ENV_FILE" SDXL_BASE_OFFLOAD sequential
 fi
 # Offloaded inference takes minutes per image; raise queue timeout so
 # the request doesn't 504 before finishing.
 update_env "$ENV_FILE" SDXL_BASE_TIMEOUT 1200
-ok "Env flags set (refiner_hub_id=$REFINER_HUB, sequential_offload=true, timeout=1200s)"
+ok "Env flags set (refiner_hub_id=$REFINER_HUB, offload=sequential, timeout=1200s)"
 
 log "Rebuilding gateway + $SERVICE..."
 "${COMPOSE[@]}" build gateway "$SERVICE"

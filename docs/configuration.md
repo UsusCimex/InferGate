@@ -44,8 +44,7 @@ model:
   revision: "main"
   torch_dtype: ${oc.env:FLUX2_KLEIN_4B_TORCH_DTYPE,bfloat16}
   vram_mb: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_VRAM_MB,6000}}
-  cpu_offload: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_CPU_OFFLOAD,false}}
-  sequential_cpu_offload: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_SEQUENTIAL_OFFLOAD,true}}
+  offload: ${oc.env:FLUX2_KLEIN_4B_OFFLOAD,sequential}
   warmup: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_WARMUP,true}}
   quantization: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_QUANTIZATION,null}}
   quantize_components: ["transformer", "text_encoder"]
@@ -73,7 +72,7 @@ metadata:
 
 Необязательные ключи верхнего уровня: `worker_url` (адрес воркера вместо `WORKER_URL_*`) и `capabilities`: `vision` (картинки во входе chat/completions), `voice_clone_only` (синтез только через `/audio/speech/voice-clone`), `voices` (список разрешённых голосов `/audio/speech`). Тег `voice-clone` в `metadata.tags` отмечает модели клонирования для клиентов, PictoLex строит по нему их список. `category`: `image`, `text`, `tts`, `stt`, `upscale`, `embedding-text`, `embedding-audio`, `embedding-multimodal` или `embedding-video`.
 
-Ключи блока `model` у `DiffusersImageProvider`: `hub_id`, `torch_dtype`, `variant`, `revision`, `drop_t5`, `quantization` (`nf4` или `int4` через bitsandbytes), `quantize_components`, `cpu_offload`, `sequential_cpu_offload`, `page_text_encoders` (текстовые энкодеры на GPU только на время кодирования), `vae_tiling`, `vae_hub_id`, `compel`, `refiner_hub_id`, `refiner_variant`, `warmup`, `lora.{max_loaded,max_per_request}`, `default_params`.
+Ключи блока `model` у `DiffusersImageProvider`: `hub_id`, `torch_dtype`, `variant`, `revision`, `drop_t5`, `quantization` (`nf4` или `int4` через bitsandbytes), `quantize_components`, `offload`, `page_text_encoders` (текстовые энкодеры на GPU только на время кодирования), `vae_tiling`, `vae_hub_id`, `compel`, `refiner_hub_id`, `refiner_variant`, `warmup`, `lora.{max_loaded,max_per_request}`, `default_params`.
 
 Правки YAML подхватываются на ходу: `ConfigWatcher` раз в 2 с сверяет время изменения файлов и перезагружает модель. Загруженному удалённому воркеру шлюз передаёт новый конфиг через `/reload`; воркер без загруженной модели увидит правки только после перезапуска контейнера.
 
@@ -90,10 +89,10 @@ metadata:
 | Общие | `HF_TOKEN` (gated-модели), `GPU_BASE_IMAGE`, `VLLM_IMAGE`, `PORT`, `MODELS_DIR` (папка весов на хосте), `COMPOSE_PROFILES` |
 | Пределы контейнеров | `GPU_WORKER_MEM_LIMIT` (16g), `CPU_WORKER_MEM_LIMIT` (6g), `GATEWAY_MEM_LIMIT` (2g), `GPU_WORKER_SHM_SIZE`, `PYTORCH_CUDA_ALLOC_CONF` |
 | VRAM и сторож | `GPU_MAX_VRAM_BUDGET_MB`, `GPU_VRAM_HEADROOM_MB`, `GPU_MAX_LOADED_MODELS`, `GPU_WATCHDOG_*` |
-| Модели | `<ID>_ENABLED`, `<ID>_QUANTIZATION`, `<ID>_CPU_OFFLOAD`, `<ID>_SEQUENTIAL_OFFLOAD`, `<ID>_STEPS`, `<ID>_CFG`, `<ID>_VRAM_MB`, `<ID>_MAX_CONCURRENT`, `<ID>_GPU_MEM_UTIL`, `<ID>_CONTEXT_LENGTH`, голоса и форматы TTS и др. |
+| Модели | `<ID>_ENABLED`, `<ID>_QUANTIZATION`, `<ID>_OFFLOAD`, `<ID>_STEPS`, `<ID>_CFG`, `<ID>_VRAM_MB`, `<ID>_MAX_CONCURRENT`, `<ID>_GPU_MEM_UTIL`, `<ID>_CONTEXT_LENGTH`, голоса и форматы TTS и др. |
 | Связь шлюза с воркерами | `GATEWAY_REMOTE_CONNECT_TIMEOUT` (5 с), `GATEWAY_REMOTE_LOAD_TIMEOUT` (1800 с), `GATEWAY_REMOTE_GENERATE_TIMEOUT` (300 с), `GATEWAY_REMOTE_QUICK_TIMEOUT` (5 с), `GATEWAY_REMOTE_RETRY_ATTEMPTS`, `GATEWAY_REMOTE_RETRY_BACKOFF`, пул соединений |
 
-Выгрузка на CPU: у `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image` и `sd35-medium` по умолчанию включена послойная выгрузка (`sequential_cpu_offload`), и она проверяется раньше обычной. Чтобы выгрузку отключить, нужны и `<ID>_SEQUENTIAL_OFFLOAD=false`, и `<ID>_CPU_OFFLOAD=false`. На 12 ГБ послойная выгрузка стоит минут на картинку, поэтому FLUX.2 klein, FLUX.1-dev и Z-Image там работают в nf4 без неё (подсказки в `.env.example`).
+Выгрузка на CPU, `offload` (`<ID>_OFFLOAD`): `none` - модель целиком на GPU, `model` - части модели попадают на GPU только на время своей работы, `sequential` - послойно. У `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image` и `sd35-medium` по умолчанию `sequential`, у остальных `none`, Meissonic знает только `none` и `model`. Прежние `cpu_offload`, `sequential_cpu_offload` и переменные `<ID>_CPU_OFFLOAD`, `<ID>_SEQUENTIAL_OFFLOAD` воркер не принимает: загрузка падает с ошибкой. На 12 ГБ послойная выгрузка стоит минут на картинку, поэтому FLUX.2 klein, FLUX.1-dev и Z-Image там работают в nf4 без неё (подсказки в `.env.example`).
 
 `GATEWAY_REMOTE_GENERATE_TIMEOUT` задаёт наименьшее ожидание ответа воркера: шлюз ждёт не меньше `queue.timeout_seconds` модели, чтобы первым срабатывал тайм-аут очереди. Не ответивший вовремя воркер даёт клиенту 504.
 

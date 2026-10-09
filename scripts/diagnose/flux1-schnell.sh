@@ -21,8 +21,7 @@ source scripts/diagnose/_lib.sh
 
 update_env "$ENV_FILE" COMPOSE_PROFILES "$MODEL_ID"
 update_env "$ENV_FILE" FLUX1_SCHNELL_QUANTIZATION nf4
-update_env "$ENV_FILE" FLUX1_SCHNELL_CPU_OFFLOAD false
-update_env "$ENV_FILE" FLUX1_SCHNELL_SEQUENTIAL_OFFLOAD false
+update_env "$ENV_FILE" FLUX1_SCHNELL_OFFLOAD none
 update_env "$ENV_FILE" FLUX1_SCHNELL_WARMUP false
 ok "Env flags set (nf4 + no offload)"
 
