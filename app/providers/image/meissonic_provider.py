@@ -9,6 +9,7 @@ from typing import Any
 
 from app.providers.base import ImageProvider
 from app.providers.image._offload import offload_mode
+from app.providers.image._size import apply_size
 from app.providers.registry import register_provider
 
 logger = logging.getLogger(__name__)
@@ -133,12 +134,7 @@ class MeissonicImageProvider(ImageProvider):
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
-        if "size" in defaults:
-            size = defaults.pop("size")
-            if isinstance(size, str) and "x" in size:
-                w, h = size.split("x")
-                defaults.setdefault("width", int(w))
-                defaults.setdefault("height", int(h))
+        apply_size(defaults)
 
         for k in ("response_format", "n"):
             defaults.pop(k, None)

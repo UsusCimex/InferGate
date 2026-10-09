@@ -13,6 +13,7 @@ from app.providers.image._highres_fix import apply_highres_fix
 from app.providers.image._lora import LoraCache
 from app.providers.image._offload import offload_mode
 from app.providers.image._schedulers import resolve_scheduler
+from app.providers.image._size import apply_size
 from app.providers.image._textual_inversion import TextualInversionRegistry
 from app.providers.registry import register_provider
 
@@ -374,13 +375,7 @@ class DiffusersImageProvider(ImageProvider):
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
-        # Per-request `size` must win over YAML width/height; use assignment, not setdefault.
-        if "size" in defaults:
-            size = defaults.pop("size")
-            if isinstance(size, str) and "x" in size:
-                w, h = size.split("x")
-                defaults["width"] = int(w)
-                defaults["height"] = int(h)
+        apply_size(defaults)
 
         defaults.pop("response_format", None)
         defaults.pop("n", None)
