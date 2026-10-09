@@ -8,6 +8,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueConfig
+from app.providers.base import TextProvider
+from app.providers.registry import register_provider
 from tests.conftest import FakeImageProvider, FakeTextProvider, FakeTtsProvider
 
 
@@ -518,3 +520,114 @@ async def test_a_cuda_error_ends_the_worker_process_so_docker_restarts_it(monkey
 
     assert exited.value.args == (1,)
 
+
+
+_SWAPS: list[str] = []
+
+
+@register_provider
+class SwapRecordingProvider(TextProvider):
+    """Records loads and unloads by hub id; hub ids ending in /broken fail to load."""
+
+    async def load(self, model_dir: str) -> None:
+        hub_id = self.config.model["hub_id"]
+        _SWAPS.append(f"load {hub_id}")
+        if hub_id.endswith("/broken"):
+            raise RuntimeError("weights missing")
+        self._loaded = True
+
+    async def unload(self) -> None:
+        _SWAPS.append(f"unload {self.config.model['hub_id']}")
+        self._loaded = False
+
+    async def generate(self, messages, **params):
+        return {"choices": []}
+
+    async def generate_stream(self, messages, **params):
+        for chunk in ("a", "b"):
+            yield chunk
+
+
+@pytest_asyncio.fixture
+async def swap_worker():
+    from fastapi import FastAPI
+
+    from app.worker import generate, reload_config
+
+    _SWAPS.clear()
+    config = _make_config("text", "SwapRecordingProvider").model_copy(
+        update={"model": {"hub_id": "test/old"}}
+    )
+    provider = SwapRecordingProvider(config)
+    await provider.load(".")
+    _SWAPS.clear()
+
+    app = FastAPI()
+    app.state.provider = provider
+    app.state.config = config
+    app.state.reload_lock = asyncio.Lock()
+    app.state.load_lock = asyncio.Lock()
+    app.state.load_state = _ready_load_state()
+    app.add_api_route("/generate", generate, methods=["POST"])
+    app.add_api_route("/reload", reload_config, methods=["POST"])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://worker") as client:
+        yield app, client
+
+
+def _swap_config(hub_id: str) -> dict:
+    config = _make_config("text", "SwapRecordingProvider").model_dump(mode="json")
+    config["model"] = {"hub_id": hub_id}
+    return config
+
+
+@pytest.mark.asyncio
+async def test_full_reload_unloads_the_old_model_first(swap_worker):
+    app, client = swap_worker
+    resp = await client.post("/reload", json=_swap_config("test/new"))
+    assert resp.json()["action"] == "full_reload"
+    assert _SWAPS == ["unload test/old", "load test/new"]
+    assert app.state.config.model["hub_id"] == "test/new"
+
+
+@pytest.mark.asyncio
+async def test_failed_reload_brings_the_old_model_back(swap_worker):
+    app, client = swap_worker
+    resp = await client.post("/reload", json=_swap_config("test/broken"))
+    assert resp.status_code == 500
+    assert "previous model is loaded again" in resp.json()["error"]["message"]
+    assert _SWAPS == ["unload test/old", "load test/broken", "load test/old"]
+    assert app.state.provider.is_loaded()
+    assert app.state.config.model["hub_id"] == "test/old"
+
+
+@pytest.mark.asyncio
+async def test_reload_of_an_unloaded_worker_loads_nothing(swap_worker):
+    app, client = swap_worker
+    app.state.load_state["status"] = "idle"
+    resp = await client.post("/reload", json=_swap_config("test/new"))
+    assert resp.json()["action"] == "config"
+    assert _SWAPS == []
+    assert app.state.config.model["hub_id"] == "test/new"
+
+
+@pytest.mark.asyncio
+async def test_stream_holds_the_reload_lock_until_it_ends(swap_worker):
+    from app.worker import _stream_text
+
+    app, _ = swap_worker
+    stream = _stream_text(app, [{"role": "user", "content": "hi"}], {})
+    assert await anext(stream) == "a"
+    assert app.state.reload_lock.locked()
+    assert [chunk async for chunk in stream] == ["b"]
+    assert not app.state.reload_lock.locked()
+
+
+@pytest.mark.asyncio
+async def test_closed_stream_releases_the_reload_lock(swap_worker):
+    from app.worker import _stream_text
+
+    app, _ = swap_worker
+    stream = _stream_text(app, [{"role": "user", "content": "hi"}], {})
+    await anext(stream)
+    await stream.aclose()
+    assert not app.state.reload_lock.locked()

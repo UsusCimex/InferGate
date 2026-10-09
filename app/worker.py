@@ -363,7 +363,6 @@ async def reload_config(request: Request):
             logger.info("Reloaded %s (metadata only)", new_config.id)
             return {"status": "ok", "action": "metadata", "model": new_config.id}
 
-        # Load new before touching old so worker stays serviceable on bad config.
         models_dir = os.environ.get("WORKER_MODELS_DIR", "./models")
         try:
             provider_cls = get_provider_class(new_config.provider_class)
@@ -374,47 +373,72 @@ async def reload_config(request: Request):
             )
 
         new_provider = provider_cls(new_config)
-        logger.info("Reloading %s (full): loading new provider...", new_config.id)
-        try:
-            await new_provider.load(models_dir)
-        except Exception as e:
-            logger.error("Failed to load new provider during reload: %s", e)
-            return JSONResponse(
-                {"error": {"message": f"load failed: {e}", "type": "load_failed"}},
-                status_code=500,
-            )
+        state: dict[str, Any] = request.app.state.load_state
+        async with request.app.state.load_lock:
+            if state["status"] != "ready":
+                request.app.state.provider = new_provider
+                request.app.state.config = new_config
+                logger.info("Reloaded %s (model not loaded, next /load uses the new config)", new_config.id)
+                return {"status": "ok", "action": "config", "model": new_config.id}
+
+            # Old model out first: two copies of a large model do not fit one GPU.
+            logger.info("Reloading %s (full): unloading the old provider...", new_config.id)
+            try:
+                await old_provider.unload()
+            except Exception as e:
+                logger.warning("Error unloading old provider (non-fatal): %s", e)
+            try:
+                await new_provider.load(models_dir)
+            except Exception as e:
+                logger.error("Failed to load new provider during reload: %s", e)
+                note = await _restore_provider(request.app, old_config, models_dir)
+                return JSONResponse(
+                    {"error": {"message": f"load failed: {e}; {note}", "type": "load_failed"}},
+                    status_code=500,
+                )
 
         request.app.state.provider = new_provider
         request.app.state.config = new_config
-        try:
-            await old_provider.unload()
-        except Exception as e:
-            logger.warning("Error unloading old provider (non-fatal): %s", e)
-
         logger.info("Reloaded %s (full reload complete)", new_config.id)
         return {"status": "ok", "action": "full_reload", "model": new_config.id}
+
+
+async def _restore_provider(app: FastAPI, config: ModelConfig, models_dir: str) -> str:
+    """Load the previous config again after a failed reload; returns what happened for the error."""
+    provider = get_provider_class(config.provider_class)(config)
+    app.state.provider = provider
+    try:
+        await provider.load(models_dir)
+    except Exception as e:
+        logger.error("Restoring %s after a failed reload failed: %s", config.id, e)
+        app.state.load_state.update(_initial_load_state())
+        return f"the previous model did not load either: {e}"
+    return "the previous model is loaded again"
 
 
 @app.post("/generate")
 async def generate(request: Request):
     """Generate text or image; ValueError from the provider maps to HTTP 400."""
+    body = await request.json()
+    stream = body.pop("stream", False)
+    if (
+        stream
+        and request.app.state.config.category == "text"
+        and hasattr(request.app.state.provider, "generate_stream")
+    ):
+        return StreamingResponse(
+            _stream_text(request.app, body.pop("messages"), body),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
+
     async with request.app.state.reload_lock:
         provider: BaseProvider = request.app.state.provider
         config = request.app.state.config
-        body = await request.json()
 
         try:
             if config.category == "text":
                 messages = body.pop("messages")
-                stream = body.pop("stream", False)
-
-                if stream and hasattr(provider, "generate_stream"):
-                    return StreamingResponse(
-                        provider.generate_stream(messages, **body),
-                        media_type="text/event-stream",
-                        headers={"Cache-Control": "no-cache"},
-                    )
-
                 result = await provider.generate(messages, **body)
                 return JSONResponse(result)
 
@@ -439,6 +463,13 @@ async def generate(request: Request):
             {"error": {"message": f"Unknown category: {config.category}"}},
             status_code=400,
         )
+
+
+async def _stream_text(app: FastAPI, messages: list[dict], params: dict[str, Any]):
+    """Chat chunks under reload_lock for the whole stream, so /reload waits for its end."""
+    async with app.state.reload_lock:
+        async for chunk in app.state.provider.generate_stream(messages, **params):
+            yield chunk
 
 
 @app.post("/synthesize")
