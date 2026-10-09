@@ -55,7 +55,7 @@
 | `clap-htsat-fused` | `embedding-audio` | `ClapEmbeddingProvider` | 4000 | выключена | CC-BY-4.0 |
 | `clip4clip-webvid150k` | `embedding-video` | `CLIP4ClipProvider` | 2000 | выключена; 12 кадров на видео | MIT |
 
-Модели по умолчанию (`defaults` в `config/server.yaml`): картинки `sdxl-base`, текст `qwen3.5-4b`, озвучка `kokoro-82m`, эмбеддинги E5, CLAP, CLIP, CLIP4Clip. У распознавания и апскейла умолчаний нет. PictoLex сам указывает модели: `flux2-klein-4b`, `qwen3.5-4b`, `kokoro-82m`, `voxcpm2`.
+Модели по умолчанию (`defaults` в `config/server.yaml`): картинки `sdxl-base`, текст `qwen3.5-4b`, озвучка `kokoro-82m`, распознавание `whisper-base`, апскейл `realesrgan-x4`, эмбеддинги E5, CLAP, CLIP, CLIP4Clip. PictoLex сам указывает модели: `flux2-klein-4b`, `qwen3.5-4b`, `kokoro-82m`, `voxcpm2`.
 
 ## Профили Compose
 

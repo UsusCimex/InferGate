@@ -41,6 +41,8 @@ defaults:
   # kokoro is CPU-only and accepts /v1/audio/speech without reference_audio,
   # so it works out of the box; voice-cloning models live behind --profile voice-clone.
   tts: kokoro-82m
+  stt: whisper-base
+  upscale: realesrgan-x4
   embedding_text: multilingual-e5-base
   embedding_audio: clap-htsat-fused
   embedding_image: clip-vit-base-patch32

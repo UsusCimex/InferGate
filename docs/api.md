@@ -2,7 +2,7 @@
 
 Шлюз слушает порт 8000. `/v1/chat/completions`, `/v1/images/generations`, `/v1/images/edits`, `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/embeddings` и `/v1/models` повторяют формат OpenAI, поэтому OpenAI SDK работает со шлюзом после смены `base_url`. Остальные эндпоинты: расширения InferGate.
 
-Без `model` берётся модель из `defaults` в `config/server.yaml`; у распознавания и апскейла умолчаний нет, там `model` обязателен. JSON-схемы запрещают лишние поля: на неизвестное поле ответ 422 с его именем.
+Без `model` берётся модель из `defaults` в `config/server.yaml`. JSON-схемы запрещают лишние поля: на неизвестное поле ответ 422 с его именем.
 
 ## Эндпоинты
 

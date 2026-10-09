@@ -48,6 +48,8 @@ class DefaultsConfig(BaseModel):
     image: str = "flux1-schnell"
     text: str = "qwen3.5-9b"
     tts: str = "kokoro-82m"
+    stt: str | None = None
+    upscale: str | None = None
     embedding_text: str | None = None
     embedding_audio: str | None = None
     embedding_image: str | None = None

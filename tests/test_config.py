@@ -24,6 +24,12 @@ def test_load_server_config():
     assert config.cache.enabled is True
 
 
+def test_defaults_name_stt_and_upscale_models():
+    defaults = load_server_config("config/server.yaml").defaults.model_dump()
+    assert defaults["stt"] == "whisper-base"
+    assert defaults["upscale"] == "realesrgan-x4"
+
+
 def test_load_model_configs():
     configs = load_model_configs("config/models")
     assert len(configs) > 0

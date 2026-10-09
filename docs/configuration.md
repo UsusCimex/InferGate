@@ -20,7 +20,7 @@
 | `cache.backend` | `local` | `local` (SQLite и файлы) или `redis` |
 | `cors.*` | `*` | разрешённые источники, методы, заголовки |
 | `models_dir` | `./models` | папка весов для локального режима и `scripts/download_models.py` |
-| `defaults.image`, `text`, `tts` | `sdxl-base`, `qwen3.5-4b`, `kokoro-82m` | модель, если в запросе нет `model` |
+| `defaults.image`, `text`, `tts`, `stt`, `upscale` | `sdxl-base`, `qwen3.5-4b`, `kokoro-82m`, `whisper-base`, `realesrgan-x4` | модель, если в запросе нет `model` |
 | `defaults.embedding_text`, `_audio`, `_image`, `_video` | E5, CLAP, CLIP, CLIP4Clip | то же для эмбеддингов |
 | `rate_limit.enabled`, `requests_per_minute` | `false`, 60 | скользящее окно на IP клиента |
 | `upload_limits.*` | картинка 20, аудио 25, видео 200, апскейл 50 МБ | предел загружаемых файлов (413) |
