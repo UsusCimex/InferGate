@@ -9,6 +9,8 @@
 #   4. Round-trip a second identical request and assert cache HIT.
 #   5. Test the b64_json envelope on a third call.
 #   6. Reject an invalid image (random bytes) with 400.
+#   7. Upscale an input wider than one tile (tile_size 1024) and assert 4x dims.
+#   8. Reject an input over max_input_side (2048) with 400.
 #
 # Content-aware (colour / gradient) assertions are skipped: Real-ESRGAN
 # on a tiny synthetic gradient produces something plausible but not
@@ -188,6 +190,42 @@ if [[ "$LAST_CODE" == "422" ]]; then
     ok "missing file: 422"
 else
     err "expected 422, got $LAST_CODE"
+    fail=1
+fi
+
+wide_png() {
+    "${COMPOSE[@]}" exec -T -e "SEED=$SEED" -e "WIDTH=$1" "$SERVICE" python <<'PYEOF'
+import io, os, sys
+from PIL import Image
+seed, width = int(os.environ.get("SEED", "0")), int(os.environ["WIDTH"])
+img = Image.new("RGB", (width, 160))
+img.putdata([((x + seed) % 256, (y * 3) % 256, (x * y) % 256) for y in range(160) for x in range(width)])
+buf = io.BytesIO(); img.save(buf, format="PNG")
+sys.stdout.buffer.write(buf.getvalue())
+PYEOF
+}
+
+log "[6] input wider than one tile: 1280x160 goes through the model in tiles"
+WIDE_PNG=$(mktemp --suffix=.png)
+wide_png 1280 > "$WIDE_PNG"
+http_post "$OUTPUT_PNG" -F "file=@${WIDE_PNG}" -F "model=${MODEL_ID}" -F "response_format=png" \
+    -H "X-InferGate-No-Cache: true"
+if [[ "$LAST_CODE" == "200" && "$(png_dims "$OUTPUT_PNG")" == "5120x640" ]]; then
+    ok "tiled upscale: 1280x160 to 5120x640"
+else
+    err "tiled upscale: HTTP $LAST_CODE, dims $(png_dims "$OUTPUT_PNG" 2>/dev/null || echo '?')"
+    fail=1
+fi
+
+log "[7] input over max_input_side: 2100x160, expect 400"
+wide_png 2100 > "$WIDE_PNG"
+http_post "$RESP_FILE" -F "file=@${WIDE_PNG}" -F "model=${MODEL_ID}" -F "response_format=png" \
+    -H "X-InferGate-No-Cache: true"
+rm -f "$WIDE_PNG"
+if [[ "$LAST_CODE" == "400" ]]; then
+    ok "too large input: 400"
+else
+    err "expected 400, got $LAST_CODE (body: $(head -c 200 "$RESP_FILE"))"
     fail=1
 fi
 

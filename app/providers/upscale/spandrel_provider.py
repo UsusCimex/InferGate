@@ -7,6 +7,7 @@ from typing import Any
 
 from app.providers.base import ImageUpscaleProvider
 from app.providers.registry import register_provider
+from app.providers.upscale._tiles import upscale_tiled
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,19 @@ class SpandrelUpscaleProvider(ImageUpscaleProvider):
         from PIL import Image, UnidentifiedImageError
 
         max_side = int(self.config.model.get("max_input_side", 2048))
+        tile = int(self.config.model.get("tile_size", 1024))
+        pad = int(self.config.model.get("tile_pad", 32))
+
+        def _model_pass(img: Image.Image) -> Image.Image:
+            arr = np.asarray(img, dtype=np.float32) / 255.0
+            tensor = (
+                torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
+                .to(device=self._device, dtype=self._dtype)
+            )
+            with torch.inference_mode():
+                out = self._model.model(tensor)  # type: ignore[union-attr]
+            out_arr = out.squeeze(0).permute(1, 2, 0).clamp(0, 1).float().cpu().numpy()
+            return Image.fromarray((out_arr * 255).round().astype(np.uint8))
 
         def _run() -> bytes:
             try:
@@ -85,22 +99,15 @@ class SpandrelUpscaleProvider(ImageUpscaleProvider):
             except UnidentifiedImageError as e:
                 raise ValueError("image is not a recognised PNG/JPEG") from e
             if max(img.size) > max_side:
-                raise ValueError(
-                    f"image side {max(img.size)}px exceeds max_input_side={max_side}px; "
-                    f"tiling is not supported"
-                )
+                raise ValueError(f"image side {max(img.size)}px exceeds max_input_side={max_side}px")
 
-            arr = np.asarray(img, dtype=np.float32) / 255.0
-            tensor = (
-                torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
-                .to(device=self._device, dtype=self._dtype)
-            )
-
-            with torch.inference_mode():
-                out = self._model.model(tensor)  # type: ignore[union-attr]
-
-            out_arr = out.squeeze(0).permute(1, 2, 0).clamp(0, 1).float().cpu().numpy()
-            out_img = Image.fromarray((out_arr * 255).astype(np.uint8))
+            # VRAM grows with the input: no pass, context included, is larger than tile_size.
+            if 0 < tile < max(img.size):
+                if tile <= 2 * pad:
+                    raise RuntimeError(f"tile_size {tile} leaves no image inside tile_pad {pad}")
+                out_img = upscale_tiled(img, self._scale, tile - 2 * pad, pad, _model_pass)
+            else:
+                out_img = _model_pass(img)
 
             buf = io.BytesIO()
             out_img.save(buf, format="PNG")

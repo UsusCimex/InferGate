@@ -48,7 +48,7 @@
 | id | Категория | Провайдер | VRAM, МБ | Особенности | Лицензия |
 |---|---|---|---|---|---|
 | `whisper-base` | `stt` | `WhisperProvider` (faster-whisper) | 0 (CPU, int8) | `json`, `text`, `verbose_json`, `srt`, `vtt` | MIT |
-| `realesrgan-x4` | `upscale` | `SpandrelUpscaleProvider` | 1500 | x4, вход до 2048 px по стороне | BSD-3-Clause |
+| `realesrgan-x4` | `upscale` | `SpandrelUpscaleProvider` | 1500 | x4, вход до 2048 px по стороне, больше 1024 px идёт тайлами | BSD-3-Clause |
 | `multilingual-e5-base` | `embedding-text` | `SentenceTransformerEmbeddingProvider` | 0 (CPU) | выключена | MIT |
 | `clip-vit-base-patch32` | `embedding-multimodal` | `CLIPProvider` | 1500 | выключена; текст и картинки, 512 измерений | MIT |
 | `siglip-base-multilingual` | `embedding-multimodal` | `SigLIPProvider` | 2000 | выключена; только свой профиль | Apache-2.0 |

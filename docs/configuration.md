@@ -84,6 +84,8 @@ metadata:
 
 Ключи блока `model` у `DiffusersImageProvider`: `hub_id`, `torch_dtype`, `variant`, `revision`, `drop_t5`, `quantization` (`nf4` или `int4` через bitsandbytes, `fp8` через optimum-quanto), `quantize_components`, `offload`, `page_text_encoders` (текстовые энкодеры на GPU только на время кодирования), `vae_tiling`, `vae_hub_id`, `compel`, `refiner_hub_id`, `refiner_variant`, `warmup`, `lora.{max_loaded,max_per_request}`, `default_params`.
 
+Ключи блока `model` у `SpandrelUpscaleProvider`: `hub_id`, `filename`, `device`, `torch_dtype`, `max_input_side` (наибольшая сторона входа, 2048 px), `tile_size` (наибольшая сторона одного прохода модели вместе с полями, 1024 px: вход до неё идёт целиком, больший - квадратами по `tile_size` - 2 x `tile_pad`; 0 подаёт картинку целиком), `tile_pad` (поля контекста вокруг квадрата, 32 px). VRAM апскейла зависит от `tile_size`, а не от размера входа; RAM и время растут с выходом, у x4 он в 16 раз больше входа по площади.
+
 Правки YAML подхватываются на ходу: `ConfigWatcher` раз в 2 с сверяет время изменения файлов и перезагружает модель. Загруженному удалённому воркеру шлюз передаёт новый конфиг через `/reload`; воркер без загруженной модели увидит правки только после перезапуска контейнера.
 
 Несколько шлюзов за балансировщиком с `config_sync.enabled` получают правку от того, кто её заметил: шлюз публикует конфиг в канал Redis в том виде, как прочёл его из YAML, остальные применяют его так же, как свою правку файла.
