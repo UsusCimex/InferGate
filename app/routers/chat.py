@@ -99,7 +99,11 @@ async def chat_completions(
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
-    cache_key = cache.make_key(model_id, {"messages": messages, **params}) if should_cache else ""
+    cache_key = (
+        cache.make_key(model_id, {"messages": messages, **params}, config.model.get("default_params"))
+        if should_cache
+        else ""
+    )
     cache_status = "DISABLED"
 
     if should_cache:

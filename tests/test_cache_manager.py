@@ -147,6 +147,13 @@ async def test_make_key_deterministic(cache):
 
 
 @pytest.mark.asyncio
+async def test_make_key_follows_model_defaults(cache):
+    four = cache.make_key("model", {"prompt": "x"}, {"steps": 4})
+    assert four != cache.make_key("model", {"prompt": "x"}, {"steps": 8})
+    assert four == cache.make_key("model", {"prompt": "x", "steps": 4}, {"steps": 20})
+
+
+@pytest.mark.asyncio
 async def test_eviction_for_model(cache):
     # max_size_mb very small so eviction triggers
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 0.0005}

@@ -91,7 +91,7 @@ async def create_speech(
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
-    cache_key = cache.make_key(model_id, {"input": body.input, **params})
+    cache_key = cache.make_key(model_id, {"input": body.input, **params}, config.model.get("default_params"))
     cache_status = "DISABLED"
 
     if should_cache:
@@ -238,7 +238,11 @@ async def create_transcription(
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
-    cache_key = cache.make_key(model_id, {"audio_len": len(audio_bytes), "audio_sha": _sha(audio_bytes), **params})
+    cache_key = cache.make_key(
+        model_id,
+        {"audio_len": len(audio_bytes), "audio_sha": _sha(audio_bytes), **params},
+        config.model.get("default_params"),
+    )
     cache_status = "DISABLED"
 
     if should_cache:
@@ -369,7 +373,7 @@ async def create_speech_voice_clone(
     if seed is not None:
         cache_params["seed"] = seed
     should_cache = not no_cache and cache.should_cache(cache_cfg, cache_params)
-    cache_key = cache.make_key(model_id, cache_params)
+    cache_key = cache.make_key(model_id, cache_params, config.model.get("default_params"))
     cache_status = "DISABLED"
 
     content_type = CONTENT_TYPES.get(response_format, "application/octet-stream")

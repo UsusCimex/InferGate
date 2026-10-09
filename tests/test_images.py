@@ -83,6 +83,15 @@ async def test_image_cache_with_seed(client):
 
 
 @pytest.mark.asyncio
+async def test_changed_model_defaults_miss_the_cache(client, services):
+    payload = {"model": "test-image", "prompt": "A green star", "seed": 7}
+    assert (await client.post("/v1/images/generations", json=payload)).headers["x-infergate-cache"] == "MISS"
+    assert (await client.post("/v1/images/generations", json=payload)).headers["x-infergate-cache"] == "HIT"
+    services["manager"].get_config("test-image").model["default_params"] = {"num_inference_steps": 8}
+    assert (await client.post("/v1/images/generations", json=payload)).headers["x-infergate-cache"] == "MISS"
+
+
+@pytest.mark.asyncio
 async def test_image_no_cache_without_seed(client):
     resp = await client.post(
         "/v1/images/generations",

@@ -72,7 +72,7 @@ async def generate_images(
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
-    cache_key = cache.make_key(model_id, {"prompt": body.prompt, **params})
+    cache_key = cache.make_key(model_id, {"prompt": body.prompt, **params}, config.model.get("default_params"))
     cache_status = "DISABLED"
 
     if should_cache:
@@ -237,7 +237,7 @@ async def upscale_image(
     sha = hashlib.sha256(image_bytes).hexdigest()[:32]
     params = {"sha": sha, "size": len(image_bytes)}
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
-    cache_key = cache.make_key(model_id, params)
+    cache_key = cache.make_key(model_id, params, config.model.get("default_params"))
     cache_status = "DISABLED"
 
     if should_cache:

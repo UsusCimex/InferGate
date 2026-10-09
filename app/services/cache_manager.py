@@ -11,7 +11,7 @@ from app.services.cache_backends import CacheBackend, make_cache_backend
 logger = logging.getLogger(__name__)
 
 # Bump to invalidate entries produced by older code when the cache format changes.
-CACHE_KEY_VERSION = "v1"
+CACHE_KEY_VERSION = "v2"
 
 
 class CacheManager:
@@ -53,10 +53,12 @@ class CacheManager:
             return "seed" in request_params
         return False
 
-    def make_key(self, model_id: str, request_params: dict) -> str:
-        """Build a deterministic cache key from `model_id` + `request_params`."""
+    def make_key(
+        self, model_id: str, request_params: dict, defaults: dict | None = None
+    ) -> str:
+        """Build a deterministic cache key from `model_id` and the request params over the model's `defaults`."""
         canonical = json.dumps(
-            {"v": CACHE_KEY_VERSION, "model": model_id, **request_params},
+            {"v": CACHE_KEY_VERSION, "model": model_id, "params": {**(defaults or {}), **request_params}},
             sort_keys=True,
         )
         return hashlib.sha256(canonical.encode()).hexdigest()
