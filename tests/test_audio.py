@@ -14,6 +14,42 @@ async def test_tts(client):
     assert len(resp.content) > 0
 
 
+@pytest.fixture
+def synthesized(monkeypatch):
+    from tests.conftest import FakeTtsProvider
+
+    seen: dict = {}
+
+    async def spy(self, text, **params):
+        seen.update(params)
+        return b"RIFF"
+
+    monkeypatch.setattr(FakeTtsProvider, "synthesize", spy)
+    return seen
+
+
+@pytest.mark.asyncio
+async def test_tts_falls_back_to_model_defaults(client, services, synthesized):
+    services["manager"].get_config("test-tts").model["default_params"] = {"output_format": "wav"}
+    resp = await client.post(
+        "/v1/audio/speech", json={"model": "test-tts", "input": "Hi", "voice": "default"}
+    )
+    assert resp.headers["content-type"] == "audio/wav"
+    assert synthesized == {"output_format": "wav"}
+
+
+@pytest.mark.asyncio
+async def test_tts_request_values_win(client, services, synthesized):
+    services["manager"].get_config("test-tts").model["default_params"] = {"output_format": "wav"}
+    resp = await client.post(
+        "/v1/audio/speech",
+        json={"model": "test-tts", "input": "Hi", "voice": "bm_george", "speed": 1.2,
+              "response_format": "flac"},
+    )
+    assert resp.headers["content-type"] == "audio/flac"
+    assert synthesized == {"output_format": "flac", "voice": "bm_george", "speed": 1.2}
+
+
 @pytest.mark.asyncio
 async def test_tts_cache(client):
     payload = {"model": "test-tts", "input": "Cache test", "voice": "default"}

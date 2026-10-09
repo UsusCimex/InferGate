@@ -6,6 +6,7 @@ import time
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from app.config import ModelConfig
 from app.dependencies import (
     get_cache_manager,
     get_defaults,
@@ -58,8 +59,9 @@ async def create_speech(
             status_code=400,
         )
 
+    voice = None if body.voice == "default" else body.voice
     voices = config.capabilities.voices
-    if voices and body.voice != "default" and body.voice not in voices:
+    if voices and voice is not None and voice not in voices:
         return JSONResponse(
             {
                 "error": {
@@ -77,11 +79,12 @@ async def create_speech(
 
     start = time.monotonic()
 
-    params = {
-        "voice": body.voice,
-        "speed": body.speed,
-        "output_format": body.response_format,
-    }
+    output_format = _output_format(body.response_format, config)
+    params: dict = {"output_format": output_format}
+    if voice is not None:
+        params["voice"] = voice
+    if body.speed is not None:
+        params["speed"] = body.speed
     if body.language is not None:
         params["language"] = body.language
     if body.seed is not None:
@@ -98,7 +101,7 @@ async def create_speech(
         cached = await cache.get(cache_key)
         if cached:
             elapsed = int((time.monotonic() - start) * 1000)
-            content_type = CONTENT_TYPES.get(body.response_format, "application/octet-stream")
+            content_type = CONTENT_TYPES.get(output_format, "application/octet-stream")
             if is_prometheus_available():
                 CACHE_HITS.labels(model_id=model_id).inc()
             return Response(
@@ -136,7 +139,7 @@ async def create_speech(
         await cache.put(cache_key, audio_bytes, model_id, cache_cfg)
 
     elapsed = int((time.monotonic() - start) * 1000)
-    content_type = CONTENT_TYPES.get(body.response_format, "application/octet-stream")
+    content_type = CONTENT_TYPES.get(output_format, "application/octet-stream")
     return Response(
         content=audio_bytes,
         media_type=content_type,
@@ -147,6 +150,11 @@ async def create_speech(
             "X-InferGate-Generation-Ms": str(elapsed),
         },
     )
+
+
+def _output_format(requested: str | None, config: ModelConfig) -> str:
+    """The requested audio format, else the model's `output_format` default, else mp3."""
+    return requested or str(config.model.get("default_params", {}).get("output_format", "mp3"))
 
 
 _TRANSCRIPTION_FORMATS = {"json", "text", "verbose_json", "srt", "vtt"}
@@ -328,8 +336,8 @@ async def create_speech_voice_clone(
     input: str = Form(..., min_length=1, max_length=100000),
     model: str | None = Form(None),
     reference_text: str | None = Form(None),
-    response_format: str = Form("mp3"),
-    speed: float = Form(1.0, ge=0.25, le=4.0),
+    response_format: str | None = Form(None),
+    speed: float | None = Form(None, ge=0.25, le=4.0),
     language: str | None = Form(None, max_length=32),
     seed: int | None = Form(None, ge=0, le=2**32 - 1),
     manager=Depends(get_provider_manager),
@@ -350,10 +358,11 @@ async def create_speech_voice_clone(
 
     start = time.monotonic()
     config = manager.get_config(model_id)
+    output_format = _output_format(response_format, config)
 
     params = {
         "speed": speed,
-        "output_format": response_format,
+        "output_format": output_format,
         "reference_audio": ref_bytes,
         "reference_filename": reference_audio.filename or "ref.wav",
         "reference_text": reference_text,
@@ -367,16 +376,17 @@ async def create_speech_voice_clone(
     ref_sha = hashlib.sha256(ref_bytes).hexdigest()[:32]
     cache_params = {
         "input": input, "ref_sha": ref_sha, "reference_text": reference_text or "",
-        "speed": speed, "response_format": response_format,
-        "language": language or "",
+        "output_format": output_format, "language": language or "",
     }
+    if speed is not None:
+        cache_params["speed"] = speed
     if seed is not None:
         cache_params["seed"] = seed
     should_cache = not no_cache and cache.should_cache(cache_cfg, cache_params)
     cache_key = cache.make_key(model_id, cache_params, config.model.get("default_params"))
     cache_status = "DISABLED"
 
-    content_type = CONTENT_TYPES.get(response_format, "application/octet-stream")
+    content_type = CONTENT_TYPES.get(output_format, "application/octet-stream")
 
     if should_cache:
         cached = await cache.get(cache_key)
