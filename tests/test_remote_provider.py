@@ -238,3 +238,63 @@ def test_provider_manager_uses_template_for_remote_discovery():
 
     provider = manager.get("text-template")
     assert provider.config.worker_url == "http://worker-text-template:8000"
+
+
+_KEEPALIVE_RESPONSE = [b"HTTP/1.1 200 OK\r\n", b"Content-Length: 2\r\n", b"\r\n", b"ok"]
+
+
+def _pooled_client(max_connections: int = 10) -> httpx.AsyncClient:
+    """httpx client over a real httpcore pool whose sockets are replaced by canned responses."""
+    import httpcore
+
+    transport = httpx.AsyncHTTPTransport()
+    transport._pool = httpcore.AsyncConnectionPool(
+        max_connections=max_connections,
+        network_backend=httpcore.AsyncMockBackend(_KEEPALIVE_RESPONSE * 2),
+    )
+    return httpx.AsyncClient(transport=transport, base_url="http://worker")
+
+
+@pytest.mark.asyncio
+async def test_pool_stats_tracks_active_and_idle_connections():
+    from app.providers.remote import _pool_stats
+
+    async with _pooled_client() as client:
+        assert _pool_stats(client) == {"active": 0, "idle": 0, "waiting": 0}
+        async with client.stream("GET", "/health") as resp:
+            assert _pool_stats(client) == {"active": 1, "idle": 0, "waiting": 0}
+            await resp.aread()
+        assert _pool_stats(client) == {"active": 0, "idle": 1, "waiting": 0}
+
+
+@pytest.mark.asyncio
+async def test_pool_stats_counts_requests_waiting_for_a_connection():
+    import asyncio
+
+    from app.providers.remote import _pool_stats
+
+    async with _pooled_client(max_connections=1) as client:
+        async with client.stream("GET", "/first") as first:
+            second = asyncio.create_task(client.get("/second"))
+            for _ in range(5):
+                await asyncio.sleep(0)
+            assert _pool_stats(client) == {"active": 1, "idle": 0, "waiting": 1}
+            await first.aread()
+        assert (await second).text == "ok"
+
+
+def test_pool_stats_is_none_without_a_connection_pool():
+    from app.providers.remote import _pool_stats
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    assert _pool_stats(client) is None
+
+
+def test_pool_stats_is_none_when_httpcore_internals_change():
+    from types import SimpleNamespace
+
+    from app.providers.remote import _pool_stats
+
+    renamed = SimpleNamespace(is_available=lambda: True)
+    pool = SimpleNamespace(connections=[renamed], _requests=[])
+    assert _pool_stats(SimpleNamespace(_transport=SimpleNamespace(_pool=pool))) is None

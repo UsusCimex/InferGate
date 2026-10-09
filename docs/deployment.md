@@ -60,7 +60,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.
 ```
 
 - Prometheus: `http://localhost:9090`, раз в 15 с читает `gateway:8000/metrics/prometheus`.
-- Grafana: `http://localhost:3000` (admin/admin). Источник данных и дашборд "InferGate - Gateway & Inference" подключаются автоматически (`deploy/monitoring/grafana/`): частота и задержка запросов, доля ошибок, p95 вывода по моделям, попадания в кэш.
+- Grafana: `http://localhost:3000` (admin/admin). Источник данных и дашборд "InferGate - Gateway & Inference" подключаются автоматически (`deploy/monitoring/grafana/`): частота и задержка запросов, доля ошибок, p95 вывода по моделям, попадания в кэш, доступность воркеров и пул соединений к ним.
 
 | Метрика | Тип | Метки |
 |---|---|---|
@@ -69,8 +69,15 @@ docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.
 | `infergate_inference_duration_seconds` | histogram | model_id, category |
 | `infergate_cache_hits_total`, `infergate_cache_misses_total` | counter | model_id |
 | `infergate_models_loaded`, `infergate_gpu_vram_used_mb`, `infergate_queue_size` | gauge | |
+| `infergate_worker_up` | gauge | model_id |
+| `infergate_worker_health_check_duration_seconds` | histogram | model_id |
+| `infergate_worker_disconnects_total` | counter | model_id, reason |
+| `infergate_http_pool_connections` | gauge | model_id, state |
+| `infergate_http_pool_waiting_requests` | gauge | model_id |
 
 Gauge-метрики шлюз обновляет при каждом чтении `/metrics/prometheus` и `/metrics`; VRAM берётся из `/stats` загруженных воркеров.
+
+`infergate_worker_*` пишет монитор воркеров при каждой проверке `/health`: `up` 1, если воркер ответил 200; `reason` у выгруженных монитором моделей `unreachable` (3 пропуска подряд) или `restarted` (воркер перезапустился без модели). `infergate_http_pool_*` описывают пул соединений шлюза к каждому подключённому воркеру: соединения `active` и `idle` и запросы, которые ждут свободного соединения (предел `GATEWAY_REMOTE_MAX_CONNECTIONS`).
 
 ## Локально без Docker
 

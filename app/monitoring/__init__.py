@@ -9,8 +9,12 @@ from app.monitoring.metrics import (
     QUEUE_SIZE,
     REQUEST_DURATION,
     REQUESTS_TOTAL,
+    forget_worker,
     generate_latest,
     is_prometheus_available,
+    record_worker_disconnect,
+    record_worker_probe,
+    update_pool_gauges,
     update_runtime_gauges,
 )
 from app.monitoring.middleware import (
@@ -33,9 +37,13 @@ __all__ = [
     "PrometheusMiddleware",
     "RequestIdMiddleware",
     "_normalize_path",
+    "forget_worker",
     "generate_latest",
     "get_request_id",
     "is_prometheus_available",
+    "record_worker_disconnect",
+    "record_worker_probe",
     "set_request_id",
+    "update_pool_gauges",
     "update_runtime_gauges",
 ]

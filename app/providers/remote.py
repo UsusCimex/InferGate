@@ -101,6 +101,23 @@ def _request_id_headers() -> dict[str, str]:
     return {"X-Request-ID": rid} if rid else {}
 
 
+def _pool_stats(client: httpx.AsyncClient) -> dict[str, int] | None:
+    """Active, idle and waiting counts of the client's connection pool, or None if unknown."""
+    # httpx exposes no pool API, so this reads httpcore internals: when another version changes
+    # them, the pool gauges go missing and /metrics still answers.
+    try:
+        pool = getattr(getattr(client, "_transport", None), "_pool", None)
+        connections = getattr(pool, "connections", None)
+        if connections is None:
+            return None
+        idle = sum(1 for conn in connections if conn.is_idle())
+        waiting = sum(1 for req in getattr(pool, "_requests", ()) if req.is_queued())
+    except Exception:
+        logger.debug("Could not read the HTTP connection pool", exc_info=True)
+        return None
+    return {"active": len(connections) - idle, "idle": idle, "waiting": waiting}
+
+
 _RETRYABLE_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 
@@ -390,6 +407,10 @@ class BaseRemoteMixin:
             return resp.json()
         except httpx.HTTPError:
             return {}
+
+    def pool_stats(self) -> dict[str, int] | None:
+        """Connection pool counts of the client to the worker; None before load()."""
+        return _pool_stats(self._client) if self._client is not None else None
 
     def _client_required(self) -> httpx.AsyncClient:
         if self._client is None:

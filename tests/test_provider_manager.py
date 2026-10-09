@@ -690,6 +690,32 @@ async def test_worker_monitor_drops_worker_that_restarted_without_its_model(serv
     assert "test-image" not in manager.loaded_models()
 
 
+def _metric(name: str, **labels: str) -> float:
+    from prometheus_client import REGISTRY
+
+    return REGISTRY.get_sample_value(name, labels) or 0.0
+
+
+@pytest.mark.asyncio
+async def test_worker_monitor_publishes_probe_metrics(services, monkeypatch):
+    manager = services["manager"]
+    probes_before = _metric("infergate_worker_health_check_duration_seconds_count", model_id="test-image")
+    drops_before = _metric("infergate_worker_disconnects_total", model_id="test-image", reason="unreachable")
+    await _run_worker_monitor(manager, [True, False, False, False], monkeypatch)
+    assert _metric("infergate_worker_up", model_id="test-image") == 0
+    assert _metric("infergate_worker_health_check_duration_seconds_count", model_id="test-image") == probes_before + 4
+    assert _metric("infergate_worker_disconnects_total", model_id="test-image", reason="unreachable") == drops_before + 1
+
+
+@pytest.mark.asyncio
+async def test_worker_monitor_counts_a_restarted_worker(services, monkeypatch):
+    manager = services["manager"]
+    before = _metric("infergate_worker_disconnects_total", model_id="test-image", reason="restarted")
+    await _run_worker_monitor(manager, [True], monkeypatch, worker_status="idle")
+    assert _metric("infergate_worker_up", model_id="test-image") == 1
+    assert _metric("infergate_worker_disconnects_total", model_id="test-image", reason="restarted") == before + 1
+
+
 @pytest.mark.asyncio
 async def test_plan_eviction_empty_when_already_fits(services):
     """Nothing loaded: empty plan, never None."""

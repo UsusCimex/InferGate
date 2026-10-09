@@ -5,10 +5,12 @@ import contextlib
 import logging
 import os
 import re
+import time
 from collections import OrderedDict
 from typing import Any
 
 from app.config import ModelConfig
+from app.monitoring import forget_worker, record_worker_disconnect, record_worker_probe
 from app.providers.base import BaseProvider
 from app.providers.registry import get_provider_class
 
@@ -196,17 +198,20 @@ class ProviderManager:
                     fail_counts.pop(mid, None)
                     announced.discard(mid)
                     reachable.discard(mid)
+                    forget_worker(mid)
 
             for model_id, provider in remote_models.items():
                 if now < next_probe[model_id]:
                     continue
 
                 healthy = False
+                probe_start = time.monotonic()
                 try:
                     if hasattr(provider, "check_health"):
                         healthy = await provider.check_health()
                 except Exception:
                     healthy = False
+                record_worker_probe(model_id, healthy, time.monotonic() - probe_start)
 
                 if healthy:
                     if model_id not in reachable:
@@ -224,6 +229,7 @@ class ProviderManager:
                             "Worker restarted: %s (%s); model no longer loaded",
                             model_id, provider.config.worker_url,
                         )
+                        record_worker_disconnect(model_id, "restarted")
                         with contextlib.suppress(Exception):
                             await provider.unload()
                         async with self._state_lock:
@@ -236,6 +242,7 @@ class ProviderManager:
                             "Worker disconnected: %s (%s); marking unavailable",
                             model_id, provider.config.worker_url,
                         )
+                        record_worker_disconnect(model_id, "unreachable")
                         # Run unload() so httpx clients are closed; swallow errors because
                         # the worker is already unreachable.
                         with contextlib.suppress(Exception):
@@ -537,6 +544,15 @@ class ProviderManager:
     def active_request_count(self, model_id: str) -> int:
         """Number of in-flight requests for this model (dirty-read, observability only)."""
         return self._active_counts.get(model_id, 0)
+
+    def http_pool_stats(self) -> dict[str, dict[str, int]]:
+        """Connection pool counts of every connected remote model."""
+        pools: dict[str, dict[str, int]] = {}
+        for model_id, provider in self._registry.items():
+            stats = provider.pool_stats() if hasattr(provider, "pool_stats") else None
+            if stats is not None:
+                pools[model_id] = stats
+        return pools
 
     def status_snapshot(self) -> dict[str, Any]:
         """Return a snapshot of LRU + budget state for operator dashboards."""

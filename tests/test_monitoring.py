@@ -79,6 +79,20 @@ async def test_prometheus_scrape_refreshes_gauges(client):
     assert "infergate_queue_size 0.0" in body
 
 
+@pytest.mark.asyncio
+async def test_prometheus_scrape_publishes_http_pool_gauges(client, services):
+    provider = services["manager"].get("test-text")
+    provider.pool_stats = lambda: {"active": 1, "idle": 2, "waiting": 3}
+    body = (await client.get("/metrics/prometheus")).text
+    assert 'infergate_http_pool_connections{model_id="test-text",state="active"} 1.0' in body
+    assert 'infergate_http_pool_connections{model_id="test-text",state="idle"} 2.0' in body
+    assert 'infergate_http_pool_waiting_requests{model_id="test-text"} 3.0' in body
+
+    del provider.pool_stats
+    body = (await client.get("/metrics/prometheus")).text
+    assert 'infergate_http_pool_waiting_requests{model_id="test-text"}' not in body
+
+
 def test_prometheus_available():
     from app.monitoring import is_prometheus_available
     assert is_prometheus_available() is True

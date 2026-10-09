@@ -15,6 +15,7 @@ from app.monitoring import (
     CONTENT_TYPE_LATEST,
     generate_latest,
     is_prometheus_available,
+    update_pool_gauges,
     update_runtime_gauges,
 )
 from app.services.memory_watchdog import live_vram
@@ -86,6 +87,7 @@ async def _publish_gauges(manager, scheduler) -> tuple[int, int]:
         gpu_vram_used_mb=used,
         queue_size=scheduler.queue_info()["queue_size"],
     )
+    update_pool_gauges(manager.http_pool_stats())
     return used, total
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
@@ -42,6 +44,32 @@ try:
         labelnames=["model_id", "category"],
         buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300],
     )
+    WORKER_UP = Gauge(
+        "infergate_worker_up",
+        "1 when the last /health probe of the model's worker answered 200",
+        labelnames=["model_id"],
+    )
+    WORKER_HEALTH_CHECK_DURATION = Histogram(
+        "infergate_worker_health_check_duration_seconds",
+        "Duration of the worker /health probes in seconds",
+        labelnames=["model_id"],
+        buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 3],
+    )
+    WORKER_DISCONNECTS = Counter(
+        "infergate_worker_disconnects_total",
+        "Loaded models the worker monitor dropped",
+        labelnames=["model_id", "reason"],
+    )
+    HTTP_POOL_CONNECTIONS = Gauge(
+        "infergate_http_pool_connections",
+        "Open connections of the gateway's HTTP pool to a worker",
+        labelnames=["model_id", "state"],
+    )
+    HTTP_POOL_WAITING = Gauge(
+        "infergate_http_pool_waiting_requests",
+        "Requests waiting for a free connection to a worker",
+        labelnames=["model_id"],
+    )
 
     _PROMETHEUS_AVAILABLE = True
 
@@ -57,10 +85,47 @@ except ImportError:
     CACHE_HITS = None  # type: ignore[assignment]
     CACHE_MISSES = None  # type: ignore[assignment]
     INFERENCE_DURATION = None  # type: ignore[assignment]
+    WORKER_UP = None  # type: ignore[assignment]
+    WORKER_HEALTH_CHECK_DURATION = None  # type: ignore[assignment]
+    WORKER_DISCONNECTS = None  # type: ignore[assignment]
+    HTTP_POOL_CONNECTIONS = None  # type: ignore[assignment]
+    HTTP_POOL_WAITING = None  # type: ignore[assignment]
 
 
 def is_prometheus_available() -> bool:
     return _PROMETHEUS_AVAILABLE
+
+
+def record_worker_probe(model_id: str, healthy: bool, seconds: float) -> None:
+    if not _PROMETHEUS_AVAILABLE:
+        return
+    WORKER_UP.labels(model_id=model_id).set(1 if healthy else 0)
+    WORKER_HEALTH_CHECK_DURATION.labels(model_id=model_id).observe(seconds)
+
+
+def record_worker_disconnect(model_id: str, reason: str) -> None:
+    if _PROMETHEUS_AVAILABLE:
+        WORKER_DISCONNECTS.labels(model_id=model_id, reason=reason).inc()
+
+
+def forget_worker(model_id: str) -> None:
+    """Drop the up gauge of a model the worker monitor no longer watches."""
+    if not _PROMETHEUS_AVAILABLE:
+        return
+    with contextlib.suppress(KeyError):
+        WORKER_UP.remove(model_id)
+
+
+def update_pool_gauges(pools: dict[str, dict[str, int]]) -> None:
+    """Publish per-worker HTTP pool counts: model id to `active`, `idle` and `waiting`."""
+    if not _PROMETHEUS_AVAILABLE:
+        return
+    HTTP_POOL_CONNECTIONS.clear()
+    HTTP_POOL_WAITING.clear()
+    for model_id, stats in pools.items():
+        HTTP_POOL_CONNECTIONS.labels(model_id=model_id, state="active").set(stats["active"])
+        HTTP_POOL_CONNECTIONS.labels(model_id=model_id, state="idle").set(stats["idle"])
+        HTTP_POOL_WAITING.labels(model_id=model_id).set(stats["waiting"])
 
 
 def update_runtime_gauges(
