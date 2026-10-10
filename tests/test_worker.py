@@ -606,6 +606,7 @@ async def test_failed_reload_brings_the_old_model_back(swap_worker):
 async def test_reload_of_an_unloaded_worker_loads_nothing(swap_worker):
     app, client = swap_worker
     app.state.load_state["status"] = "idle"
+    app.state.provider._loaded = False
     resp = await client.post("/reload", json=_swap_config("test/new"))
     assert resp.json()["action"] == "config"
     assert _SWAPS == []
@@ -637,6 +638,21 @@ async def test_unload_waits_for_the_running_generation(swap_worker):
     assert (await generation).status_code == 200
     assert (await unloading).status_code == 200
     assert _SWAPS == ["unload test/old"]
+
+
+@pytest.mark.asyncio
+async def test_reload_of_an_unloaded_worker_releases_what_the_old_model_kept(swap_worker):
+    app, client = swap_worker
+    app.state.load_state["status"] = "idle"
+    old = app.state.provider
+    released = []
+
+    async def release():
+        released.append(old.config.model["hub_id"])
+
+    old.release = release
+    await client.post("/reload", json=_swap_config("test/new"))
+    assert released == ["test/old"]
 
 
 @pytest.mark.asyncio

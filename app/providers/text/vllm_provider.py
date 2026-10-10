@@ -28,8 +28,22 @@ class VllmTextProvider(TextProvider):
         super().__init__(config)
         self._engine = None
         self._tokenizer = None
+        self._sleeping = False
+
+    @property
+    def sleep_level(self) -> int:
+        """vLLM sleep mode on eviction: 1 keeps the weights in RAM, 2 reads them again; 0 shuts the engine down."""
+        return int(self.config.model.get("sleep_level") or 0)
 
     async def load(self, model_dir: str) -> None:
+        if self._sleeping:
+            try:
+                await self._wake_up()
+                return
+            except Exception as e:
+                logger.warning("Waking %s failed, starting the engine again: %s", self.model_id, e)
+                await self.release()
+
         from vllm import AsyncEngineArgs, AsyncLLMEngine
 
         hub_id = self.config.model["hub_id"]
@@ -58,6 +72,7 @@ class VllmTextProvider(TextProvider):
             enforce_eager=enforce_eager,
             quantization=quantization,
             kv_cache_dtype=kv_cache_dtype,
+            enable_sleep_mode=self.sleep_level > 0,
             **multimodal,
         )
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
@@ -71,11 +86,37 @@ class VllmTextProvider(TextProvider):
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
 
+    async def _wake_up(self) -> None:
+        started = time.monotonic()
+        if self.sleep_level == 2:
+            await self._engine.wake_up(tags=["weights"])
+            await self._engine.collective_rpc("reload_weights")
+            await self._engine.wake_up(tags=["kv_cache"])
+        else:
+            await self._engine.wake_up()
+        self._sleeping = False
+        self._loaded = True
+        logger.info("Woke %s in %.1fs", self.model_id, time.monotonic() - started)
+
     async def unload(self) -> None:
+        if self._sleeping:
+            return
+        if self._engine is not None and self.sleep_level:
+            started = time.monotonic()
+            await self._engine.sleep(self.sleep_level)
+            self._sleeping = True
+            self._loaded = False
+            logger.info("%s sleeps at level %d (%.1fs)", self.model_id, self.sleep_level,
+                        time.monotonic() - started)
+            return
+        await self.release()
+
+    async def release(self) -> None:
         import gc
 
         import torch
 
+        self._sleeping = False
         if self._engine:
             if hasattr(self._engine, "shutdown"):
                 self._engine.shutdown()

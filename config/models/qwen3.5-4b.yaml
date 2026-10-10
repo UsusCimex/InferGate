@@ -14,6 +14,9 @@ model:
   trust_remote_code: ${oc.decode:${oc.env:QWEN3_5_4B_TRUST_REMOTE_CODE,true}}
   gpu_memory_utilization: ${oc.decode:${oc.env:QWEN3_5_4B_GPU_MEM_UTIL,0.90}}
   context_length: ${oc.decode:${oc.env:QWEN3_5_4B_CONTEXT_LENGTH,8192}}
+  # On eviction the engine sleeps: 1 keeps the weights in the worker's RAM (loads in seconds), 2 reads them
+  # again without restarting the engine, 0 shuts it down (~4 min to start again).
+  sleep_level: ${oc.decode:${oc.env:QWEN3_5_4B_SLEEP_LEVEL,1}}
   limit_mm_per_prompt:
     image: 4
     video: 0

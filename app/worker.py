@@ -138,8 +138,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError, TimeoutError):
             await asyncio.wait_for(task, timeout=_UNLOAD_CANCEL_TIMEOUT)
-    if provider.is_loaded():
-        await provider.unload()
+    await app.state.provider.release()
 
 
 app = FastAPI(title="InferGate Worker", lifespan=lifespan)
@@ -400,6 +399,8 @@ async def reload_config(request: Request):
         state: dict[str, Any] = request.app.state.load_state
         async with request.app.state.load_lock:
             if state["status"] != "ready":
+                with contextlib.suppress(Exception):
+                    await old_provider.release()
                 request.app.state.provider = new_provider
                 request.app.state.config = new_config
                 logger.info("Reloaded %s (model not loaded, next /load uses the new config)", new_config.id)
@@ -408,7 +409,7 @@ async def reload_config(request: Request):
             # Old model out first: two copies of a large model do not fit one GPU.
             logger.info("Reloading %s (full): unloading the old provider...", new_config.id)
             try:
-                await old_provider.unload()
+                await old_provider.release()
             except Exception as e:
                 logger.warning("Error unloading old provider (non-fatal): %s", e)
             try:

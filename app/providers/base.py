@@ -35,6 +35,11 @@ class BaseProvider(ABC):
     async def unload(self) -> None:
         """Release model resources and free GPU memory."""
 
+    async def release(self) -> None:
+        """Free everything, also what `unload` keeps for a fast next load; before a swap or exit."""
+        if self.is_loaded():
+            await self.unload()
+
     def is_loaded(self) -> bool:
         return self._loaded
 
