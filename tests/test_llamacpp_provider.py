@@ -1,6 +1,7 @@
 """llama.cpp text provider: GGUF lookup in the HF cache, the chat body it sends and the answers it relays."""
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -114,3 +115,61 @@ async def test_a_server_that_exits_while_loading_fails_the_load(provider, tmp_pa
     with pytest.raises(RuntimeError, match="exited with code 1"):
         await provider.load(str(tmp_path))
     assert not provider.is_loaded()
+
+
+class _Server:
+    def __init__(self):
+        self.returncode = None
+        self.exited = asyncio.Event()
+
+    async def wait(self):
+        await self.exited.wait()
+        return self.returncode
+
+    def terminate(self):
+        self.returncode = 0
+        self.exited.set()
+
+
+@pytest.fixture
+def running(provider, tmp_path, monkeypatch):
+    gguf = tmp_path / "models--google--gemma-4-12B-it-qat-q4_0-gguf" / "snapshots" / "main" / "gemma-4-12b-it-qat-q4_0.gguf"
+    gguf.parent.mkdir(parents=True)
+    gguf.write_bytes(b"GGUF")
+    server = _Server()
+    exits = []
+
+    async def start(*args, **kwargs):
+        return server
+
+    async def ready(self, seconds):
+        return None
+
+    monkeypatch.setattr(llamacpp_provider.asyncio, "create_subprocess_exec", start)
+    monkeypatch.setattr(LlamaCppTextProvider, "_wait_ready", ready)
+    monkeypatch.setattr(llamacpp_provider.os, "_exit", exits.append)
+    monkeypatch.setattr(llamacpp_provider.logging, "shutdown", lambda: None)
+    return server, exits, str(tmp_path)
+
+
+async def test_a_server_that_dies_under_a_loaded_model_exits_the_worker(provider, running):
+    server, exits, models = running
+    await provider.load(models)
+
+    server.returncode = 137
+    server.exited.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert exits == [1]
+
+
+async def test_unloading_stops_the_server_without_exiting(provider, running):
+    server, exits, models = running
+    await provider.load(models)
+
+    await provider.unload()
+    await asyncio.sleep(0)
+
+    assert exits == []
+    assert server.returncode == 0

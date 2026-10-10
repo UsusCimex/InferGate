@@ -26,6 +26,7 @@ class LlamaCppTextProvider(TextProvider):
         super().__init__(config)
         self._process: asyncio.subprocess.Process | None = None
         self._client: httpx.AsyncClient | None = None
+        self._watch: asyncio.Task | None = None
 
     async def load(self, model_dir: str) -> None:
         path = await asyncio.to_thread(self.gguf_path, model_dir)
@@ -49,7 +50,16 @@ class LlamaCppTextProvider(TextProvider):
             await self.unload()
             raise
         self._loaded = True
+        self._watch = asyncio.create_task(self._exit_with(self._process))
         logger.info("Loaded %s", self.model_id)
+
+    async def _exit_with(self, process: asyncio.subprocess.Process) -> None:
+        """A server that dies under a loaded model takes the worker down, so Docker restarts it."""
+        code = await process.wait()
+        if self._process is process:
+            logger.critical("llama-server of %s exited with code %s, worker exiting for restart", self.model_id, code)
+            logging.shutdown()
+            os._exit(1)
 
     def gguf_path(self, model_dir: str) -> str:
         """The GGUF file from the Hugging Face cache in [model_dir], downloaded when it is not there."""
@@ -85,6 +95,9 @@ class LlamaCppTextProvider(TextProvider):
             await self._client.aclose()
             self._client = None
         process, self._process = self._process, None
+        if self._watch is not None:
+            self._watch.cancel()
+            self._watch = None
         if process is not None and process.returncode is None:
             process.terminate()
             try:
