@@ -20,6 +20,16 @@ from app.providers.text._chat_images import (
 logger = logging.getLogger(__name__)
 
 
+def _json_grammar(response_format: str | None, thinking: bool):
+    """json_object holds the answer to the JSON grammar; with thinking the <think> block comes first, so only the
+    instruction asks for JSON."""
+    if response_format != "json_object" or thinking:
+        return None
+    from vllm.sampling_params import StructuredOutputsParams
+
+    return StructuredOutputsParams(json_object=True)
+
+
 @register_provider
 class VllmTextProvider(TextProvider):
     """vLLM-backed LLM provider with streaming and optional thinking mode."""
@@ -155,6 +165,7 @@ class VllmTextProvider(TextProvider):
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            structured_outputs=_json_grammar(response_format, thinking),
         )
 
         if response_format == "json_object":
@@ -167,12 +178,14 @@ class VllmTextProvider(TextProvider):
         output_text = ""
         prompt_tokens = 0
         completion_tokens = 0
+        finish_reason = "stop"
 
         async for output in self._engine.generate(prompt, sampling, request_id):
             final = output
         if final.outputs:
             output_text = final.outputs[0].text
             completion_tokens = len(final.outputs[0].token_ids)
+            finish_reason = final.outputs[0].finish_reason or "stop"
         prompt_tokens = len(final.prompt_token_ids) if final.prompt_token_ids else 0
 
         return {
@@ -184,7 +197,7 @@ class VllmTextProvider(TextProvider):
                 {
                     "index": 0,
                     "message": {"role": "assistant", "content": output_text},
-                    "finish_reason": "stop",
+                    "finish_reason": finish_reason,
                 }
             ],
             "usage": {
@@ -214,6 +227,7 @@ class VllmTextProvider(TextProvider):
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            structured_outputs=_json_grammar(response_format, thinking),
         )
 
         if response_format == "json_object":
@@ -226,9 +240,11 @@ class VllmTextProvider(TextProvider):
         created = int(time.time())
 
         prev_text_len = 0
+        finish_reason = "stop"
         try:
             async for output in self._engine.generate(prompt, sampling, request_id):
                 if output.outputs:
+                    finish_reason = output.outputs[0].finish_reason or finish_reason
                     new_text = output.outputs[0].text[prev_text_len:]
                     prev_text_len = len(output.outputs[0].text)
                     if new_text:
@@ -257,7 +273,7 @@ class VllmTextProvider(TextProvider):
             "choices": [{
                 "index": 0,
                 "delta": {},
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }],
         }
         yield f"data: {json.dumps(final_chunk)}\n\n"
