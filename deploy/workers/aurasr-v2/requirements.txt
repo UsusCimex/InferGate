@@ -1,0 +1,7 @@
+# torch and torchvision come with the GPU base image (pytorch/pytorch:...).
+aura-sr==0.0.4
+einops>=0.7.0
+safetensors>=0.4.0
+huggingface_hub>=0.24.0
+Pillow>=10.0.0
+numpy>=1.24.0

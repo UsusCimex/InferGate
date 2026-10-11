@@ -1,0 +1,31 @@
+id: ultrasharp-v2-x4
+display_name: "4x-UltraSharpV2"
+category: upscale
+provider_class: SpandrelUpscaleProvider
+enabled: ${oc.decode:${oc.env:ULTRASHARP_V2_X4_ENABLED,true}}
+
+model:
+  hub_id: "Kim2091/UltraSharpV2"
+  filename: "4x-UltraSharpV2.safetensors"
+  device: ${oc.env:ULTRASHARP_V2_X4_DEVICE,cuda}
+  torch_dtype: ${oc.env:ULTRASHARP_V2_X4_TORCH_DTYPE,bfloat16}
+  vram_mb: ${oc.decode:${oc.env:ULTRASHARP_V2_X4_VRAM_MB,4500}}
+  gpu: ${oc.decode:${oc.env:ULTRASHARP_V2_X4_GPU,0}}
+  max_input_side: ${oc.decode:${oc.env:ULTRASHARP_V2_X4_MAX_INPUT_SIDE,2048}}
+  tile_size: ${oc.decode:${oc.env:ULTRASHARP_V2_X4_TILE_SIZE,512}}
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: ${oc.env:ULTRASHARP_V2_X4_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:ULTRASHARP_V2_X4_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:ULTRASHARP_V2_X4_MAX_CONCURRENT,1}}
+
+metadata:
+  license: "CC-BY-NC-SA-4.0"
+  description: "4x-UltraSharpV2 (DAT2) via spandrel: sharp upscaler, non-commercial license"
+  tags: ["super-resolution", "upscale", "dat", "spandrel"]

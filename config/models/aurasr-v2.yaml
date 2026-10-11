@@ -1,0 +1,28 @@
+id: aurasr-v2
+display_name: "AuraSR v2 4x"
+category: upscale
+provider_class: AuraSrUpscaleProvider
+enabled: ${oc.decode:${oc.env:AURASR_V2_ENABLED,true}}
+
+model:
+  hub_id: "fal/AuraSR-v2"
+  vram_mb: ${oc.decode:${oc.env:AURASR_V2_VRAM_MB,5500}}
+  gpu: ${oc.decode:${oc.env:AURASR_V2_GPU,0}}
+  max_input_side: ${oc.decode:${oc.env:AURASR_V2_MAX_INPUT_SIDE,2048}}
+  seed: ${oc.decode:${oc.env:AURASR_V2_SEED,0}}
+
+cache:
+  enabled: true
+  strategy: always
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: ${oc.env:AURASR_V2_PRIORITY,medium}
+  timeout_seconds: ${oc.decode:${oc.env:AURASR_V2_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:AURASR_V2_MAX_CONCURRENT,1}}
+
+metadata:
+  license: "Apache-2.0"
+  description: "AuraSR v2: GigaGAN 4x upscaler for generated images, two passes of overlapping 64 px tiles"
+  tags: ["super-resolution", "upscale", "gan", "aura-sr"]

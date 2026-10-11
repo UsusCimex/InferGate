@@ -51,14 +51,16 @@
 | `whisper-base` | `stt` | `WhisperProvider` (faster-whisper) | 0 (CPU, int8) | `json`, `text`, `verbose_json`, `srt`, `vtt` | MIT |
 | `parakeet-tdt-0.6b-v2` | `stt` | `ParakeetProvider` (onnx-asr) | 0 (CPU, int8) | только английский, с пунктуацией; `prompt`, `temperature` и `vad_filter` не нужны | CC-BY-4.0 |
 | `parakeet-tdt-0.6b-v3` | `stt` | `ParakeetProvider` (onnx-asr) | 0 (CPU, int8) | 25 европейских языков, в том числе русский, язык определяет сама | CC-BY-4.0 |
-| `realesrgan-x4` | `upscale` | `SpandrelUpscaleProvider` | 1500 | x4, вход до 2048 px по стороне, больше 1024 px идёт тайлами | BSD-3-Clause |
+| `realesrgan-x4` | `upscale` | `SpandrelUpscaleProvider` | 3500 | x4, вход до 2048 px по стороне, тайлы по 512 px | BSD-3-Clause |
+| `ultrasharp-v2-x4` | `upscale` | `SpandrelUpscaleProvider` | 4500 | x4, DAT2 в bfloat16, тайлы по 512 px; на карточках PictoLex лучше Real-ESRGAN | CC-BY-NC-SA-4.0, некоммерческая |
+| `aurasr-v2` | `upscale` | `AuraSrUpscaleProvider` (aura-sr) | 5500 | x4, GigaGAN, тайлы по 64 px в два прохода, seed из конфига; сжатые картинки делает блочными | Apache-2.0 |
 | `multilingual-e5-base` | `embedding-text` | `SentenceTransformerEmbeddingProvider` | 0 (CPU) | выключена | MIT |
 | `clip-vit-base-patch32` | `embedding-multimodal` | `CLIPProvider` | 1500 | выключена; текст и картинки, 512 измерений | MIT |
 | `siglip-base-multilingual` | `embedding-multimodal` | `SigLIPProvider` | 2000 | выключена; только свой профиль | Apache-2.0 |
 | `clap-htsat-fused` | `embedding-audio` | `ClapEmbeddingProvider` | 4000 | выключена | CC-BY-4.0 |
 | `clip4clip-webvid150k` | `embedding-video` | `CLIP4ClipProvider` | 2000 | выключена; 12 кадров на видео | MIT |
 
-Модели по умолчанию (`defaults` в `config/server.yaml`): картинки `sdxl-base`, текст `qwen3.5-4b`, озвучка `kokoro-82m`, распознавание `whisper-base`, апскейл `realesrgan-x4`, эмбеддинги E5, CLAP, CLIP, CLIP4Clip. PictoLex сам указывает модели: `flux2-klein-4b`, `qwen3.5-4b`, `kokoro-82m`, `voxcpm2`.
+Модели по умолчанию (`defaults` в `config/server.yaml`): картинки `sdxl-base`, текст `qwen3.5-4b`, озвучка `kokoro-82m`, распознавание `whisper-base`, апскейл `realesrgan-x4`, эмбеддинги E5, CLAP, CLIP, CLIP4Clip. PictoLex сам указывает модели: `flux2-klein-4b`, `qwen3.5-4b`, `gemma-4-12b` (истории), `kokoro-82m`, `voxcpm2`, `parakeet-tdt-0.6b-v3`, `ultrasharp-v2-x4`.
 
 ## Профили Compose
 

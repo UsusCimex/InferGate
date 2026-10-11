@@ -97,6 +97,8 @@ target "worker" {
       { id = "parakeet-tdt-0.6b-v3", base = CPU_BASE_IMAGE, apt = "",             post = "" },
       # Upscale (super-resolution)
       { id = "realesrgan-x4",     base = GPU_BASE_IMAGE, apt = "",                post = "" },
+      { id = "ultrasharp-v2-x4",  base = GPU_BASE_IMAGE, apt = "",                post = "" },
+      { id = "aurasr-v2",         base = GPU_BASE_IMAGE, apt = "",                post = "" },
       # Embeddings
       { id = "multilingual-e5-base",     base = CPU_BASE_IMAGE, apt = "",         post = "" },
       { id = "clap-htsat-fused",         base = GPU_BASE_IMAGE, apt = "",         post = "" },

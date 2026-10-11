@@ -143,6 +143,8 @@ services:
       - WORKER_URL_PARAKEET_TDT_0_6B_V2=http://worker-parakeet-tdt-0-6b-v2:8001
       - WORKER_URL_PARAKEET_TDT_0_6B_V3=http://worker-parakeet-tdt-0-6b-v3:8001
       - WORKER_URL_REALESRGAN_X4=http://worker-realesrgan-x4:8001
+      - WORKER_URL_ULTRASHARP_V2_X4=http://worker-ultrasharp-v2-x4:8001
+      - WORKER_URL_AURASR_V2=http://worker-aurasr-v2:8001
       - WORKER_URL_XTTS_V2=http://worker-xtts-v2:8001
       - WORKER_URL_QWEN3_TTS_06B=http://worker-qwen3-tts-06b:8001
       - WORKER_URL_VOXCPM2=http://worker-voxcpm2:8001
@@ -653,6 +655,38 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/realesrgan-x4/requirements.txt
     volumes:
       - ../config/models/realesrgan-x4.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  worker-ultrasharp-v2-x4:
+    <<: *gpu
+    profiles: ["upscale", "ultrasharp-v2-x4"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/ultrasharp-v2-x4/requirements.txt
+    volumes:
+      - ../config/models/ultrasharp-v2-x4.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  worker-aurasr-v2:
+    <<: *gpu
+    profiles: ["upscale", "aurasr-v2"]
+    build:
+      <<: *build
+      args:
+        BASE_IMAGE: ${GPU_BASE_IMAGE:-pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime}
+        APT_PACKAGES: ""
+        WORKER_REQUIREMENTS: deploy/workers/aurasr-v2/requirements.txt
+    volumes:
+      - ../config/models/aurasr-v2.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env

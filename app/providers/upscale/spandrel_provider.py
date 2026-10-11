@@ -111,6 +111,9 @@ class SpandrelUpscaleProvider(ImageUpscaleProvider):
 
             buf = io.BytesIO()
             out_img.save(buf, format="PNG")
+            # The allocator keeps the activations of the pass reserved; hand them back to the other models.
+            if self._device == "cuda":
+                torch.cuda.empty_cache()
             return buf.getvalue()
 
         loop = asyncio.get_running_loop()
