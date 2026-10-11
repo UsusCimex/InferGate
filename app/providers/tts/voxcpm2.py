@@ -17,6 +17,9 @@ from app.providers.registry import register_provider
 logger = logging.getLogger(__name__)
 
 VOICES_DIR = Path(__file__).with_name("voxcpm2_voices")
+# One thread for every load and synthesis in the process: CUDA graph trees are thread-local, and a provider
+# that /reload built on a thread of its own failed its warm-up and left the old graphs' memory taken.
+_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="voxcpm2")
 _SF_FORMATS = {"mp3": "MP3", "wav": "WAV", "flac": "FLAC", "opus": "OGG"}
 
 
@@ -44,8 +47,7 @@ class VoxCpm2TtsProvider(TtsProvider):
         super().__init__(config)
         self._model = None
         self._voices = load_preset_voices()
-        # One thread for load and synthesis: CUDA graph trees are thread-local and re-record per thread.
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="voxcpm2")
+        self._executor = _EXECUTOR
 
     async def load(self, model_dir: str) -> None:
         hub_id = self.config.model["hub_id"]

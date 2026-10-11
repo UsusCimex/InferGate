@@ -415,7 +415,7 @@ async def reload_config(request: Request):
             try:
                 await new_provider.load(models_dir)
             except Exception as e:
-                logger.error("Failed to load new provider during reload: %s", e)
+                logger.exception("Failed to load new provider during reload")
                 note = await _restore_provider(request.app, old_config, models_dir)
                 return JSONResponse(
                     {"error": {"message": f"load failed: {e}; {note}", "type": "load_failed"}},
@@ -435,7 +435,7 @@ async def _restore_provider(app: FastAPI, config: ModelConfig, models_dir: str) 
     try:
         await provider.load(models_dir)
     except Exception as e:
-        logger.error("Restoring %s after a failed reload failed: %s", config.id, e)
+        logger.exception("Restoring %s after a failed reload failed", config.id)
         app.state.load_state.update(_initial_load_state())
         return f"the previous model did not load either: {e}"
     return "the previous model is loaded again"

@@ -68,6 +68,12 @@ def _lufs(audio: bytes) -> tuple[float, float]:
     return pyloudnorm.Meter(rate).integrated_loudness(wav), 20 * np.log10(np.max(np.abs(wav)))
 
 
+def test_providers_of_one_process_share_one_thread():
+    config = load_single_model_config(str(_CONFIG))
+
+    assert VoxCpm2TtsProvider(config)._executor is VoxCpm2TtsProvider(config)._executor
+
+
 def test_bundled_presets_match_config():
     config = load_single_model_config(str(_CONFIG))
     presets = load_preset_voices()
