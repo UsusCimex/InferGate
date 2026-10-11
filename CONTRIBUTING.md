@@ -32,7 +32,7 @@ Closes #12
 
 ## Перед пушем
 
-- Проверки проходят: PictoLex `./gradlew :app:testDebugUnitTest`, InferGate `ruff check app/ tests/` и `pytest`, диплом `python thesis/generate_dissertation.py`, если менялся текст.
+- Проверки проходят: PictoLex `./gradlew testDebugUnitTest`, InferGate `ruff check app/ tests/` и `pytest`, диплом `python thesis/generate_dissertation.py`, если менялся текст.
 - В изменениях нет ключей, токенов и личных данных.
 - Документация, которую затронуло изменение, поправлена в том же коммите.
 
