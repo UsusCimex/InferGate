@@ -15,8 +15,8 @@ model:
   gpu_memory_utilization: ${oc.decode:${oc.env:QWEN3_5_4B_GPU_MEM_UTIL,0.90}}
   context_length: ${oc.decode:${oc.env:QWEN3_5_4B_CONTEXT_LENGTH,8192}}
   # On eviction 0 shuts the engine down (~4 min to start again); 1 puts it to sleep with the weights in the
-  # worker's RAM (wakes in 1-2 s, holds ~7.5 GB RAM and 2.2 GB VRAM), 2 reads them again without a restart.
-  # A 17.6 GB Docker VM runs out of memory loading VoxCPM2 beside a sleeping qwen, so sleep is opt-in.
+  # worker's RAM (wakes in 1-3 s, holds ~7.5 GB RAM and 2.2 GB VRAM), 2 reads them again without a restart.
+  # Sleep is opt-in: a 17.6 GB Docker VM runs out of memory loading VoxCPM2 beside a sleeping qwen, 22 GB does not.
   sleep_level: ${oc.decode:${oc.env:QWEN3_5_4B_SLEEP_LEVEL,0}}
   limit_mm_per_prompt:
     image: 4
