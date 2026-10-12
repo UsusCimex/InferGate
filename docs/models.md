@@ -1,6 +1,6 @@
 # Модели
 
-Модель: один YAML в `config/models/` и один контейнер-воркер в `deploy/docker-compose.yml`. Сейчас их 27 в девяти категориях; 17 включены по умолчанию (`enabled`), но контейнер стартует, только если выбран его профиль Compose.
+Модель: один YAML в `config/models/` и один контейнер-воркер в `deploy/docker-compose.yml`. Сейчас их 32 в девяти категориях; 22 включены по умолчанию (`enabled`), но контейнер стартует, только если выбран его профиль Compose.
 
 ## Каталог
 
@@ -68,17 +68,17 @@
 
 | Профиль | Воркеры |
 |---|---|
-| `text` | `qwen3.5-4b` |
+| `text` | `qwen3.5-4b`, `gemma-4-12b` |
 | `image` | `sdxl-base` |
 | `tts` | `kokoro-82m`, `voxcpm2` |
 | `voice-clone` | `qwen3-tts-06b`, `xtts-v2` |
 | `stt` | `whisper-base`, `parakeet-tdt-0.6b-v2`, `parakeet-tdt-0.6b-v3` |
-| `upscale` | `realesrgan-x4` |
+| `upscale` | `realesrgan-x4`, `ultrasharp-v2-x4`, `aurasr-v2` |
 | `embedding` | E5, CLAP, CLIP, CLIP4Clip |
 | `embedding-text`, `embedding-audio`, `embedding-image`, `embedding-video` | по одному эмбеддеру |
 | `<id модели>` | воркер этой модели (например `flux2-klein-4b`, `siglip-base-multilingual`) |
 
-Для PictoLex: `COMPOSE_PROFILES=flux2-klein-4b,qwen3.5-4b,kokoro-82m,voxcpm2`.
+Для PictoLex: `COMPOSE_PROFILES=flux2-klein-4b,qwen3.5-4b,gemma-4-12b,kokoro-82m,voxcpm2,parakeet-tdt-0.6b-v3,ultrasharp-v2-x4`; два последних нужны голосовому управлению и апскейлу в инструментах админа.
 
 ## Провайдеры
 
@@ -91,7 +91,7 @@
 | `text` | `LlamaCppTextProvider` | GGUF через llama-server: воркер запускает его на `/load` и передаёт запросы чата; флаги сервера в `model.server_args`, образ `deploy/Dockerfile.llamacpp` |
 | `tts` | `KokoroTtsProvider`, `VoxCpm2TtsProvider`, `Qwen3TtsProvider`, `XttsTtsProvider`, `FishSpeechTtsProvider` | синтез и клонирование голоса |
 | `stt` | `WhisperProvider`, `ParakeetProvider` | faster-whisper (CTranslate2); Parakeet TDT из ONNX-экспорта через onnx-asr, звук любого формата читает PyAV |
-| `upscale` | `SpandrelUpscaleProvider` | spandrel: Real-ESRGAN, SwinIR и др. |
+| `upscale` | `SpandrelUpscaleProvider`, `AuraSrUpscaleProvider` | spandrel: Real-ESRGAN, 4x-UltraSharpV2, SwinIR и др.; AuraSR v2 через aura-sr |
 | `embedding-*` | `SentenceTransformerEmbeddingProvider`, `CLIPProvider`, `SigLIPProvider`, `ClapEmbeddingProvider`, `CLIP4ClipProvider` | эмбеддинги текста, картинок, аудио, видео |
 
 Базовые классы в `app/providers/base.py` (Image, Text, Tts, Stt, ImageUpscale и четыре вида эмбеддингов). Провайдер регистрируется декоратором `@register_provider` и лежит в одном из подпакетов `app/providers/{image,text,tts,stt,upscale,embedding}`.
