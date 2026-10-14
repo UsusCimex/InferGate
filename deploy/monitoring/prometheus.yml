@@ -4,6 +4,9 @@ global:
 scrape_configs:
   - job_name: "infergate"
     metrics_path: "/metrics/prometheus"
+    # With auth.enabled the gateway asks for a key here too; mount a file with one of auth.api_keys.
+    # authorization:
+    #   credentials_file: /etc/prometheus/key.txt
     static_configs:
       - targets: ["gateway:8000"]
         labels:

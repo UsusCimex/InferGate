@@ -63,6 +63,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/monitoring/docker-compose.
 
 - Prometheus: `http://localhost:9090`, раз в 15 с читает `gateway:8000/metrics/prometheus`.
 - Grafana: `http://localhost:3000` (admin/admin). Источник данных и дашборд "InferGate - Gateway & Inference" подключаются автоматически (`deploy/monitoring/grafana/`): частота и задержка запросов, доля ошибок, p95 вывода по моделям, попадания в кэш, доступность воркеров и пул соединений к ним.
+- С авторизацией шлюза (`auth.enabled`) `/metrics/prometheus` тоже требует ключ, иначе цель Prometheus `down` с 401: в `prometheus.yml` раскомментировать `authorization` и смонтировать файл с ключом в контейнер Prometheus.
 
 | Метрика | Тип | Метки |
 |---|---|---|
