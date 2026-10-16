@@ -12,7 +12,7 @@ Self-hosted OpenAI-совместимый шлюз к локальным мод�
 | Текст | Qwen 3.5 4B (с картинками во входе), Qwen 3.5 9B, Qwen 3 8B, Llama 3.1 8B (vLLM), Gemma 4 12B (llama.cpp) |
 | Озвучка | Kokoro 82M, VoxCPM2 (четыре готовых голоса и клонирование голоса), Qwen3-TTS 0.6B и XTTS v2 (клонирование), OpenAudio S1 Mini |
 | Распознавание | Whisper Base (faster-whisper), Parakeet TDT 0.6B v2 и v3 (onnx-asr) |
-| Апскейл | Real-ESRGAN x4 |
+| Апскейл | Real-ESRGAN x4 и 4x-UltraSharpV2 (spandrel), AuraSR v2 (aura-sr) |
 | Эмбеддинги | Multilingual E5, CLIP, SigLIP, CLAP, CLIP4Clip |
 
 Модель с существующим провайдером добавляется YAML-файлом, строкой в матрице сборки и сервисом Compose, без кода Python. Каталог, профили и VRAM: [docs/models.md](docs/models.md).

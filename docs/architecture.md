@@ -84,9 +84,9 @@
 | `app/schemas/` | pydantic-модели запросов и ответов (`extra="forbid"`) |
 | `app/providers/` | `base.py` (базовые классы), `registry.py` (`@register_provider`), `remote.py` и `_remote_protocol.py` (удалённые провайдеры шлюза) |
 | `app/providers/image/` | diffusers (`_compel`, `_highres_fix`, `_lora`, `_schedulers`, `_textual_inversion`), janus, meissonic |
-| `app/providers/text/` | vLLM (`_chat_images`) |
+| `app/providers/text/` | vLLM (`_chat_images`), llama.cpp |
 | `app/providers/tts/` | kokoro, voxcpm2 (`voxcpm2_voices/`), qwen3_tts, xtts, fish_speech |
-| `app/providers/stt/`, `upscale/`, `embedding/` | whisper, parakeet; spandrel; sentence-transformers, CLIP, SigLIP, CLAP, CLIP4Clip |
+| `app/providers/stt/`, `upscale/`, `embedding/` | whisper, parakeet; spandrel, aura-sr (`_tiles`); sentence-transformers, CLIP, SigLIP, CLAP, CLIP4Clip |
 | `app/services/` | provider_manager, gpu_scheduler, cache_manager (`cache_backends/`), config_watcher, config_sync, embedding_batcher, memory_watchdog, prompt_history (история запросов картинок для `/ui`) |
 | `app/static/ui.html` | веб-страница: HTML, CSS и JS в одном файле без зависимостей |
 | `app/utils/uploads.py` | предел размера загрузок |
