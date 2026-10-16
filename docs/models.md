@@ -39,7 +39,7 @@
 | id | Модель | Провайдер | VRAM, МБ | Особенности | Лицензия |
 |---|---|---|---|---|---|
 | `kokoro-82m` | Kokoro 82M | `KokoroTtsProvider` | 0 (CPU) | английские голоса, американские `a*` и британские `b*`: язык по первой букве голоса | MIT |
-| `voxcpm2` | VoxCPM2 | `VoxCpm2TtsProvider` | 8000 | четыре рассказчика (`vox_clara`, `vox_arthur`, `vox_lily`, `vox_daniel`) из `app/providers/tts/voxcpm2_voices/`, клонирование голоса, mp3 48 кГц, громкость -25 LUFS, seed 42, `torch.compile` | Apache-2.0 |
+| `voxcpm2` | VoxCPM2 | `VoxCpm2TtsProvider` | 8000 | четыре готовых голоса (`vox_clara`, `vox_arthur`, `vox_lily`, `vox_daniel`) из `app/providers/tts/voxcpm2_voices/`, клонирование голоса, mp3 48 кГц, громкость -25 LUFS, seed 42, `torch.compile` | Apache-2.0 |
 | `qwen3-tts-06b` | Qwen3-TTS 0.6B | `Qwen3TtsProvider` | 2500 | только клонирование (`voice_clone_only`), 10 языков, нужен `reference_text` | Apache-2.0 |
 | `xtts-v2` | XTTS v2 (Coqui) | `XttsTtsProvider` | 2000 | выключена; только клонирование, 17 языков | CPML (некоммерческая) |
 | `openaudio-s1-mini` | OpenAudio S1 Mini | `FishSpeechTtsProvider` | 4000 | выключена, экспериментальная | Apache-2.0 |
@@ -52,7 +52,7 @@
 | `parakeet-tdt-0.6b-v2` | `stt` | `ParakeetProvider` (onnx-asr) | 0 (CPU, int8) | только английский, с пунктуацией; `prompt`, `temperature` и `vad_filter` не нужны | CC-BY-4.0 |
 | `parakeet-tdt-0.6b-v3` | `stt` | `ParakeetProvider` (onnx-asr) | 0 (CPU, int8) | 25 европейских языков, в том числе русский, язык определяет сама | CC-BY-4.0 |
 | `realesrgan-x4` | `upscale` | `SpandrelUpscaleProvider` | 3500 | x4, вход до 2048 px по стороне, тайлы по 512 px | BSD-3-Clause |
-| `ultrasharp-v2-x4` | `upscale` | `SpandrelUpscaleProvider` | 4500 | x4, DAT2 в bfloat16, тайлы по 512 px; на карточках PictoLex лучше Real-ESRGAN | CC-BY-NC-SA-4.0, некоммерческая |
+| `ultrasharp-v2-x4` | `upscale` | `SpandrelUpscaleProvider` | 4500 | x4, DAT2 в bfloat16, тайлы по 512 px; в слепом сравнении на 12 картинках лучше Real-ESRGAN в 10 парах и AuraSR v2 в 11 | CC-BY-NC-SA-4.0, некоммерческая |
 | `aurasr-v2` | `upscale` | `AuraSrUpscaleProvider` (aura-sr) | 5500 | x4, GigaGAN, тайлы по 64 px в два прохода, seed из конфига; сжатые картинки делает блочными | Apache-2.0 |
 | `multilingual-e5-base` | `embedding-text` | `SentenceTransformerEmbeddingProvider` | 0 (CPU) | выключена | MIT |
 | `clip-vit-base-patch32` | `embedding-multimodal` | `CLIPProvider` | 1500 | выключена; текст и картинки, 512 измерений | MIT |
@@ -60,7 +60,7 @@
 | `clap-htsat-fused` | `embedding-audio` | `ClapEmbeddingProvider` | 4000 | выключена | CC-BY-4.0 |
 | `clip4clip-webvid150k` | `embedding-video` | `CLIP4ClipProvider` | 2000 | выключена; 12 кадров на видео | MIT |
 
-Модели по умолчанию (`defaults` в `config/server.yaml`): картинки `sdxl-base`, текст `qwen3.5-4b`, озвучка `kokoro-82m`, распознавание `whisper-base`, апскейл `realesrgan-x4`, эмбеддинги E5, CLAP, CLIP, CLIP4Clip. PictoLex сам указывает модели: `flux2-klein-4b`, `qwen3.5-4b`, `gemma-4-12b` (истории), `kokoro-82m`, `voxcpm2`, `parakeet-tdt-0.6b-v3`, `ultrasharp-v2-x4`.
+Модели по умолчанию (`defaults` в `config/server.yaml`): картинки `sdxl-base`, текст `qwen3.5-4b`, озвучка `kokoro-82m`, распознавание `whisper-base`, апскейл `realesrgan-x4`, эмбеддинги E5, CLAP, CLIP, CLIP4Clip.
 
 ## Профили Compose
 
@@ -77,8 +77,6 @@
 | `embedding` | E5, CLAP, CLIP, CLIP4Clip |
 | `embedding-text`, `embedding-audio`, `embedding-image`, `embedding-video` | по одному эмбеддеру |
 | `<id модели>` | воркер этой модели (например `flux2-klein-4b`, `siglip-base-multilingual`) |
-
-Для PictoLex: `COMPOSE_PROFILES=flux2-klein-4b,qwen3.5-4b,gemma-4-12b,kokoro-82m,voxcpm2,parakeet-tdt-0.6b-v3,ultrasharp-v2-x4`; два последних нужны голосовому управлению и апскейлу в инструментах админа.
 
 ## Провайдеры
 

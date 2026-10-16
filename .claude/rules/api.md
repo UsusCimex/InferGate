@@ -13,5 +13,5 @@ paths:
 - Keep OpenAI compatibility for the OpenAI-shaped routes; extensions get their own fields or routes.
 - Cached endpoints follow one sequence: `X-InferGate-No-Cache`, `should_cache`, get (HIT), miss metrics, `scheduler.submit` inside `manager.active_request`, histogram, put, `X-InferGate-*` headers. Cache keys must include every parameter that changes the output.
 - Capability checks (`vision`, `voices`, `voice_clone_only`) run before `ensure_loaded`, so a bad request never loads a model.
-- PictoLex reads `X-InferGate-Cache`, `-Model`, `-Generation-Ms`, `-Queue-Position`, `-Load-Ms`, `-Inference-Ms` and sends `X-InferGate-No-Cache`; keep their names and formats.
+- `X-InferGate-Cache`, `-Model`, `-Generation-Ms`, `-Queue-Position`, `-Load-Ms`, `-Inference-Ms` and the request header `X-InferGate-No-Cache` are public API: keep their names and formats.
 - Document new routes, fields and headers in `docs/api.md`.

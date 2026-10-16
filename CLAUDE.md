@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-InferGate is a self-hosted OpenAI-compatible gateway for local models: images (diffusers, Janus-Pro, Meissonic), text via vLLM (with image input for `capabilities.vision` models), TTS and voice cloning, speech-to-text (faster-whisper), upscaling (spandrel) and embeddings. A light FastAPI gateway proxies to one Docker worker container per model. 27 model configs live in `config/models/`; the main client is the PictoLex Android app (`../Comput`). Plans, ideas and known problems are GitHub Issues.
+InferGate is a self-hosted OpenAI-compatible gateway for local models: images (diffusers, Janus-Pro, Meissonic), text via vLLM and llama.cpp (with image input for `capabilities.vision` models), TTS and voice cloning, speech-to-text (faster-whisper, Parakeet on onnx-asr), upscaling (spandrel, AuraSR) and embeddings. A light FastAPI gateway proxies to one Docker worker container per model; model configs live in `config/models/`. Plans, ideas and known problems are GitHub Issues.
 
-Shared rules for tasks, commits, branches, checks before a push, versions, texts and comments: @CONTRIBUTING.md
+Rules for tasks, commits, branches, checks before a push, texts and comments: @CONTRIBUTING.md
 
 ## Docs
 
@@ -41,7 +41,7 @@ A request goes through the router (`app/routers/`), the capability checks, the c
 - **`deploy/.env` holds `HF_TOKEN`**: never print it or commit it; show only filtered lines. A worker must be recreated to see a changed `.env`.
 - **Adding a model** touches five places: the YAML, `deploy/workers/<id>/requirements.txt`, a `docker-bake.hcl` row, a `worker-<id>` service in `docker-compose.yml`, and `WORKER_URL_<ID>` on the gateway service. Env names are `<ID>_<FIELD>` with every non-alphanumeric character turned into `_`; service names turn dots into dashes.
 - **`scripts/diagnose/*.sh` and several `scripts/feature/*.sh` rewrite `deploy/.env`** (profiles, quantization flags) without restoring it; check `.env` after running them.
-- **PictoLex depends on the model ids, the `voice-clone` tag, `capabilities.voices` of `voxcpm2`, the TTS `seed` and the `X-InferGate-*` headers.** Renaming or dropping any of them breaks the app.
+- **Clients rely on the model ids, the `voice-clone` tag, `capabilities.voices`, the TTS `seed` and the `X-InferGate-*` headers.** Renaming or dropping any of them breaks the public API.
 
 ## Code style
 
