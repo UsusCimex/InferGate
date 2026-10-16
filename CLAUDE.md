@@ -52,7 +52,7 @@ A request goes through the router (`app/routers/`), the capability checks, the c
 - **Types**: `pyright` in `basic` mode; new code adds no `pyright` errors.
 - **Async**: asyncio primitives (`asyncio.Lock`, `asyncio.Semaphore`) over threading; blocking filesystem or CPU work goes through `asyncio.to_thread`.
 - **Logs and messages** in English.
-- **Comments**, on top of the shared rules: `# noqa: XYZ` carries a short reason; no comments in model YAMLs and `pyproject.toml`.
+- **Comments**, on top of CONTRIBUTING.md: `# noqa: XYZ` carries a short reason; a model YAML comments only a measured number or a non-obvious value; no comments in `pyproject.toml`.
 
 ## Testing
 
