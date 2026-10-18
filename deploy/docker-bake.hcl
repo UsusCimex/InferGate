@@ -78,6 +78,8 @@ target "worker" {
       { id = "flux1-dev",         base = GPU_BASE_IMAGE, apt = "",                post = "" },
       { id = "flux1-schnell",     base = GPU_BASE_IMAGE, apt = "build-essential", post = "" },
       { id = "flux2-klein-4b",    base = GPU_BASE_IMAGE, apt = "",                post = "" },
+      # torch 2.7.1 has no rowwise FP8 matmul on Blackwell, which the fp8r transformer needs.
+      { id = "flux3-klein",       base = "pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime", apt = "git", post = "" },
       { id = "qwen-image",        base = GPU_BASE_IMAGE, apt = "build-essential", post = "" },
       { id = "z-image-turbo",     base = GPU_BASE_IMAGE, apt = "git build-essential", post = "" },
       # Autoregressive (non-diffusion)

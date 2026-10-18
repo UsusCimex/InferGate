@@ -1,6 +1,6 @@
 # Модели
 
-Модель: один YAML в `config/models/` и один контейнер-воркер в `deploy/docker-compose.yml`. Сейчас их 32 в девяти категориях; 22 включены по умолчанию (`enabled`), но контейнер стартует, только если выбран его профиль Compose.
+Модель: один YAML в `config/models/` и один контейнер-воркер в `deploy/docker-compose.yml`. Сейчас их 33 в девяти категориях; 23 включены по умолчанию (`enabled`), но контейнер стартует, только если выбран его профиль Compose.
 
 ## Каталог
 
@@ -15,6 +15,7 @@
 | `flux1-schnell` | FLUX.1 Schnell | `DiffusersImageProvider` | 11000 | bf16, послойная выгрузка, 4 шага | Apache-2.0 |
 | `flux1-dev` | FLUX.1 Dev (gated) | `DiffusersImageProvider` | 11000 | bf16, послойная выгрузка, 28 шагов | FLUX.1-dev Non-Commercial |
 | `flux2-klein-4b` | FLUX.2 Klein 4B | `DiffusersImageProvider` | 6000 | bf16, послойная выгрузка; на 12 ГБ nf4 трансформера и текстового энкодера; референсы (`reference_images`) | Apache-2.0 |
+| `flux3-klein` | FLUX 3 Image Klein (gated) | `Flux3ImageProvider` | 10000 | трансформер fp8r, текстовый энкодер nf4 на GPU только на время кодирования, VAE bf16, 8 шагов без guidance, референсы до 768 px; промт уходит в модель как есть, без апсемплера BFL | FLUX Kommunity |
 | `qwen-image` | Qwen-Image | `DiffusersImageProvider` | 11000 | nf4, послойная выгрузка | Apache-2.0 |
 | `hunyuan-dit` | Hunyuan-DiT v1.2 | `DiffusersImageProvider` | 7000 | fp16 | Tencent Hunyuan Community |
 | `z-image-turbo` | Z-Image Turbo | `DiffusersImageProvider` | 12000 | bf16, 8 шагов; на 12 ГБ nf4 | Apache-2.0 |
@@ -85,6 +86,7 @@
 | `image` | `DiffusersImageProvider` | любая модель diffusers: LoRA, Textual Inversion, веса compel (SDXL), смена планировщика, HighresFix, SDXL Refiner, img2img, inpaint, nf4 через bitsandbytes, превью шагов в потоке |
 | `image` | `JanusImageProvider` | DeepSeek Janus-Pro (авторегрессия) |
 | `image` | `MeissonicImageProvider` | Meissonic (пайплайн из репозитория авторов) |
+| `image` | `Flux3ImageProvider` | FLUX 3 Image Klein через модульный конвейер diffusers: текст в картинку и референсы, трансформер fp8r или nvfp4 из `variants/`, текстовый энкодер в nf4; без negative prompt, guidance, img2img и LoRA |
 | `text` | `VllmTextProvider` | любая LLM через vLLM: потоковый вывод, шаблоны чата, картинки во входе |
 | `text` | `LlamaCppTextProvider` | GGUF через llama-server: воркер запускает его на `/load` и передаёт запросы чата; флаги сервера в `model.server_args`, образ `deploy/Dockerfile.llamacpp` |
 | `tts` | `KokoroTtsProvider`, `VoxCpm2TtsProvider`, `Qwen3TtsProvider`, `XttsTtsProvider`, `FishSpeechTtsProvider` | синтез и клонирование голоса |

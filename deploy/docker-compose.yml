@@ -131,6 +131,7 @@ services:
       - WORKER_URL_FLUX1_DEV=http://worker-flux1-dev:8001
       - WORKER_URL_FLUX1_SCHNELL=http://worker-flux1-schnell:8001
       - WORKER_URL_FLUX2_KLEIN_4B=http://worker-flux2-klein-4b:8001
+      - WORKER_URL_FLUX3_KLEIN=http://worker-flux3-klein:8001
       - WORKER_URL_QWEN_IMAGE=http://worker-qwen-image:8001
       - WORKER_URL_Z_IMAGE_TURBO=http://worker-z-image-turbo:8001
       - WORKER_URL_HUNYUAN_DIT=http://worker-hunyuan-dit:8001
@@ -318,6 +319,23 @@ services:
         WORKER_REQUIREMENTS: deploy/workers/flux2-klein-4b/requirements.txt
     volumes:
       - ../config/models/flux2-klein-4b.yaml:/app/config/model.yaml:ro
+      - ${MODELS_DIR:-../models}:/app/models
+    env_file: *env-file
+    environment: *env
+    healthcheck: *hc-image
+
+  worker-flux3-klein:
+    <<: *gpu
+    profiles: ["flux3-klein"]
+    build:
+      <<: *build
+      args:
+        # torch 2.7.1 has no rowwise FP8 matmul on Blackwell, which the fp8r transformer needs.
+        BASE_IMAGE: pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime
+        APT_PACKAGES: git
+        WORKER_REQUIREMENTS: deploy/workers/flux3-klein/requirements.txt
+    volumes:
+      - ../config/models/flux3-klein.yaml:/app/config/model.yaml:ro
       - ${MODELS_DIR:-../models}:/app/models
     env_file: *env-file
     environment: *env

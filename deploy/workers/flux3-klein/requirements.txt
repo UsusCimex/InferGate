@@ -1,0 +1,7 @@
+# FLUX 3 ships only as a diffusers modular pipeline on main (no release yet).
+diffusers @ git+https://github.com/huggingface/diffusers@b800f828f3951c4d206e154411bcbfa693cd322e
+transformers>=4.57.0
+accelerate>=1.2.0
+safetensors>=0.8.0
+huggingface-hub>=1.32.0
+bitsandbytes>=0.48.0

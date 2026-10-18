@@ -1,0 +1,40 @@
+id: flux3-klein
+display_name: "FLUX 3 Image Klein"
+category: image
+provider_class: Flux3ImageProvider
+enabled: ${oc.decode:${oc.env:FLUX3_KLEIN_ENABLED,true}}
+
+model:
+  hub_id: "black-forest-labs/flux-3-image-klein"
+  revision: "main"
+  transformer_variant: ${oc.env:FLUX3_KLEIN_TRANSFORMER_VARIANT,fp8r}
+  text_encoder_quantization: ${oc.env:FLUX3_KLEIN_TEXT_ENCODER_QUANTIZATION,nf4}
+  page_text_encoders: ${oc.decode:${oc.env:FLUX3_KLEIN_PAGE_TEXT_ENCODERS,true}}
+  vae_dtype: ${oc.env:FLUX3_KLEIN_VAE_DTYPE,bfloat16}
+  reference_max_side: ${oc.decode:${oc.env:FLUX3_KLEIN_REFERENCE_MAX_SIDE,768}}
+  vram_mb: ${oc.decode:${oc.env:FLUX3_KLEIN_VRAM_MB,10000}}
+  gpu: ${oc.decode:${oc.env:FLUX3_KLEIN_GPU,0}}
+  warmup: ${oc.decode:${oc.env:FLUX3_KLEIN_WARMUP,true}}
+  default_params:
+    num_inference_steps: ${oc.decode:${oc.env:FLUX3_KLEIN_STEPS,8}}
+    width: 1024
+    height: 1024
+
+cache:
+  enabled: true
+  strategy: seed_only
+  ttl_hours: null
+  max_size_mb: 2048
+
+queue:
+  priority: ${oc.env:FLUX3_KLEIN_PRIORITY,low}
+  timeout_seconds: ${oc.decode:${oc.env:FLUX3_KLEIN_TIMEOUT,300}}
+  max_concurrent: ${oc.decode:${oc.env:FLUX3_KLEIN_MAX_CONCURRENT,1}}
+
+capabilities:
+  reference_images: true
+
+metadata:
+  license: "FLUX Kommunity License v1.0"
+  description: "FLUX 3 Image Klein 5.6B: step-distilled for 4-16 steps, takes full scene captions"
+  tags: ["flux3", "distilled", "open"]

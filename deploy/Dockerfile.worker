@@ -28,6 +28,9 @@ WORKDIR /app
 # ctranslate2 ~37 MB, faster-whisper et al) when N workers build in parallel and
 # share the host's outbound bandwidth. 600s tolerates slow / saturated links.
 ENV UV_HTTP_TIMEOUT=600
+# PyTorch images from 2.14 put torch into the Debian system Python, which PEP 668 marks
+# externally managed; the worker packages go next to it.
+ENV UV_BREAK_SYSTEM_PACKAGES=1
 
 COPY requirements/base.txt requirements/
 RUN --mount=type=cache,target=/root/.cache/uv \
