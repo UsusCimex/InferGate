@@ -7,6 +7,8 @@ enabled: ${oc.decode:${oc.env:GEMMA_4_12B_ENABLED,true}}
 model:
   hub_id: "google/gemma-4-12B-it-qat-q4_0-gguf"
   gguf_file: "gemma-4-12b-it-qat-q4_0.gguf"
+  # The vision projector of the same repo: chat messages may carry images.
+  mmproj_file: "mmproj-gemma-4-12b-it-qat-q4_0.gguf"
   revision: "main"
   gpu: ${oc.decode:${oc.env:GEMMA_4_12B_GPU,0}}
   # 7.3 GB measured with the 8K q8_0 KV cache on an RTX 5070.
@@ -33,4 +35,7 @@ queue:
 metadata:
   license: Apache-2.0
   description: "Gemma 4 12B instruct, Google's QAT Q4_0 GGUF on llama.cpp"
-  tags: ["multilingual", "quantized", "gguf"]
+  tags: ["multilingual", "quantized", "gguf", "vision"]
+
+capabilities:
+  vision: true

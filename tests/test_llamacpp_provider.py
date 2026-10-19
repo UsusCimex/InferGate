@@ -152,6 +152,33 @@ def running(provider, tmp_path, monkeypatch):
     return server, exits, str(tmp_path)
 
 
+async def test_the_projector_file_lets_the_server_read_images(provider, tmp_path, monkeypatch):
+    snapshot = tmp_path / "models--google--gemma-4-12B-it-qat-q4_0-gguf" / "snapshots" / "main"
+    snapshot.mkdir(parents=True)
+    (snapshot / "gemma-4-12b-it-qat-q4_0.gguf").write_bytes(b"GGUF")
+    (snapshot / "mmproj-gemma-4-12b-it-qat-q4_0.gguf").write_bytes(b"GGUF")
+    started = []
+
+    async def start(*args, **kwargs):
+        started.append(args)
+        return _Server()
+
+    async def ready(self, seconds):
+        return None
+
+    monkeypatch.setattr(llamacpp_provider.asyncio, "create_subprocess_exec", start)
+    monkeypatch.setattr(LlamaCppTextProvider, "_wait_ready", ready)
+    await provider.load(str(tmp_path))
+    await provider.unload()
+    provider.config.model["mmproj_file"] = "mmproj-gemma-4-12b-it-qat-q4_0.gguf"
+    await provider.load(str(tmp_path))
+    await provider.unload()
+
+    assert "--mmproj" not in started[0]
+    flag = started[1].index("--mmproj")
+    assert started[1][flag + 1] == str(snapshot / "mmproj-gemma-4-12b-it-qat-q4_0.gguf")
+
+
 async def test_a_server_that_dies_under_a_loaded_model_exits_the_worker(provider, running):
     server, exits, models = running
     await provider.load(models)

@@ -33,7 +33,7 @@
 | `qwen3.5-9b` | Qwen 3.5 9B | 8000 | выключена | Apache-2.0 |
 | `qwen3-8b` | Qwen 3 8B | 7000 | выключена | Apache-2.0 |
 | `llama3.1-8b` | Llama 3.1 8B (gated) | 8000 | выключена | Llama 3.1 Community |
-| `gemma-4-12b` | Gemma 4 12B (GGUF QAT Q4_0, llama.cpp) | 8192 | включена; контекст 8192, без размышлений; загрузка около 1 мин, около 60 токенов/с на RTX 5070 | Apache-2.0 |
+| `gemma-4-12b` | Gemma 4 12B (GGUF QAT Q4_0, llama.cpp) | 8192 | включена; контекст 8192, без размышлений, с картинками во входе; загрузка около 1 мин, около 60 токенов/с на RTX 5070 | Apache-2.0 |
 
 **Озвучка** (`category: tts`)
 
@@ -88,7 +88,7 @@
 | `image` | `MeissonicImageProvider` | Meissonic (пайплайн из репозитория авторов) |
 | `image` | `Flux3ImageProvider` | FLUX 3 Image Klein через модульный конвейер diffusers: текст в картинку и референсы, трансформер fp8r или nvfp4 из `variants/`, текстовый энкодер в nf4; без negative prompt, guidance, img2img и LoRA |
 | `text` | `VllmTextProvider` | любая LLM через vLLM: потоковый вывод, шаблоны чата, картинки во входе |
-| `text` | `LlamaCppTextProvider` | GGUF через llama-server: воркер запускает его на `/load` и передаёт запросы чата; флаги сервера в `model.server_args`, образ `deploy/Dockerfile.llamacpp` |
+| `text` | `LlamaCppTextProvider` | GGUF через llama-server: воркер запускает его на `/load` и передаёт запросы чата; флаги сервера в `model.server_args`, файл зрения того же репозитория в `model.mmproj_file` (тогда в сообщениях чата можно передавать картинки), образ `deploy/Dockerfile.llamacpp` |
 | `tts` | `KokoroTtsProvider`, `VoxCpm2TtsProvider`, `Qwen3TtsProvider`, `XttsTtsProvider`, `FishSpeechTtsProvider` | синтез и клонирование голоса |
 | `stt` | `WhisperProvider`, `ParakeetProvider` | faster-whisper (CTranslate2); Parakeet TDT из ONNX-экспорта через onnx-asr, звук любого формата читает PyAV |
 | `upscale` | `SpandrelUpscaleProvider`, `AuraSrUpscaleProvider` | spandrel: Real-ESRGAN, 4x-UltraSharpV2, SwinIR и др.; AuraSR v2 через aura-sr |

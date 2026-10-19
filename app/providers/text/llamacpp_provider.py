@@ -20,7 +20,8 @@ SERVER_PORT = 8080
 
 @register_provider
 class LlamaCppTextProvider(TextProvider):
-    """GGUF text model served by llama.cpp's llama-server, a child process of the worker on localhost."""
+    """GGUF text model served by llama.cpp's llama-server, a child process of the worker on localhost; with
+    `model.mmproj_file` the server also reads the images of a chat message."""
 
     def __init__(self, config):
         super().__init__(config)
@@ -30,6 +31,8 @@ class LlamaCppTextProvider(TextProvider):
 
     async def load(self, model_dir: str) -> None:
         path = await asyncio.to_thread(self.gguf_path, model_dir)
+        projector = self.config.model.get("mmproj_file")
+        vision = ["--mmproj", await asyncio.to_thread(self.hub_file, model_dir, projector)] if projector else []
         args = [
             os.environ.get("LLAMA_SERVER", "llama-server"),
             "-m", path,
@@ -37,6 +40,7 @@ class LlamaCppTextProvider(TextProvider):
             "--host", "127.0.0.1",
             "--port", str(SERVER_PORT),
             "-c", str(self.config.model.get("context_length", 8192)),
+            *vision,
             *(str(arg) for arg in self.config.model.get("server_args", [])),
         ]
         logger.info("Starting llama-server for %s: %s", self.model_id, " ".join(args[1:]))
@@ -62,9 +66,11 @@ class LlamaCppTextProvider(TextProvider):
             os._exit(1)
 
     def gguf_path(self, model_dir: str) -> str:
-        """The GGUF file from the Hugging Face cache in [model_dir], downloaded when it is not there."""
+        return self.hub_file(model_dir, self.config.model["gguf_file"])
+
+    def hub_file(self, model_dir: str, filename: str) -> str:
+        """A file of the model repo from the Hugging Face cache in [model_dir], downloaded when it is not there."""
         repo = self.config.model["hub_id"]
-        filename = self.config.model["gguf_file"]
         revision = self.config.model.get("revision", "main")
         cache = Path(model_dir) / f"models--{repo.replace('/', '--')}"
         ref = cache / "refs" / revision
