@@ -24,7 +24,7 @@ def _make_remote_config(category: str) -> ModelConfig:
 
 
 def test_discover_creates_remote_provider():
-    """ProviderManager should create RemoteProvider when worker_url is set."""
+    """ProviderManager should create a Remote*Provider when worker_url is set."""
     from app.providers.remote import RemoteTextProvider
 
     manager = ProviderManager(model_dir=".", max_loaded=2)

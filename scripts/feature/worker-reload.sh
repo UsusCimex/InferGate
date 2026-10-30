@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Feature test: worker-side hot-reload through gateway ConfigWatcher,
-# ProviderManager.reload_model(), RemoteProvider.reload() and the worker's
+# ProviderManager.reload_model(), BaseRemoteMixin.reload() and the worker's
 # POST /reload.
 #
 # Two reload classes are exercised end-to-end:

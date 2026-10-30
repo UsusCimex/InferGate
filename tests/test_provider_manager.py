@@ -617,7 +617,7 @@ async def test_reload_remote_calls_worker_endpoint(services):
     changed = await manager.reload_model(new_cfg)
     assert changed is True
 
-    # Same provider instance, not replaced with a fresh RemoteProvider
+    # Same provider instance, not replaced with a fresh Remote*Provider
     assert manager.get("test-image") is fake
     # Worker /reload was called exactly once with the new config
     assert len(fake.reload_calls) == 1

@@ -1,7 +1,7 @@
-"""End-to-end tests: RemoteProvider against FakeWorker via httpx ASGITransport.
+"""End-to-end tests: the Remote*Provider classes against FakeWorker via httpx ASGITransport.
 
 These tests boot a FastAPI app that mimics worker.py's contract and route
-RemoteProvider's httpx client through ASGITransport: no sockets, no mocks,
+BaseRemoteMixin's httpx client through ASGITransport: no sockets, no mocks,
 the full HTTP serialization round-trip.
 """
 from __future__ import annotations

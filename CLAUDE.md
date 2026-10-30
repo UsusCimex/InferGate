@@ -26,7 +26,7 @@ python scripts/download_models.py --models flux2-klein-4b   # prefetch weights o
 
 ## Architecture in brief
 
-A request goes through the router (`app/routers/`), the capability checks, the cache lookup (a hit never loads the model), `ProviderManager.ensure_loaded` (LRU by declared `vram_mb`, budget, pinned models, per-model locks), `GpuScheduler.submit` inside `active_request`, the provider (`RemoteProvider` calls the worker over HTTP), then the cache put, `X-InferGate-*` headers and Prometheus metrics. Streaming chat bypasses scheduler, cache and metrics.
+A request goes through the router (`app/routers/`), the capability checks, the cache lookup (a hit never loads the model), `ProviderManager.ensure_loaded` (LRU by declared `vram_mb`, budget, pinned models, per-model locks), `GpuScheduler.submit` inside `active_request`, the provider (a `Remote*Provider` of `app/providers/remote.py` calls the worker over HTTP), then the cache put, `X-InferGate-*` headers and Prometheus metrics. Streaming chat bypasses scheduler, cache and metrics.
 
 - Worker discovery order: YAML `worker_url`, env `WORKER_URL_<ID>`, `gpu.worker_url_template`, otherwise a local in-process provider.
 - Workers start empty and load on demand (`POST /load` answers 202, then poll `/load/status`); the gateway's monitor probes `/health` every 10 s, drops a loaded model after 3 misses and frees the slot of a worker that restarted idle.

@@ -154,7 +154,7 @@ class ProviderManager:
 
     @staticmethod
     def _create_remote_provider(config: ModelConfig) -> BaseProvider:
-        """Build the RemoteProvider subclass matching `config.category`."""
+        """Build the Remote*Provider class matching `config.category`."""
         from app.providers.remote import remote_provider_for
 
         cls = remote_provider_for(config.category)

@@ -557,7 +557,7 @@ class RemoteVideoEmbeddingProvider(BaseRemoteMixin, VideoEmbeddingProvider):
         return await self._call_multipart(EMBED_VIDEO, video, filename=filename)
 
 
-# Category to RemoteProvider class; ProviderManager uses it for worker_url-backed configs.
+# Category to its Remote*Provider class; ProviderManager uses it for worker_url-backed configs.
 CATEGORY_REGISTRY: dict[str, type[BaseProvider]] = {
     "text": RemoteTextProvider,
     "image": RemoteImageProvider,
@@ -572,7 +572,7 @@ CATEGORY_REGISTRY: dict[str, type[BaseProvider]] = {
 
 
 def remote_provider_for(category: str) -> type[BaseProvider]:
-    """Return the RemoteProvider class registered for `category` or raise ValueError."""
+    """Return the Remote*Provider class registered for `category` or raise ValueError."""
     cls = CATEGORY_REGISTRY.get(category)
     if cls is None:
         raise ValueError(f"No remote provider for category '{category}'")
