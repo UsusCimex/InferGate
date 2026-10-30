@@ -47,12 +47,6 @@ class ChatMessage(BaseModel):
         return [part.image_url.url for part in self.content if isinstance(part, ImageURLPart)]
 
 
-class AssistantMessage(BaseModel):
-    """Chat response message."""
-    role: str = "assistant"
-    content: str
-
-
 class ResponseFormat(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -70,24 +64,3 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
     response_format: ResponseFormat | None = None
     thinking: bool | None = None
-
-
-class ChatChoice(BaseModel):
-    index: int = 0
-    message: AssistantMessage
-    finish_reason: str = "stop"
-
-
-class UsageInfo(BaseModel):
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-
-
-class ChatCompletionResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: list[ChatChoice]
-    usage: UsageInfo
