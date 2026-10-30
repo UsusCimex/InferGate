@@ -175,8 +175,6 @@ td.text { min-width: 16em; white-space: normal; font-family: var(--font-prompt);
 }
 .disc { align-self: center; width: 10px; height: 10px; border: 1.5px solid var(--ink); border-radius: 50%; }
 .disc.on { background: var(--ink); }
-.models li.disabled { color: var(--muted); }
-.models li.disabled .disc { border-color: var(--muted); }
 .model-name { font-weight: 600; overflow-wrap: anywhere; }
 .model-state, .model-kind { color: var(--muted); font-size: 0.8125rem; }
 .model-kind { grid-column: 2 / 4; }
@@ -430,17 +428,17 @@ function renderLoaded() {
 
 async function refreshModels() {
   const {data} = await (await request('v1/models')).json();
-  const rank = (model) => (model.loaded ? 0 : model.enabled ? 1 : 2);
+  const rank = (model) => (model.loaded ? 0 : 1);
   data.sort((a, b) => rank(a) - rank(b) || a.category.localeCompare(b.category) || a.id.localeCompare(b.id));
-  state.modelCount = data.filter((model) => model.enabled).length;
+  state.modelCount = data.length;
   renderLoaded();
   $('models').replaceChildren(...data.map(modelRow));
   $('models-empty').hidden = data.length > 0;
 }
 
 function modelRow(model) {
-  const status = !model.enabled ? 'выключена' : model.loaded ? 'в памяти' : 'не загружена';
-  return el('li', {class: model.enabled ? null : 'disabled'},
+  const status = model.loaded ? 'в памяти' : 'не загружена';
+  return el('li', {},
     el('span', {class: model.loaded ? 'disc on' : 'disc', 'aria-hidden': 'true'}),
     el('span', {class: 'model-name', text: model.id, title: model.display_name}),
     el('span', {class: 'model-state', text: status}),
