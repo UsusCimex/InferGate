@@ -41,45 +41,7 @@
 
 ## YAML модели
 
-Пример, `config/models/flux2-klein-4b.yaml`:
-
-```yaml
-id: flux2-klein-4b
-display_name: "FLUX.2 Klein 4B"
-category: image
-provider_class: DiffusersImageProvider
-enabled: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_ENABLED,true}}
-
-model:
-  hub_id: "black-forest-labs/FLUX.2-klein-4B"
-  revision: "main"
-  torch_dtype: ${oc.env:FLUX2_KLEIN_4B_TORCH_DTYPE,bfloat16}
-  vram_mb: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_VRAM_MB,6000}}
-  offload: ${oc.env:FLUX2_KLEIN_4B_OFFLOAD,sequential}
-  warmup: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_WARMUP,true}}
-  quantization: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_QUANTIZATION,null}}
-  quantize_components: ["transformer", "text_encoder"]
-  default_params:
-    num_inference_steps: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_STEPS,4}}
-    guidance_scale: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_CFG,0.0}}
-    width: 1024
-    height: 1024
-
-cache:
-  enabled: true
-  strategy: seed_only        # always | seed_only | never
-  ttl_hours: null
-  max_size_mb: 2048
-
-queue:
-  priority: ${oc.env:FLUX2_KLEIN_4B_PRIORITY,low}
-  timeout_seconds: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_TIMEOUT,300}}
-  max_concurrent: ${oc.decode:${oc.env:FLUX2_KLEIN_4B_MAX_CONCURRENT,1}}
-
-metadata:
-  license: Apache-2.0
-  tags: ["fast", "flux2", "apache2", "open"]
-```
+Пример: [`config/models/flux2-klein-4b.yaml`](../config/models/flux2-klein-4b.yaml).
 
 Ключ `model.gpu` (`<ID>_GPU`, 0) у GPU-моделей: номер GPU воркера в нумерации `nvidia-smi` ([несколько GPU](#несколько-gpu)).
 
