@@ -60,13 +60,12 @@ _MAX_CONNECTIONS = _env_int("GATEWAY_REMOTE_MAX_CONNECTIONS", 100)
 _RETRY_ATTEMPTS = max(1, _env_int("GATEWAY_REMOTE_RETRY_ATTEMPTS", 3))
 _RETRY_BASE_BACKOFF = _env_float("GATEWAY_REMOTE_RETRY_BACKOFF", 0.25)
 
-# Stepped backoff: small models (<=0.5s) avoid the full 2s overhead, long loads
-# settle into 2s polls. Override via GATEWAY_REMOTE_LOAD_POLL_BACKOFF="0.5,1,2,2,2".
-_DEFAULT_POLL_BACKOFF = "0.5,1.0,2.0,2.0,2.0"
+# Small models are ready after the first short poll; long loads settle into 2 s polls.
+_DEFAULT_POLL_BACKOFF = (0.5, 1.0, 2.0, 2.0, 2.0)
 
 
 def _parse_poll_backoff() -> list[float]:
-    raw = os.environ.get("GATEWAY_REMOTE_LOAD_POLL_BACKOFF", _DEFAULT_POLL_BACKOFF)
+    raw = os.environ.get("GATEWAY_REMOTE_LOAD_POLL_BACKOFF", "")
     out: list[float] = []
     for piece in raw.split(","):
         piece = piece.strip()
@@ -78,7 +77,7 @@ def _parse_poll_backoff() -> list[float]:
                 out.append(v)
         except ValueError:
             continue
-    return out or [0.5, 1.0, 2.0, 2.0, 2.0]
+    return out or list(_DEFAULT_POLL_BACKOFF)
 
 
 _LOAD_POLL_BACKOFF = _parse_poll_backoff()

@@ -77,7 +77,7 @@
 | Пределы контейнеров | `GPU_WORKER_MEM_LIMIT` (16g), `CPU_WORKER_MEM_LIMIT` (6g), `GATEWAY_MEM_LIMIT` (2g), `GPU_WORKER_SHM_SIZE`, `PYTORCH_CUDA_ALLOC_CONF` |
 | VRAM и сторож | `GPU_MAX_VRAM_BUDGET_MB`, `GPU_VRAM_HEADROOM_MB`, `GPU_MAX_LOADED_MODELS`, `GPU_WATCHDOG_*` |
 | Модели | `<ID>_ENABLED`, `<ID>_GPU`, `<ID>_QUANTIZATION`, `<ID>_OFFLOAD`, `<ID>_STEPS`, `<ID>_CFG`, `<ID>_VRAM_MB`, `<ID>_MAX_CONCURRENT`, `<ID>_GPU_MEM_UTIL`, `<ID>_CONTEXT_LENGTH`, голоса и форматы TTS и др. |
-| Связь шлюза с воркерами | `GATEWAY_REMOTE_CONNECT_TIMEOUT` (5 с), `GATEWAY_REMOTE_LOAD_TIMEOUT` (1800 с), `GATEWAY_REMOTE_GENERATE_TIMEOUT` (300 с), `GATEWAY_REMOTE_QUICK_TIMEOUT` (5 с), `GATEWAY_REMOTE_RETRY_ATTEMPTS`, `GATEWAY_REMOTE_RETRY_BACKOFF`, пул соединений |
+| Связь шлюза с воркерами | `GATEWAY_REMOTE_CONNECT_TIMEOUT` (5 с), `GATEWAY_REMOTE_LOAD_TIMEOUT` (1800 с), `GATEWAY_REMOTE_GENERATE_TIMEOUT` (300 с), `GATEWAY_REMOTE_QUICK_TIMEOUT` (5 с), `GATEWAY_REMOTE_RETRY_ATTEMPTS`, `GATEWAY_REMOTE_RETRY_BACKOFF`, `GATEWAY_REMOTE_LOAD_POLL_BACKOFF` (паузы опроса загрузки, `0.5,1,2,2,2` с), пул соединений |
 
 Выгрузка на CPU, `offload` (`<ID>_OFFLOAD`): `none` - модель целиком на GPU, `model` - части модели попадают на GPU только на время своей работы, `sequential` - послойно. У `flux1-dev`, `flux1-schnell`, `flux2-klein-4b`, `qwen-image` и `sd35-medium` по умолчанию `sequential`, у остальных `none`, Meissonic знает только `none` и `model`. Прежние `cpu_offload`, `sequential_cpu_offload` и переменные `<ID>_CPU_OFFLOAD`, `<ID>_SEQUENTIAL_OFFLOAD` воркер не принимает: загрузка падает с ошибкой. На 12 ГБ послойная выгрузка стоит минут на картинку, поэтому FLUX.2 klein, FLUX.1-dev и Z-Image там работают в nf4 без неё (подсказки в `.env.example`).
 
