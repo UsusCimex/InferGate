@@ -22,7 +22,8 @@ curl http://localhost:8000/health
 ## Образы
 
 - **`deploy/Dockerfile.gateway`**: `python:3.12-slim`, зависимости `requirements/base.txt`, код `app/` и `config/`, пользователь без root, `uvicorn app.main:app --port 8000`.
-- **`deploy/Dockerfile.worker`**: один параметризованный Dockerfile для всех воркеров, пакеты ставятся через uv с кэшем BuildKit.
+- **`deploy/Dockerfile.worker`**: один параметризованный Dockerfile для всех воркеров, кроме GGUF-моделей, пакеты ставятся через uv с кэшем BuildKit.
+- **`deploy/Dockerfile.llamacpp`**: воркер GGUF-моделей поверх образа llama.cpp server (`LLAMACPP_IMAGE`), с теми же ARG.
 
 | ARG | Назначение | Пример |
 |---|---|---|

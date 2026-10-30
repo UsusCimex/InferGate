@@ -5,7 +5,7 @@
 Клиент обращается к шлюзу (`app.main`, порт 8000, без ML-библиотек), шлюз по HTTP к воркеру модели (`app.worker`, порт 8001, один контейнер на модель).
 
 - **Шлюз**: FastAPI с OpenAI-совместимыми роутерами, планировщиком запросов, менеджером моделей, кэшем ответов и метриками. Образ без torch (`deploy/Dockerfile.gateway`).
-- **Воркер**: тот же код с точкой входа `app.worker`. Читает один YAML (`WORKER_MODEL_CONFIG`), стартует без модели и загружает её по команде шлюза. Зависимости у каждой модели свои (`deploy/workers/<id>/requirements.txt`), образы собираются из общего `deploy/Dockerfile.worker`.
+- **Воркер**: тот же код с точкой входа `app.worker`. Читает один YAML (`WORKER_MODEL_CONFIG`), стартует без модели и загружает её по команде шлюза. Зависимости у каждой модели свои (`deploy/workers/<id>/requirements.txt`), образы собираются из общего `deploy/Dockerfile.worker`, у GGUF-моделей из `deploy/Dockerfile.llamacpp`.
 - Код Python запекается в образы: правка `app/` доходит до контейнеров только после пересборки. YAML моделей и папка весов монтируются, их правки видны сразу.
 
 **Поиск воркера** (`ProviderManager`, по порядку): `worker_url` в YAML модели, переменная `WORKER_URL_<ID>`, `gpu.worker_url_template` (так находит воркеры чарт Helm), иначе модель создаётся в процессе шлюза (разработка без Docker). Для удалённой модели шлюз создаёт `RemoteProvider` её категории (`app/providers/remote.py`, `CATEGORY_REGISTRY`). Compose задаёт `WORKER_URL_*` всем моделям, поэтому каждая включённая модель удалённая; запрос к модели без запущенного контейнера получает 503 `worker_not_ready`.
@@ -83,7 +83,7 @@
 | `app/routers/` | chat, images, audio, embeddings, models, admin, cache, health, ui (веб-страница) |
 | `app/schemas/` | pydantic-модели запросов и ответов (`extra="forbid"`) |
 | `app/providers/` | `base.py` (базовые классы), `registry.py` (`@register_provider`), `remote.py` и `_remote_protocol.py` (удалённые провайдеры шлюза) |
-| `app/providers/image/` | diffusers (`_compel`, `_highres_fix`, `_lora`, `_schedulers`, `_textual_inversion`), janus, meissonic |
+| `app/providers/image/` | diffusers (`_compel`, `_highres_fix`, `_lora`, `_offload`, `_previews`, `_schedulers`, `_size`, `_textual_inversion`), flux3, janus, meissonic |
 | `app/providers/text/` | vLLM (`_chat_images`), llama.cpp |
 | `app/providers/tts/` | kokoro, voxcpm2 (`voxcpm2_voices/`), qwen3_tts, xtts, fish_speech |
 | `app/providers/stt/`, `upscale/`, `embedding/` | whisper, parakeet; spandrel, aura-sr (`_tiles`); sentence-transformers, CLIP, SigLIP, CLAP, CLIP4Clip |
@@ -91,6 +91,6 @@
 | `app/static/ui.html` | веб-страница: HTML, CSS и JS в одном файле без зависимостей |
 | `app/utils/uploads.py` | предел размера загрузок |
 | `config/` | `server.yaml`, `models/*.yaml`, `examples/` |
-| `deploy/` | Dockerfile шлюза и воркера, `docker-compose*.yml`, `docker-bake.hcl`, `workers/<id>/requirements.txt`, `monitoring/`, `helm/` (чарт Kubernetes), `Caddyfile.example`, `.env.example` |
+| `deploy/` | Dockerfile шлюза, воркера и llama.cpp-воркера, `docker-compose*.yml`, `docker-bake.hcl`, `workers/<id>/requirements.txt`, `monitoring/`, `helm/` (чарт Kubernetes), `Caddyfile.example`, `.env.example` |
 | `scripts/` | `diagnose/` (одна модель), `feature/` (проверки на живых контейнерах), `benchmark.py`, `download_models.py` |
 | `tests/` | pytest |
