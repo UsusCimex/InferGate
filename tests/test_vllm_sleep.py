@@ -56,7 +56,6 @@ def _provider(sleep_level: int) -> VllmTextProvider:
     ))
 
 
-@pytest.mark.asyncio
 async def test_eviction_puts_the_engine_to_sleep_and_the_next_load_wakes_it(engines):
     provider = _provider(1)
     await provider.load("/models")
@@ -71,7 +70,6 @@ async def test_eviction_puts_the_engine_to_sleep_and_the_next_load_wakes_it(engi
     assert engines[0].calls == [("sleep", 1), ("wake_up", None)]
 
 
-@pytest.mark.asyncio
 async def test_level_two_reads_the_weights_again_on_waking(engines):
     provider = _provider(2)
     await provider.load("/models")
@@ -82,7 +80,6 @@ async def test_level_two_reads_the_weights_again_on_waking(engines):
                                 ("wake_up", ["kv_cache"])]
 
 
-@pytest.mark.asyncio
 async def test_a_sleeping_engine_is_shut_down_on_release(engines):
     provider = _provider(1)
     await provider.load("/models")
@@ -95,7 +92,6 @@ async def test_a_sleeping_engine_is_shut_down_on_release(engines):
     assert len(engines) == 2
 
 
-@pytest.mark.asyncio
 async def test_without_sleep_mode_eviction_shuts_the_engine_down(engines):
     provider = _provider(0)
     await provider.load("/models")
@@ -105,7 +101,6 @@ async def test_without_sleep_mode_eviction_shuts_the_engine_down(engines):
     assert engines[0].calls == [("shutdown",)]
 
 
-@pytest.mark.asyncio
 async def test_a_failed_wake_up_starts_a_new_engine(engines):
     provider = _provider(1)
     await provider.load("/models")

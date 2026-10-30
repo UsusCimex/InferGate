@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from httpx import ASGITransport, AsyncClient
@@ -52,7 +51,6 @@ def _use_worker(monkeypatch, app: FastAPI, seen: list[httpx.Timeout]) -> None:
     monkeypatch.setattr(remote_module.BaseRemoteMixin, "_build_client", build)
 
 
-@pytest.mark.asyncio
 async def test_a_slow_model_waits_for_the_worker_as_long_as_its_queue_allows(monkeypatch):
     seen: list[httpx.Timeout] = []
     _use_worker(monkeypatch, _worker(), seen)
@@ -64,7 +62,6 @@ async def test_a_slow_model_waits_for_the_worker_as_long_as_its_queue_allows(mon
     assert seen[1].read == remote_module._GENERATE_TIMEOUT
 
 
-@pytest.mark.asyncio
 async def test_a_streamed_answer_keeps_the_blank_lines_between_events(monkeypatch):
     _use_worker(monkeypatch, _worker(), [])
     provider = remote_module.RemoteTextProvider(_config("text", 120))
@@ -75,7 +72,6 @@ async def test_a_streamed_answer_keeps_the_blank_lines_between_events(monkeypatc
     assert streamed == "data: {\"a\": 1}\n\ndata: {\"b\": 2}\n\ndata: [DONE]\n\n"
 
 
-@pytest.mark.asyncio
 async def test_a_worker_that_does_not_answer_in_time_gives_504():
     from app.main import create_app
 

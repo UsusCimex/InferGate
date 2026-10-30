@@ -64,7 +64,6 @@ def test_latents_without_a_preview_stop_asking():
     assert calls == [0]
 
 
-@pytest.mark.asyncio
 async def test_previews_from_the_pipeline_thread_come_before_the_final_image():
     loop = asyncio.get_running_loop()
     previews: asyncio.Queue[bytes] = asyncio.Queue()
@@ -85,7 +84,6 @@ async def test_previews_from_the_pipeline_thread_come_before_the_final_image():
     ]
 
 
-@pytest.mark.asyncio
 async def test_relay_raises_the_error_of_the_generation():
     generation = asyncio.get_running_loop().create_future()
     generation.set_exception(ValueError("size must be WxH"))

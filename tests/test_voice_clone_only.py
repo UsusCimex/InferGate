@@ -34,7 +34,6 @@ def voice_clone_model(services):
     yield cfg
 
 
-@pytest.mark.asyncio
 async def test_flat_endpoint_rejects_voice_clone_only_model(client, voice_clone_model):
     resp = await client.post(
         "/v1/audio/speech",
@@ -47,7 +46,6 @@ async def test_flat_endpoint_rejects_voice_clone_only_model(client, voice_clone_
     assert "test-clone-tts" in err["message"]
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_endpoint_still_accepts_voice_clone_only_model(
     client, voice_clone_model
 ):
@@ -59,7 +57,6 @@ async def test_voice_clone_endpoint_still_accepts_voice_clone_only_model(
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_regular_tts_unaffected(client):
     # Regression guard: the default test-tts has voice_clone_only=False,
     # so the fast-path check must not touch it.

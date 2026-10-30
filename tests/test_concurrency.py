@@ -8,7 +8,6 @@ import pytest
 from app.services.gpu_scheduler import GpuScheduler, QueueFullError
 
 
-@pytest.mark.asyncio
 async def test_concurrent_scheduler_submissions():
     """Multiple concurrent submissions should not exceed queue size."""
     scheduler = GpuScheduler(max_queue_size=5)
@@ -30,7 +29,6 @@ async def test_concurrent_scheduler_submissions():
     assert set(results) == {0, 1, 2, 3, 4}
 
 
-@pytest.mark.asyncio
 async def test_queue_full_error():
     """Exceeding queue size should raise QueueFullError."""
     scheduler = GpuScheduler(max_queue_size=2)
@@ -57,7 +55,6 @@ async def test_queue_full_error():
     await asyncio.gather(*tasks)
 
 
-@pytest.mark.asyncio
 async def test_scheduler_counter_consistency():
     """After all tasks complete, active_tasks should be 0."""
     scheduler = GpuScheduler(max_queue_size=10)
@@ -74,7 +71,6 @@ async def test_scheduler_counter_consistency():
     assert scheduler.queue_info()["queue_size"] == 0
 
 
-@pytest.mark.asyncio
 async def test_concurrent_model_loads(services):
     """Loading the same model concurrently should not cause errors."""
     manager = services["manager"]
@@ -87,7 +83,6 @@ async def test_concurrent_model_loads(services):
     assert all(r.is_loaded() for r in results)
 
 
-@pytest.mark.asyncio
 async def test_concurrent_cache_operations(services):
     """Concurrent cache reads/writes should not corrupt data."""
     cache_mgr = services["cache"]
@@ -105,7 +100,6 @@ async def test_concurrent_cache_operations(services):
         assert result == f"data-{i}".encode()
 
 
-@pytest.mark.asyncio
 async def test_cache_corrupted_data(services):
     """Corrupted JSON in cache should not crash the endpoint."""
     cache_mgr = services["cache"]
@@ -119,7 +113,6 @@ async def test_cache_corrupted_data(services):
     assert result == b"not valid json {{{"
 
 
-@pytest.mark.asyncio
 async def test_cache_missing_file(services):
     """Cache entry with missing file should auto-invalidate."""
     cache_mgr = services["cache"]
@@ -143,7 +136,6 @@ async def test_cache_missing_file(services):
     assert await cache_mgr.get("file-key") is None
 
 
-@pytest.mark.asyncio
 async def test_graceful_shutdown(services):
     """Shutdown should unload all models without errors."""
     manager = services["manager"]

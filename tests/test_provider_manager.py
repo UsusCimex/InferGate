@@ -8,7 +8,6 @@ from app.config import ModelCacheConfig, ModelConfig, ModelMetadata, ModelQueueC
 from app.services.provider_manager import ModelNotFoundError
 
 
-@pytest.mark.asyncio
 async def test_list_models(services):
     manager = services["manager"]
     models = manager.list_models()
@@ -20,7 +19,6 @@ async def test_list_models(services):
     }
 
 
-@pytest.mark.asyncio
 async def test_ensure_loaded(services):
     manager = services["manager"]
     provider = await manager.ensure_loaded("test-image")
@@ -28,7 +26,6 @@ async def test_ensure_loaded(services):
     assert "test-image" in manager.loaded_models()
 
 
-@pytest.mark.asyncio
 async def test_unload_model(services):
     manager = services["manager"]
     await manager.ensure_loaded("test-image")
@@ -37,7 +34,6 @@ async def test_unload_model(services):
     assert "test-image" not in manager.loaded_models()
 
 
-@pytest.mark.asyncio
 async def test_lru_eviction(services):
     manager = services["manager"]
     manager._max_loaded = 2
@@ -52,21 +48,18 @@ async def test_lru_eviction(services):
     assert manager.get("test-tts").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_model_not_found(services):
     manager = services["manager"]
     with pytest.raises(ModelNotFoundError):
         manager.get("nonexistent")
 
 
-@pytest.mark.asyncio
 async def test_health(client):
     resp = await client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
 
 
-@pytest.mark.asyncio
 async def test_list_models_endpoint(client):
     resp = await client.get("/v1/models")
     assert resp.status_code == 200
@@ -95,7 +88,6 @@ def _make_test_config(
     )
 
 
-@pytest.mark.asyncio
 async def test_reload_noop_for_identical_config(services):
     """Saving a YAML without content changes must not swap the provider."""
     manager = services["manager"]
@@ -106,7 +98,6 @@ async def test_reload_noop_for_identical_config(services):
     assert manager.get("test-image") is before  # same instance, not replaced
 
 
-@pytest.mark.asyncio
 async def test_reload_swaps_provider_on_change(services):
     """Changing any field must replace the provider while preserving id."""
     manager = services["manager"]
@@ -119,7 +110,6 @@ async def test_reload_swaps_provider_on_change(services):
     assert after.config.display_name == "renamed"
 
 
-@pytest.mark.asyncio
 async def test_reload_preserves_loaded_state(services):
     """A provider that was loaded stays loaded after reload; operators
     don't want `systemctl restart` just to edit a display_name."""
@@ -135,7 +125,6 @@ async def test_reload_preserves_loaded_state(services):
     assert "test-image" in manager.loaded_models()
 
 
-@pytest.mark.asyncio
 async def test_reload_disables_and_unregisters(services):
     """enabled: false in YAML removes the model from the registry and
     from /v1/models after the next reload."""
@@ -151,7 +140,6 @@ async def test_reload_disables_and_unregisters(services):
     assert "test-image" not in manager.loaded_models()
 
 
-@pytest.mark.asyncio
 async def test_reload_registers_new_model(services):
     """A YAML file for a previously-unknown model_id registers it fresh."""
     manager = services["manager"]
@@ -161,7 +149,6 @@ async def test_reload_registers_new_model(services):
     assert manager.get("test-new-image").config.display_name == "new"
 
 
-@pytest.mark.asyncio
 async def test_reload_disabled_new_model_is_noop(services):
     """A YAML with enabled: false for a model we don't have must not
     register a disabled placeholder."""
@@ -173,7 +160,6 @@ async def test_reload_disabled_new_model_is_noop(services):
         manager.get("test-disabled")
 
 
-@pytest.mark.asyncio
 async def test_reload_bad_provider_class_keeps_old(services):
     """Typo in provider_class on reload must not lose the existing
     provider; the operator should be able to fix the YAML and try again."""
@@ -186,7 +172,6 @@ async def test_reload_bad_provider_class_keeps_old(services):
     assert manager.get("test-image") is before
 
 
-@pytest.mark.asyncio
 async def test_scheduler_update_concurrency(services):
     """Hot-reload of queue.max_concurrent updates the live slot in place."""
     scheduler = services["scheduler"]
@@ -195,7 +180,6 @@ async def test_scheduler_update_concurrency(services):
     assert scheduler._queues["test-image"].max_concurrent == 5
 
 
-@pytest.mark.asyncio
 async def test_byte_budget_lru_evicts_on_oversubscription(services):
     """Loading a model that would push the sum of declared vram_mb past
     the budget evicts the LRU until it fits, even if the count cap is
@@ -218,7 +202,6 @@ async def test_byte_budget_lru_evicts_on_oversubscription(services):
     assert not manager.get("test-image").is_loaded()  # oldest evicted
 
 
-@pytest.mark.asyncio
 async def test_cpu_model_takes_no_vram_budget(services):
     """device: cpu zeroes the declared vram_mb, whatever the YAML says."""
     provider = services["manager"].get("test-embed-multi")
@@ -227,7 +210,6 @@ async def test_cpu_model_takes_no_vram_budget(services):
     assert provider.vram_mb == 0
 
 
-@pytest.mark.asyncio
 async def test_byte_budget_never_evicts_a_cpu_model(services):
     """Evicting a model on the CPU frees no VRAM, so the LRU walk skips it."""
     manager = services["manager"]
@@ -244,7 +226,6 @@ async def test_byte_budget_never_evicts_a_cpu_model(services):
     assert set(manager.loaded_models()) == {"test-embed-multi", "test-text", "test-tts"}
 
 
-@pytest.mark.asyncio
 async def test_byte_budget_respects_headroom(services):
     """vram_headroom_mb carves a gap out of the top: pinned + active
     usage may not push past (budget - headroom)."""
@@ -260,7 +241,6 @@ async def test_byte_budget_respects_headroom(services):
     assert len(loaded) == 2  # same eviction as above, triggered by headroom
 
 
-@pytest.mark.asyncio
 async def test_byte_budget_raises_when_all_pinned(services):
     """Every model pinned + new load doesn't fit: InsufficientResourcesError.
     Gateway turns this into HTTP 503 (instead of letting CUDA OOM take out
@@ -279,7 +259,6 @@ async def test_byte_budget_raises_when_all_pinned(services):
         await asyncio.wait_for(manager.ensure_loaded("test-text"), 5)
 
 
-@pytest.mark.asyncio
 async def test_a_load_waits_for_the_request_of_a_busy_model_instead_of_failing(services):
     manager = services["manager"]
     manager._max_vram_budget_mb = 1500
@@ -306,7 +285,6 @@ async def test_a_load_waits_for_the_request_of_a_busy_model_instead_of_failing(s
     assert not manager.get("test-image").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_a_load_gives_up_when_the_busy_model_outlasts_its_queue_timeout(services):
     from app.services.provider_manager import InsufficientResourcesError
 
@@ -324,7 +302,6 @@ async def test_a_load_gives_up_when_the_busy_model_outlasts_its_queue_timeout(se
     assert not manager.get("test-text").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_byte_budget_disabled_falls_back_to_count(services):
     """max_vram_budget_mb=0: count-based LRU only."""
     manager = services["manager"]
@@ -340,7 +317,6 @@ async def test_byte_budget_disabled_falls_back_to_count(services):
     assert "test-image" not in loaded
 
 
-@pytest.mark.asyncio
 async def test_validate_config_rejects_pinned_over_budget():
     """Pinning so many models that their declared vram sum >= budget
     raises ConfigError at startup; operator must fix before serving."""
@@ -372,7 +348,6 @@ class _MinimalProvider:
         return self.config.model.get("vram_mb", 0)
 
 
-@pytest.mark.asyncio
 async def test_active_request_counter_increments_and_decrements(services):
     """Context manager pumps the counter exactly once."""
     manager = services["manager"]
@@ -385,7 +360,6 @@ async def test_active_request_counter_increments_and_decrements(services):
     assert manager.active_request_count("test-image") == 0
 
 
-@pytest.mark.asyncio
 async def test_lru_skips_model_with_active_request(services):
     """Core fix: a model with an in-flight request can't be evicted,
     even if it's the LRU candidate."""
@@ -404,7 +378,6 @@ async def test_lru_skips_model_with_active_request(services):
         assert manager.get("test-tts").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_lru_falls_back_to_pinned_when_all_busy(services):
     """All non-pinned loaded models are active: no victim, warning path.
     Matches the all-pinned branch: returns None, caller decides."""
@@ -417,7 +390,6 @@ async def test_lru_falls_back_to_pinned_when_all_busy(services):
         assert victim is None
 
 
-@pytest.mark.asyncio
 async def test_active_counter_cleans_up_on_exception(services):
     """Exception inside the context decrements counter correctly."""
     manager = services["manager"]
@@ -428,7 +400,6 @@ async def test_active_counter_cleans_up_on_exception(services):
     assert manager.active_request_count("test-image") == 0
 
 
-@pytest.mark.asyncio
 async def test_provider_get_stats_default(services):
     """BaseProvider.get_stats returns a declared-only snapshot when the
     concrete provider doesn't override (covers every local provider:
@@ -446,7 +417,6 @@ async def test_provider_get_stats_default(services):
     assert stats["vram_used_mb"] == 0
 
 
-@pytest.mark.asyncio
 async def test_scheduler_update_concurrency_registers_unknown(services):
     """update_concurrency on an unknown model_id transparently registers
     the queue to avoid a race when reload_model creates the model and
@@ -456,7 +426,6 @@ async def test_scheduler_update_concurrency_registers_unknown(services):
     assert scheduler._queues["brand-new"].max_concurrent == 3
 
 
-@pytest.mark.asyncio
 async def test_status_snapshot_reports_loaded_state(services):
     """Snapshot shape: loaded list carries per-model metadata + global
     caps. Operator UI keys off this payload."""
@@ -484,7 +453,6 @@ async def test_status_snapshot_reports_loaded_state(services):
     assert snap["category_reservations"] == {"text": 1}
 
 
-@pytest.mark.asyncio
 async def test_status_snapshot_active_count_propagates(services):
     manager = services["manager"]
     await manager.ensure_loaded("test-image")
@@ -494,7 +462,6 @@ async def test_status_snapshot_active_count_propagates(services):
         assert entry["active_requests"] == 1
 
 
-@pytest.mark.asyncio
 async def test_preview_load_already_loaded_is_noop(services):
     manager = services["manager"]
     await manager.ensure_loaded("test-image")
@@ -505,7 +472,6 @@ async def test_preview_load_already_loaded_is_noop(services):
     assert preview["freed_mb"] == 0
 
 
-@pytest.mark.asyncio
 async def test_preview_load_reports_plan_without_mutating(services):
     """Dry-run: plan is returned, but the model is NOT loaded and no
     eviction happens."""
@@ -525,7 +491,6 @@ async def test_preview_load_reports_plan_without_mutating(services):
     assert manager.get("test-image").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_preview_load_reports_infeasible(services):
     manager = services["manager"]
     manager._max_vram_budget_mb = 1500
@@ -539,7 +504,6 @@ async def test_preview_load_reports_infeasible(services):
     assert "reason" in preview
 
 
-@pytest.mark.asyncio
 async def test_preview_load_unknown_model_raises(services):
     from app.services.provider_manager import ModelNotFoundError
     manager = services["manager"]
@@ -547,7 +511,6 @@ async def test_preview_load_unknown_model_raises(services):
         manager.preview_load("does-not-exist")
 
 
-@pytest.mark.asyncio
 async def test_admin_memory_status_endpoint(client, services):
     manager = services["manager"]
     await manager.ensure_loaded("test-image")
@@ -558,7 +521,6 @@ async def test_admin_memory_status_endpoint(client, services):
     assert "category_reservations" in body
 
 
-@pytest.mark.asyncio
 async def test_admin_preview_load_endpoint(client, services):
     manager = services["manager"]
     manager._max_vram_budget_mb = 1500
@@ -572,7 +534,6 @@ async def test_admin_preview_load_endpoint(client, services):
     assert body["plan"] == ["test-image"]
 
 
-@pytest.mark.asyncio
 async def test_admin_preview_load_unknown_model_404(client):
     resp = await client.get("/v1/admin/memory/preview-load/ghost")
     assert resp.status_code == 404
@@ -602,7 +563,6 @@ class _FakeRemoteProvider:
         return "metadata"
 
 
-@pytest.mark.asyncio
 async def test_reload_remote_calls_worker_endpoint(services):
     """Connected remote + unchanged worker_url: reload_model routes via existing.reload()."""
     manager = services["manager"]
@@ -663,7 +623,6 @@ async def _run_worker_monitor(manager, health: list[bool], monkeypatch,
     return provider
 
 
-@pytest.mark.asyncio
 async def test_worker_monitor_keeps_worker_that_misses_a_few_probes(services, monkeypatch):
     """A loaded worker busy with a heavy request keeps its slot and in-flight connections."""
     manager = services["manager"]
@@ -672,7 +631,6 @@ async def test_worker_monitor_keeps_worker_that_misses_a_few_probes(services, mo
     assert "test-image" in manager.loaded_models()
 
 
-@pytest.mark.asyncio
 async def test_worker_monitor_drops_worker_after_consecutive_misses(services, monkeypatch):
     """Three misses in a row mean the worker is gone: unload it and free its slot."""
     manager = services["manager"]
@@ -681,7 +639,6 @@ async def test_worker_monitor_drops_worker_after_consecutive_misses(services, mo
     assert "test-image" not in manager.loaded_models()
 
 
-@pytest.mark.asyncio
 async def test_worker_monitor_drops_worker_that_restarted_without_its_model(services, monkeypatch):
     """A recreated worker answers /health but is idle: free its slot so the next request loads it again."""
     manager = services["manager"]
@@ -696,7 +653,6 @@ def _metric(name: str, **labels: str) -> float:
     return REGISTRY.get_sample_value(name, labels) or 0.0
 
 
-@pytest.mark.asyncio
 async def test_worker_monitor_publishes_probe_metrics(services, monkeypatch):
     manager = services["manager"]
     probes_before = _metric("infergate_worker_health_check_duration_seconds_count", model_id="test-image")
@@ -707,7 +663,6 @@ async def test_worker_monitor_publishes_probe_metrics(services, monkeypatch):
     assert _metric("infergate_worker_disconnects_total", model_id="test-image", reason="unreachable") == drops_before + 1
 
 
-@pytest.mark.asyncio
 async def test_worker_monitor_counts_a_restarted_worker(services, monkeypatch):
     manager = services["manager"]
     before = _metric("infergate_worker_disconnects_total", model_id="test-image", reason="restarted")
@@ -716,7 +671,6 @@ async def test_worker_monitor_counts_a_restarted_worker(services, monkeypatch):
     assert _metric("infergate_worker_disconnects_total", model_id="test-image", reason="restarted") == before + 1
 
 
-@pytest.mark.asyncio
 async def test_plan_eviction_empty_when_already_fits(services):
     """Nothing loaded: empty plan, never None."""
     manager = services["manager"]
@@ -725,7 +679,6 @@ async def test_plan_eviction_empty_when_already_fits(services):
     assert manager._plan_eviction(1000) == []
 
 
-@pytest.mark.asyncio
 async def test_plan_eviction_returns_ordered_victims(services):
     """Plan is the LRU walk: oldest loaded appears first."""
     manager = services["manager"]
@@ -738,7 +691,6 @@ async def test_plan_eviction_returns_ordered_victims(services):
     assert plan == ["test-image"]
 
 
-@pytest.mark.asyncio
 async def test_plan_eviction_accumulates_until_fits(services):
     """Larger incoming forces multi-step eviction."""
     manager = services["manager"]
@@ -751,7 +703,6 @@ async def test_plan_eviction_accumulates_until_fits(services):
     assert plan == ["test-image", "test-text"]
 
 
-@pytest.mark.asyncio
 async def test_plan_eviction_infeasible_when_all_pinned(services):
     """Every loaded model pinned and still wouldn't fit: None."""
     manager = services["manager"]
@@ -762,7 +713,6 @@ async def test_plan_eviction_infeasible_when_all_pinned(services):
     assert manager._plan_eviction(1000) is None
 
 
-@pytest.mark.asyncio
 async def test_plan_eviction_infeasible_when_all_active(services):
     """In-flight models are excluded from plan; no other candidates: None."""
     manager = services["manager"]
@@ -773,7 +723,6 @@ async def test_plan_eviction_infeasible_when_all_active(services):
         assert manager._plan_eviction(1000) is None
 
 
-@pytest.mark.asyncio
 async def test_plan_respects_category_reservation_until_forced(services):
     """Plan honours soft reservation in pass 1; fall-through pass 2
     when otherwise infeasible."""
@@ -791,7 +740,6 @@ async def test_plan_respects_category_reservation_until_forced(services):
     assert manager._plan_eviction(2500) == ["test-image", "test-text"]
 
 
-@pytest.mark.asyncio
 async def test_category_reservation_protects_last_member(services):
     """With text reserved at 1, chat traffic can't evict the only text
     model when an image-category peer is a valid alternative."""
@@ -809,7 +757,6 @@ async def test_category_reservation_protects_last_member(services):
     assert manager.get("test-tts").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_category_reservation_violated_when_no_alternative(services):
     """Reservation is soft: if every non-reserved model is pinned/active,
     fall through and evict the reserved category rather than 503."""
@@ -828,7 +775,6 @@ async def test_category_reservation_violated_when_no_alternative(services):
     assert manager.get("test-tts").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_category_reservation_allows_eviction_above_floor(services):
     """Reservation of 1 does not protect the second+ member, only the
     last one. With two text models loaded, evicting the older one still
@@ -854,7 +800,6 @@ async def test_category_reservation_allows_eviction_above_floor(services):
     assert manager.get("test-text").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_category_reservation_empty_dict_is_noop(services):
     """Empty reservations {} must not change vanilla LRU behaviour."""
     manager = services["manager"]
@@ -870,7 +815,6 @@ async def test_category_reservation_empty_dict_is_noop(services):
     assert manager.get("test-tts").is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_reload_remote_falls_back_on_worker_error(services):
     """Worker /reload failure: recreate gateway-side provider so model stays registered."""
     manager = services["manager"]
@@ -894,7 +838,6 @@ async def test_reload_remote_falls_back_on_worker_error(services):
     assert changed is True
 
 
-@pytest.mark.asyncio
 async def test_get_model_lock_idempotent(services):
     """_get_model_lock must return the same Lock instance for repeated calls."""
     manager = services["manager"]
@@ -903,7 +846,6 @@ async def test_get_model_lock_idempotent(services):
     assert lock_a is lock_b
 
 
-@pytest.mark.asyncio
 async def test_get_model_lock_concurrent(services):
     """Concurrent _get_model_lock calls under asyncio must share one Lock instance."""
     import asyncio as _asyncio

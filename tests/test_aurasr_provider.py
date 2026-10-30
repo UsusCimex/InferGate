@@ -52,7 +52,6 @@ def _png(width: int, height: int) -> bytes:
     return buf.getvalue()
 
 
-@pytest.mark.asyncio
 async def test_weights_load_from_the_downloaded_snapshot(fakes):
     _, snapshot = fakes
     provider = _provider()
@@ -63,7 +62,6 @@ async def test_weights_load_from_the_downloaded_snapshot(fakes):
     assert provider.is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_upscale_is_4x_png_with_the_configured_seed(fakes):
     seeds, _ = fakes
     provider = _provider()
@@ -75,7 +73,6 @@ async def test_upscale_is_4x_png_with_the_configured_seed(fakes):
     assert seeds == [7]
 
 
-@pytest.mark.asyncio
 async def test_an_input_over_the_limit_is_refused(fakes):
     provider = _provider(max_input_side=64)
     await provider.load("/models")

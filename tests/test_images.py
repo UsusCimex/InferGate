@@ -25,7 +25,6 @@ def _mask_b64(width: int = 8, height: int = 8) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-@pytest.mark.asyncio
 async def test_image_generation(client):
     resp = await client.post(
         "/v1/images/generations",
@@ -43,7 +42,6 @@ async def test_image_generation(client):
     assert data["data"][0]["b64_json"] is not None
 
 
-@pytest.mark.asyncio
 async def test_blank_negative_prompt_is_not_forwarded(client, monkeypatch):
     from tests.conftest import FakeImageProvider
 
@@ -63,7 +61,6 @@ async def test_blank_negative_prompt_is_not_forwarded(client, monkeypatch):
     assert "negative_prompt" not in seen
 
 
-@pytest.mark.asyncio
 async def test_image_cache_with_seed(client):
     payload = {
         "model": "test-image",
@@ -82,7 +79,6 @@ async def test_image_cache_with_seed(client):
     assert resp2.headers["x-infergate-cache"] == "HIT"
 
 
-@pytest.mark.asyncio
 async def test_changed_model_defaults_miss_the_cache(client, services):
     payload = {"model": "test-image", "prompt": "A green star", "seed": 7}
     assert (await client.post("/v1/images/generations", json=payload)).headers["x-infergate-cache"] == "MISS"
@@ -91,7 +87,6 @@ async def test_changed_model_defaults_miss_the_cache(client, services):
     assert (await client.post("/v1/images/generations", json=payload)).headers["x-infergate-cache"] == "MISS"
 
 
-@pytest.mark.asyncio
 async def test_adapters_outside_the_allowed_repos_are_refused(client):
     client._transport.app.state.allowed_adapter_repos = ["ostris/*"]
     resp = await client.post(
@@ -107,7 +102,6 @@ async def test_adapters_outside_the_allowed_repos_are_refused(client):
     assert "ostris" not in error["message"]
 
 
-@pytest.mark.asyncio
 async def test_adapters_from_allowed_repos_pass(client):
     client._transport.app.state.allowed_adapter_repos = ["ostris/*"]
     resp = await client.post(
@@ -118,7 +112,6 @@ async def test_adapters_from_allowed_repos_pass(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_image_no_cache_without_seed(client):
     resp = await client.post(
         "/v1/images/generations",
@@ -149,7 +142,6 @@ def takes_references(services, monkeypatch):
     monkeypatch.setattr(services["manager"].get_config("test-image").capabilities, "reference_images", True)
 
 
-@pytest.mark.asyncio
 async def test_reference_images_reach_a_model_that_takes_them(client, takes_references, generate_params):
     references = [_png_b64(), _png_b64(colour=(0, 0, 200))]
     resp = await client.post(
@@ -160,7 +152,6 @@ async def test_reference_images_reach_a_model_that_takes_them(client, takes_refe
     assert generate_params["reference_images"] == references
 
 
-@pytest.mark.asyncio
 async def test_reference_images_are_refused_by_a_model_without_them(client):
     resp = await client.post(
         "/v1/images/generations",
@@ -170,7 +161,6 @@ async def test_reference_images_are_refused_by_a_model_without_them(client):
     assert "reference_images" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("extra", [
     {"reference_images": [_png_b64()] * 5},
     {"reference_images": [_png_b64()], "image": _png_b64()},
@@ -180,7 +170,6 @@ async def test_reference_images_are_four_at_most_and_draw_a_new_picture(client, 
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_other_references_miss_the_cache(client, takes_references):
     async def draw(colour):
         resp = await client.post("/v1/images/generations", json={
@@ -191,7 +180,6 @@ async def test_other_references_miss_the_cache(client, takes_references):
     assert [await draw((1, 2, 3)), await draw((4, 5, 6)), await draw((1, 2, 3))] == ["MISS", "MISS", "HIT"]
 
 
-@pytest.mark.asyncio
 async def test_image_img2img_accepts_base64_input(client):
     resp = await client.post(
         "/v1/images/generations",
@@ -206,7 +194,6 @@ async def test_image_img2img_accepts_base64_input(client):
     assert resp.json()["data"][0]["b64_json"] is not None
 
 
-@pytest.mark.asyncio
 async def test_image_inpaint_accepts_image_and_mask(client):
     resp = await client.post(
         "/v1/images/generations",
@@ -221,7 +208,6 @@ async def test_image_inpaint_accepts_image_and_mask(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_mask_without_image_is_rejected(client):
     """Schema-level guard: inpaint has no reference without the base image."""
     resp = await client.post(
@@ -239,7 +225,6 @@ async def test_mask_without_image_is_rejected(client):
     assert "mask" in detail and "image" in detail
 
 
-@pytest.mark.asyncio
 async def test_image_invalid_base64_returns_400_from_worker(client):
     """Fake provider ignores image field so returns 200; real decode is e2e-tested."""
     resp = await client.post(
@@ -253,7 +238,6 @@ async def test_image_invalid_base64_returns_400_from_worker(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_image_denoising_strength_bounds(client):
     """denoising_strength is bounded to [0.0, 1.0]."""
     resp = await client.post(
@@ -268,7 +252,6 @@ async def test_image_denoising_strength_bounds(client):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_image_refiner_switch_at_accepted(client):
     """refiner_switch_at in [0.0, 1.0] passes through to the provider."""
     resp = await client.post(
@@ -284,7 +267,6 @@ async def test_image_refiner_switch_at_accepted(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_image_refiner_switch_at_bounds(client):
     """refiner_switch_at is bounded to [0.0, 1.0]."""
     resp = await client.post(
@@ -307,7 +289,6 @@ _PNG_BYTES = (
 )
 
 
-@pytest.mark.asyncio
 async def test_upscale_b64_json_default(client):
     """Default response_format=b64_json mirrors /v1/images/generations envelope."""
     resp = await client.post(
@@ -322,7 +303,6 @@ async def test_upscale_b64_json_default(client):
     assert decoded.endswith(b"UPSCALED")  # fake provider sentinel
 
 
-@pytest.mark.asyncio
 async def test_upscale_raw_png(client):
     """response_format=png returns image bytes with image/png Content-Type."""
     resp = await client.post(
@@ -336,7 +316,6 @@ async def test_upscale_raw_png(client):
     assert resp.content.endswith(b"UPSCALED")
 
 
-@pytest.mark.asyncio
 async def test_upscale_uses_default_model(client):
     """Omitted model falls back to defaults['upscale']."""
     resp = await client.post(
@@ -346,7 +325,6 @@ async def test_upscale_uses_default_model(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_upscale_rejects_empty(client):
     resp = await client.post(
         "/v1/images/upscale",
@@ -357,7 +335,6 @@ async def test_upscale_rejects_empty(client):
     assert "Empty" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 async def test_upscale_rejects_unknown_format(client):
     resp = await client.post(
         "/v1/images/upscale",
@@ -368,7 +345,6 @@ async def test_upscale_rejects_unknown_format(client):
     assert "response_format" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 async def test_edits_multipart_with_image(client):
     """Multipart image + prompt: 200, same envelope as /v1/images/generations."""
     png = base64.b64decode(_png_b64())
@@ -382,7 +358,6 @@ async def test_edits_multipart_with_image(client):
     assert "data" in body and body["data"][0]["b64_json"]
 
 
-@pytest.mark.asyncio
 async def test_edits_multipart_with_mask(client):
     """Multipart image + mask: inpaint path."""
     png = base64.b64decode(_png_b64())
@@ -398,7 +373,6 @@ async def test_edits_multipart_with_mask(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_edits_uses_default_model(client):
     """Omitted model falls back to defaults['image']."""
     png = base64.b64decode(_png_b64())
@@ -410,7 +384,6 @@ async def test_edits_uses_default_model(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_edits_rejects_empty_image(client):
     resp = await client.post(
         "/v1/images/edits",
@@ -421,7 +394,6 @@ async def test_edits_rejects_empty_image(client):
     assert "Empty" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 async def test_edits_rejects_missing_image_field(client):
     resp = await client.post(
         "/v1/images/edits",
@@ -430,7 +402,6 @@ async def test_edits_rejects_missing_image_field(client):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_edits_denoising_strength_bounds(client):
     """FastAPI Form ge/le validation: 422 for out-of-range."""
     png = base64.b64decode(_png_b64())
@@ -442,7 +413,6 @@ async def test_edits_denoising_strength_bounds(client):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_upscale_cache_hit_on_same_image(client):
     files = {"file": ("in.png", _PNG_BYTES, "image/png")}
     r1 = await client.post("/v1/images/upscale", files=files, data={"model": "test-upscale"})

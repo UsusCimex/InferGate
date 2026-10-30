@@ -86,7 +86,6 @@ def test_bundled_presets_match_config():
         assert preset.transcript.endswith(".")
 
 
-@pytest.mark.asyncio
 async def test_default_voice_clones_the_default_preset(provider, seeds):
     await provider.synthesize("Hello there.", voice="default")
     call = provider._model.calls[-1]
@@ -98,14 +97,12 @@ async def test_default_voice_clones_the_default_preset(provider, seeds):
     assert seeds == [42]
 
 
-@pytest.mark.asyncio
 async def test_named_preset_with_request_seed(provider, seeds):
     await provider.synthesize("Hi.", voice="vox_lily", seed=7)
     assert provider._model.calls[-1]["prompt_wav_path"] == str(VOICES_DIR / "vox_lily.wav")
     assert seeds == [7]
 
 
-@pytest.mark.asyncio
 async def test_unknown_voice_lists_the_presets(provider):
     with pytest.raises(ValueError) as exc:
         await provider.synthesize("Hi.", voice="af_heart")
@@ -116,14 +113,12 @@ async def test_unknown_voice_lists_the_presets(provider):
     assert not provider._model.calls
 
 
-@pytest.mark.asyncio
 async def test_speed_and_language_are_ignored(provider):
     await provider.synthesize("Hi.", voice="vox_clara", speed=0.5, language="English")
     call = provider._model.calls[-1]
     assert not {"speed", "language"} & call.keys()
 
 
-@pytest.mark.asyncio
 async def test_mp3_by_default_and_wav_on_request(provider):
     mp3 = await provider.synthesize("Hi.")
     assert mp3[:3] == b"ID3" or mp3[0] == 0xFF
@@ -134,7 +129,6 @@ async def test_mp3_by_default_and_wav_on_request(provider):
     assert sf.info(io.BytesIO(wav)).samplerate == _SR
 
 
-@pytest.mark.asyncio
 async def test_output_is_normalized_to_the_configured_loudness(provider):
     loudness, peak_db = _lufs(await provider.synthesize("Hi.", output_format="wav"))
     assert loudness == pytest.approx(-25.0, abs=0.3)
@@ -156,7 +150,6 @@ def test_silence_and_short_clips_do_not_fail():
     assert short.size == int(_SR * 0.1)
 
 
-@pytest.mark.asyncio
 async def test_uploaded_reference_with_transcript_uses_continuation(provider):
     ref = io.BytesIO()
     sf.write(ref, _tone(), _SR, format="WAV")
@@ -172,7 +165,6 @@ async def test_uploaded_reference_with_transcript_uses_continuation(provider):
     assert _removed(call["reference_wav_path"])
 
 
-@pytest.mark.asyncio
 async def test_uploaded_reference_without_transcript_clones_timbre_only(provider):
     await provider.synthesize("Hello.", reference_audio=b"RIFF" + b"\x00" * 40)
     call = provider._model.calls[-1]

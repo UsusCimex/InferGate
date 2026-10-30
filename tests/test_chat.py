@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.asyncio
 async def test_chat_completion(client):
     resp = await client.post(
         "/v1/chat/completions",
@@ -20,7 +17,6 @@ async def test_chat_completion(client):
     assert resp.headers["x-infergate-model"] == "test-text"
 
 
-@pytest.mark.asyncio
 async def test_chat_default_model(client):
     resp = await client.post(
         "/v1/chat/completions",
@@ -30,7 +26,6 @@ async def test_chat_default_model(client):
     assert resp.json()["model"] == "test-text"
 
 
-@pytest.mark.asyncio
 async def test_chat_unknown_model(client):
     resp = await client.post(
         "/v1/chat/completions",

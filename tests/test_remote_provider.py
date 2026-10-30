@@ -84,7 +84,6 @@ def test_mixed_local_and_remote():
     assert len(manager.list_models()) == 2
 
 
-@pytest.mark.asyncio
 async def test_retry_send_succeeds_after_transient_failure(monkeypatch):
     """_retry_send must retry ConnectError and succeed once the worker recovers."""
     from app.providers import remote as r
@@ -105,7 +104,6 @@ async def test_retry_send_succeeds_after_transient_failure(monkeypatch):
     assert attempts["n"] == 3
 
 
-@pytest.mark.asyncio
 async def test_retry_send_does_not_retry_non_transient(monkeypatch):
     """_retry_send must NOT retry ReadError (request likely already executed)."""
     from app.providers import remote as r
@@ -123,7 +121,6 @@ async def test_retry_send_does_not_retry_non_transient(monkeypatch):
     assert attempts["n"] == 1
 
 
-@pytest.mark.asyncio
 async def test_retry_send_exhausts_attempts(monkeypatch):
     """When the worker stays unreachable, _retry_send raises after N attempts."""
     from app.providers import remote as r
@@ -248,7 +245,6 @@ def test_provider_manager_uses_template_for_remote_discovery():
     assert provider.config.worker_url == "http://worker-text-template:8000"
 
 
-@pytest.mark.asyncio
 async def test_reload_of_an_unchanged_yaml_keeps_a_template_worker(monkeypatch):
     """The YAML has no worker_url; the template fills one in, which must not count as a change."""
     from app.services.provider_manager import ProviderManager
@@ -284,7 +280,6 @@ def _pooled_client(max_connections: int = 10) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, base_url="http://worker")
 
 
-@pytest.mark.asyncio
 async def test_pool_stats_tracks_active_and_idle_connections():
     from app.providers.remote import _pool_stats
 
@@ -296,7 +291,6 @@ async def test_pool_stats_tracks_active_and_idle_connections():
         assert _pool_stats(client) == {"active": 0, "idle": 1, "waiting": 0}
 
 
-@pytest.mark.asyncio
 async def test_pool_stats_counts_requests_waiting_for_a_connection():
     import asyncio
 

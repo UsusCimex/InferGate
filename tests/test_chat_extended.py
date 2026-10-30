@@ -1,10 +1,7 @@
 """Extended chat tests: parameters, cache, edge cases."""
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.asyncio
 async def test_chat_with_temperature(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
@@ -14,7 +11,6 @@ async def test_chat_with_temperature(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_chat_with_top_p(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
@@ -24,7 +20,6 @@ async def test_chat_with_top_p(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_chat_with_max_tokens(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
@@ -34,7 +29,6 @@ async def test_chat_with_max_tokens(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_chat_with_response_format(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
@@ -44,7 +38,6 @@ async def test_chat_with_response_format(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_chat_with_thinking(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
@@ -54,7 +47,6 @@ async def test_chat_with_thinking(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_chat_no_model_no_default(client, services):
     """When no model specified and no default, should return 400."""
     old_defaults = services["defaults"].copy()
@@ -68,7 +60,6 @@ async def test_chat_no_model_no_default(client, services):
         services["defaults"].update(old_defaults)
 
 
-@pytest.mark.asyncio
 async def test_chat_skip_cache(client):
     resp = await client.post(
         "/v1/chat/completions",
@@ -79,7 +70,6 @@ async def test_chat_skip_cache(client):
     assert resp.headers["x-infergate-cache"] == "SKIP"
 
 
-@pytest.mark.asyncio
 async def test_chat_validation_temperature_too_high(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
@@ -89,7 +79,6 @@ async def test_chat_validation_temperature_too_high(client):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_chat_validation_empty_messages(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
@@ -98,7 +87,6 @@ async def test_chat_validation_empty_messages(client):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_image_no_model_no_default(client, services):
     old_defaults = services["defaults"].copy()
     services["defaults"].clear()
@@ -111,7 +99,6 @@ async def test_image_no_model_no_default(client, services):
         services["defaults"].update(old_defaults)
 
 
-@pytest.mark.asyncio
 async def test_image_validation_n_too_high(client):
     resp = await client.post("/v1/images/generations", json={
         "model": "test-image",
@@ -121,7 +108,6 @@ async def test_image_validation_n_too_high(client):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_audio_no_model_no_default(client, services):
     old_defaults = services["defaults"].copy()
     services["defaults"].clear()
@@ -134,7 +120,6 @@ async def test_audio_no_model_no_default(client, services):
         services["defaults"].update(old_defaults)
 
 
-@pytest.mark.asyncio
 async def test_audio_validation_speed_too_high(client):
     resp = await client.post("/v1/audio/speech", json={
         "model": "test-tts",

@@ -1,8 +1,6 @@
 """Tests for MemoryWatchdog: drive scan_once() directly to avoid sleep loops."""
 from __future__ import annotations
 
-import pytest
-
 from app.services.memory_watchdog import MemoryWatchdog
 
 
@@ -61,7 +59,6 @@ class _StubManager:
         self._loaded_order.pop(model_id, None)
 
 
-@pytest.mark.asyncio
 async def test_watchdog_evicts_on_vram_over_threshold():
     """live VRAM >= threshold * total: evict LRU non-pinned model."""
     providers = {
@@ -77,7 +74,6 @@ async def test_watchdog_evicts_on_vram_over_threshold():
     assert providers["old"].unload_calls == 1
 
 
-@pytest.mark.asyncio
 async def test_watchdog_noop_below_threshold():
     """Usage under threshold: no eviction, no logs."""
     providers = {
@@ -92,7 +88,6 @@ async def test_watchdog_noop_below_threshold():
     assert providers["m1"].unload_calls == 0
 
 
-@pytest.mark.asyncio
 async def test_watchdog_cannot_evict_when_all_pinned(caplog):
     """Over threshold + all pinned: warning, no eviction."""
     providers = {
@@ -110,7 +105,6 @@ async def test_watchdog_cannot_evict_when_all_pinned(caplog):
     assert any("all loaded models are pinned" in r.message for r in caplog.records)
 
 
-@pytest.mark.asyncio
 async def test_watchdog_keeps_lone_model_that_reserves_the_gpu(caplog):
     """vLLM reserves ~90% of VRAM up front: a single loaded model over threshold stays loaded."""
     providers = {"vllm": _StubProvider(vram_used_mb=11850, vram_total_mb=12227)}
@@ -125,7 +119,6 @@ async def test_watchdog_keeps_lone_model_that_reserves_the_gpu(caplog):
     assert not any("VRAM" in r.message for r in caplog.records)
 
 
-@pytest.mark.asyncio
 async def test_watchdog_keeps_cpu_models_next_to_a_lone_gpu_model():
     """A CPU model beside vLLM frees no VRAM, so the sweep evicts nothing."""
     providers = {
@@ -141,7 +134,6 @@ async def test_watchdog_keeps_cpu_models_next_to_a_lone_gpu_model():
     assert all(p.unload_calls == 0 for p in providers.values())
 
 
-@pytest.mark.asyncio
 async def test_watchdog_ram_threshold_is_advisory(caplog, monkeypatch):
     """Host RAM overshoot: log warning but no eviction (we don't own
     host processes)."""
@@ -164,7 +156,6 @@ async def test_watchdog_ram_threshold_is_advisory(caplog, monkeypatch):
     assert any("host RAM" in r.message for r in caplog.records)
 
 
-@pytest.mark.asyncio
 async def test_watchdog_handles_empty_stats():
     """Worker returning {} (transport failure) shouldn't crash the sweep."""
     class _EmptyProvider(_StubProvider):
@@ -181,7 +172,6 @@ async def test_watchdog_handles_empty_stats():
     assert summary["evicted"] == []
 
 
-@pytest.mark.asyncio
 async def test_watchdog_lifecycle():
     """start() is idempotent; stop() cancels; interval=0 skips start."""
     import asyncio
@@ -206,7 +196,6 @@ async def test_watchdog_lifecycle():
     assert first.cancelled() or first.done()
 
 
-@pytest.mark.asyncio
 async def test_watchdog_judges_each_gpu_on_its_own():
     """A lone vLLM model filling GPU 0 must not cost a model on GPU 1 its slot."""
     providers = {
@@ -224,7 +213,6 @@ async def test_watchdog_judges_each_gpu_on_its_own():
     assert summary["vram_total_mb"] == 12000 + 24000
 
 
-@pytest.mark.asyncio
 async def test_watchdog_evicts_on_the_gpu_over_threshold():
     providers = {
         "llm": _StubProvider(vram_used_mb=3000, vram_total_mb=12000, gpu=0),
@@ -239,7 +227,6 @@ async def test_watchdog_evicts_on_the_gpu_over_threshold():
     assert providers["llm"].unload_calls == 0
 
 
-@pytest.mark.asyncio
 async def test_watchdog_reports_every_gpu_it_evicted_from():
     providers = {
         "text-a": _StubProvider(vram_used_mb=11000, vram_total_mb=12000, gpu=0),

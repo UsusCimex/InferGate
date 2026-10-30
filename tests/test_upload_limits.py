@@ -9,14 +9,12 @@ from fastapi import UploadFile
 from app.utils import UploadTooLargeError, read_with_limit
 
 
-@pytest.mark.asyncio
 async def test_read_with_limit_returns_full_bytes_under_limit():
     upload = UploadFile(file=io.BytesIO(b"x" * 1000), filename="t.bin")
     result = await read_with_limit(upload, max_bytes=2000)
     assert result == b"x" * 1000
 
 
-@pytest.mark.asyncio
 async def test_read_with_limit_raises_when_exceeded():
     upload = UploadFile(file=io.BytesIO(b"x" * 5000), filename="t.bin")
     with pytest.raises(UploadTooLargeError) as exc_info:
@@ -24,28 +22,24 @@ async def test_read_with_limit_raises_when_exceeded():
     assert exc_info.value.max_bytes == 1000
 
 
-@pytest.mark.asyncio
 async def test_read_with_limit_exact_size_passes():
     upload = UploadFile(file=io.BytesIO(b"x" * 1000), filename="t.bin")
     result = await read_with_limit(upload, max_bytes=1000)
     assert len(result) == 1000
 
 
-@pytest.mark.asyncio
 async def test_read_with_limit_empty_file():
     upload = UploadFile(file=io.BytesIO(b""), filename="empty.bin")
     result = await read_with_limit(upload, max_bytes=1000)
     assert result == b""
 
 
-@pytest.mark.asyncio
 async def test_read_with_limit_rejects_zero_max():
     upload = UploadFile(file=io.BytesIO(b"x"), filename="t.bin")
     with pytest.raises(ValueError, match="max_bytes must be > 0"):
         await read_with_limit(upload, max_bytes=0)
 
 
-@pytest.mark.asyncio
 async def test_read_with_limit_streams_bounded_memory(monkeypatch):
     """Once the limit is hit, no more bytes are accumulated; verify by inspecting buffer."""
     big_payload = b"y" * 10_000
@@ -56,7 +50,6 @@ async def test_read_with_limit_streams_bounded_memory(monkeypatch):
         await read_with_limit(upload, max_bytes=1024, chunk_size=512)
 
 
-@pytest.mark.asyncio
 async def test_audio_transcription_returns_413_on_oversized_upload(client, services):
     """Setting a tiny audio limit must turn a normal-sized request into 413."""
     from app.config import UploadLimitsConfig
@@ -71,7 +64,6 @@ async def test_audio_transcription_returns_413_on_oversized_upload(client, servi
     assert resp.json()["error"]["type"] == "upload_too_large"
 
 
-@pytest.mark.asyncio
 async def test_image_embedding_returns_413_on_oversized_upload(client, services):
     from app.config import UploadLimitsConfig
 
@@ -84,7 +76,6 @@ async def test_image_embedding_returns_413_on_oversized_upload(client, services)
     assert resp.status_code == 413
 
 
-@pytest.mark.asyncio
 async def test_video_embedding_returns_413_on_oversized_upload(client, services):
     from app.config import UploadLimitsConfig
 
@@ -97,7 +88,6 @@ async def test_video_embedding_returns_413_on_oversized_upload(client, services)
     assert resp.status_code == 413
 
 
-@pytest.mark.asyncio
 async def test_image_upscale_returns_413_on_oversized_upload(client, services):
     from app.config import UploadLimitsConfig
 
@@ -110,7 +100,6 @@ async def test_image_upscale_returns_413_on_oversized_upload(client, services):
     assert resp.status_code == 413
 
 
-@pytest.mark.asyncio
 async def test_normal_size_upload_passes_size_check(client, services):
     """Sanity: a small upload still succeeds even with default limits."""
     small_audio = b"\x00" * 1024  # 1KB

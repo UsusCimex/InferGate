@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 import os
 
-import pytest
-
 from app.services.config_watcher import ConfigWatcher
 
 _YAML_TEMPLATE = """\
@@ -24,7 +22,6 @@ def _write_yaml(path, model_id="watch-test", display_name="first") -> None:
     path.write_text(_YAML_TEMPLATE.format(id=model_id, display_name=display_name))
 
 
-@pytest.mark.asyncio
 async def test_first_scan_is_baseline_only(tmp_path):
     """First scan snapshots mtimes without dispatching; otherwise every
     startup would re-reload every file."""
@@ -42,7 +39,6 @@ async def test_first_scan_is_baseline_only(tmp_path):
     assert calls == []
 
 
-@pytest.mark.asyncio
 async def test_new_file_dispatches_reload(tmp_path):
     """A YAML appearing after the baseline scan fires the callback."""
     calls: list[str] = []
@@ -59,7 +55,6 @@ async def test_new_file_dispatches_reload(tmp_path):
     assert calls == ["first"]
 
 
-@pytest.mark.asyncio
 async def test_modified_file_dispatches_reload(tmp_path):
     """mtime advancing past `debounce` triggers a re-dispatch."""
     yaml = tmp_path / "watch-test.yaml"
@@ -84,7 +79,6 @@ async def test_modified_file_dispatches_reload(tmp_path):
     assert calls == ["second"]
 
 
-@pytest.mark.asyncio
 async def test_unchanged_file_is_noop(tmp_path):
     """Scanning twice with no edits must not fire the callback."""
     yaml = tmp_path / "watch-test.yaml"
@@ -102,7 +96,6 @@ async def test_unchanged_file_is_noop(tmp_path):
     assert calls == []
 
 
-@pytest.mark.asyncio
 async def test_bad_yaml_does_not_crash_watcher(tmp_path, caplog):
     """Malformed YAML logs an error but leaves the watcher alive
     and must NOT fire the callback with a half-parsed config."""
@@ -128,7 +121,6 @@ async def test_bad_yaml_does_not_crash_watcher(tmp_path, caplog):
     assert calls == []
 
 
-@pytest.mark.asyncio
 async def test_callback_exception_does_not_block_other_files(tmp_path):
     """One file's failed reload must not starve subsequent files."""
     _write_yaml(tmp_path / "alpha.yaml", model_id="alpha")
@@ -154,7 +146,6 @@ async def test_callback_exception_does_not_block_other_files(tmp_path):
     assert set(calls) == {"alpha", "beta"}
 
 
-@pytest.mark.asyncio
 async def test_removed_file_logs_warning(tmp_path, caplog):
     """Deleted YAML logs a warning; callback not fired; watcher survives."""
     yaml = tmp_path / "watch-test.yaml"
@@ -176,7 +167,6 @@ async def test_removed_file_logs_warning(tmp_path, caplog):
     assert any("removed" in rec.message.lower() for rec in caplog.records)
 
 
-@pytest.mark.asyncio
 async def test_start_stop_lifecycle(tmp_path):
     """start() spawns exactly one task; stop() cancels and awaits it."""
     async def cb(cfg):

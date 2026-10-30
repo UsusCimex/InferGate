@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.asyncio
 async def test_tts(client):
     resp = await client.post(
         "/v1/audio/speech",
@@ -28,7 +27,6 @@ def synthesized(monkeypatch):
     return seen
 
 
-@pytest.mark.asyncio
 async def test_tts_falls_back_to_model_defaults(client, services, synthesized):
     services["manager"].get_config("test-tts").model["default_params"] = {"output_format": "wav"}
     resp = await client.post(
@@ -38,7 +36,6 @@ async def test_tts_falls_back_to_model_defaults(client, services, synthesized):
     assert synthesized == {"output_format": "wav"}
 
 
-@pytest.mark.asyncio
 async def test_tts_request_values_win(client, services, synthesized):
     services["manager"].get_config("test-tts").model["default_params"] = {"output_format": "wav"}
     resp = await client.post(
@@ -50,7 +47,6 @@ async def test_tts_request_values_win(client, services, synthesized):
     assert synthesized == {"output_format": "flac", "voice": "bm_george", "speed": 1.2}
 
 
-@pytest.mark.asyncio
 async def test_tts_cache(client):
     payload = {"model": "test-tts", "input": "Cache test", "voice": "default"}
 
@@ -63,7 +59,6 @@ async def test_tts_cache(client):
     assert resp2.headers["x-infergate-cache"] == "HIT"
 
 
-@pytest.mark.asyncio
 async def test_tts_skip_cache(client):
     resp = await client.post(
         "/v1/audio/speech",
@@ -74,7 +69,6 @@ async def test_tts_skip_cache(client):
     assert resp.headers["x-infergate-cache"] == "SKIP"
 
 
-@pytest.mark.asyncio
 async def test_tts_language_routed_into_cache_key(client):
     """`language` must reach the cache layer: two requests identical except
     for language should both be MISS (distinct cache keys), not HIT."""
@@ -89,7 +83,6 @@ async def test_tts_language_routed_into_cache_key(client):
     assert r2.headers["x-infergate-cache"] == "MISS"
 
 
-@pytest.mark.asyncio
 async def test_tts_seed_routed_into_cache_key(client):
     base = {"model": "test-tts", "input": "Seeded"}
 
@@ -101,7 +94,6 @@ async def test_tts_seed_routed_into_cache_key(client):
     assert r3.headers["x-infergate-cache"] == "HIT"
 
 
-@pytest.mark.asyncio
 async def test_tts_rejects_negative_seed(client):
     resp = await client.post(
         "/v1/audio/speech", json={"model": "test-tts", "input": "x", "seed": -1}
@@ -113,7 +105,6 @@ async def test_tts_rejects_negative_seed(client):
 _FAKE_AUDIO = b"RIFF\x00\x00\x00\x00WAVEfmt " + b"\x00" * 40  # pseudo-WAV
 
 
-@pytest.mark.asyncio
 async def test_stt_json(client):
     """Default response_format=json returns strict OpenAI shape `{text: ...}`."""
     resp = await client.post(
@@ -126,7 +117,6 @@ async def test_stt_json(client):
     assert body == {"text": "hello world"}  # language/duration intentionally stripped
 
 
-@pytest.mark.asyncio
 async def test_stt_text_format(client):
     """response_format=text returns raw text body, not JSON."""
     resp = await client.post(
@@ -139,7 +129,6 @@ async def test_stt_text_format(client):
     assert resp.text == "hello world"
 
 
-@pytest.mark.asyncio
 async def test_stt_verbose_json_includes_segments(client):
     """verbose_json passes language/duration/segments through."""
     resp = await client.post(
@@ -154,7 +143,6 @@ async def test_stt_verbose_json_includes_segments(client):
     assert isinstance(body["segments"], list) and body["segments"][0]["text"] == "hello world"
 
 
-@pytest.mark.asyncio
 async def test_stt_uses_default_model(client):
     """Unspecified `model` field picks defaults["stt"]."""
     resp = await client.post(
@@ -164,7 +152,6 @@ async def test_stt_uses_default_model(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_stt_rejects_unknown_format(client):
     resp = await client.post(
         "/v1/audio/transcriptions",
@@ -175,7 +162,6 @@ async def test_stt_rejects_unknown_format(client):
     assert "response_format" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 async def test_stt_srt_format(client):
     """response_format=srt renders segments as SubRip with comma-millisecond timestamps."""
     resp = await client.post(
@@ -192,7 +178,6 @@ async def test_stt_srt_format(client):
     assert "hello world" in body
 
 
-@pytest.mark.asyncio
 async def test_stt_vtt_format(client):
     """response_format=vtt renders WEBVTT with dot-millisecond timestamps."""
     resp = await client.post(
@@ -218,7 +203,6 @@ def test_srt_vtt_time_formatting():
     assert _fmt_vtt_time(3725.123) == "01:02:05.123"
 
 
-@pytest.mark.asyncio
 async def test_stt_rejects_empty_file(client):
     resp = await client.post(
         "/v1/audio/transcriptions",
@@ -229,7 +213,6 @@ async def test_stt_rejects_empty_file(client):
     assert "Empty" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 async def test_stt_vad_filter_param_reaches_provider(client, services, monkeypatch):
     """vad_filter form-field must be forwarded to provider.transcribe(**params)."""
     captured: dict = {}
@@ -253,7 +236,6 @@ async def test_stt_vad_filter_param_reaches_provider(client, services, monkeypat
     assert captured.get("vad_filter") is True
 
 
-@pytest.mark.asyncio
 async def test_stt_vad_filter_omitted_does_not_propagate(client, services, monkeypatch):
     """When vad_filter is not sent, the key must not appear in params (provider falls back to YAML default)."""
     captured: dict = {}
@@ -277,7 +259,6 @@ async def test_stt_vad_filter_omitted_does_not_propagate(client, services, monke
     assert "vad_filter" not in captured
 
 
-@pytest.mark.asyncio
 async def test_stt_cache_hit_on_same_audio(client):
     """Same bytes + same params: cache HIT on second call."""
     files = {"file": ("a.wav", _FAKE_AUDIO, "audio/wav")}
@@ -292,7 +273,6 @@ async def test_stt_cache_hit_on_same_audio(client):
     assert r2.json() == {"text": "hello world"}
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_basic(client):
     """Multipart request with reference_audio returns synthesised audio."""
     resp = await client.post(
@@ -305,7 +285,6 @@ async def test_voice_clone_basic(client):
     assert resp.content.startswith(b"RIFF")
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_uses_default_model(client):
     resp = await client.post(
         "/v1/audio/speech/voice-clone",
@@ -315,7 +294,6 @@ async def test_voice_clone_uses_default_model(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_rejects_empty_reference(client):
     resp = await client.post(
         "/v1/audio/speech/voice-clone",
@@ -326,7 +304,6 @@ async def test_voice_clone_rejects_empty_reference(client):
     assert "Empty" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_cache_hit_on_identical_request(client):
     """Same input + same reference bytes + same speed: cache HIT."""
     files = {"reference_audio": ("ref.wav", _FAKE_AUDIO, "audio/wav")}
@@ -341,7 +318,6 @@ async def test_voice_clone_cache_hit_on_identical_request(client):
     assert r2.headers["x-infergate-cache"] == "HIT"
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_different_references_bust_cache(client):
     """Identical text + same model but different reference audio: different cache keys."""
     data = {"input": "same text", "model": "test-tts"}
@@ -359,7 +335,6 @@ async def test_voice_clone_different_references_bust_cache(client):
     assert r2.headers["x-infergate-cache"] == "MISS"  # different voice, different key
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_seed_routed_into_cache_key(client):
     data = {"input": "same text", "model": "test-tts"}
 

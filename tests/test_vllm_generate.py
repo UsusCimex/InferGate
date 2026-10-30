@@ -43,7 +43,6 @@ def _provider(finish_reason: str | None = "stop") -> VllmTextProvider:
 MESSAGES = [{"role": "user", "content": "A tale as JSON."}]
 
 
-@pytest.mark.asyncio
 async def test_json_object_holds_the_answer_to_the_json_grammar(vllm):
     provider = _provider()
 
@@ -52,7 +51,6 @@ async def test_json_object_holds_the_answer_to_the_json_grammar(vllm):
     assert provider._engine.sampling["structured_outputs"] == {"json_object": True}
 
 
-@pytest.mark.asyncio
 async def test_thinking_leaves_the_think_block_free_of_the_grammar(vllm):
     provider = _provider()
 
@@ -61,7 +59,6 @@ async def test_thinking_leaves_the_think_block_free_of_the_grammar(vllm):
     assert provider._engine.sampling["structured_outputs"] is None
 
 
-@pytest.mark.asyncio
 async def test_plain_text_has_no_grammar(vllm):
     provider = _provider()
 
@@ -70,14 +67,12 @@ async def test_plain_text_has_no_grammar(vllm):
     assert provider._engine.sampling["structured_outputs"] is None
 
 
-@pytest.mark.asyncio
 async def test_an_answer_cut_at_max_tokens_finishes_with_length(vllm):
     result = await _provider("length").generate(MESSAGES, thinking=False)
 
     assert result["choices"][0]["finish_reason"] == "length"
 
 
-@pytest.mark.asyncio
 async def test_the_stream_ends_with_the_engine_finish_reason(vllm):
     provider = _provider("length")
 

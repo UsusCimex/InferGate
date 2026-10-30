@@ -35,7 +35,6 @@ def preset_model(services):
     yield provider
 
 
-@pytest.mark.asyncio
 async def test_unknown_voice_is_rejected_before_loading(client, preset_model):
     resp = await client.post(
         "/v1/audio/speech",
@@ -50,7 +49,6 @@ async def test_unknown_voice_is_rejected_before_loading(client, preset_model):
     assert not preset_model.is_loaded()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("voice", ["vox_daniel", "default"])
 async def test_preset_and_default_voice_are_accepted(client, preset_model, voice):
     resp = await client.post(
@@ -60,7 +58,6 @@ async def test_preset_and_default_voice_are_accepted(client, preset_model, voice
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_model_without_voice_list_accepts_any_voice(client):
     resp = await client.post(
         "/v1/audio/speech",

@@ -136,7 +136,6 @@ async def tts_worker():
         yield ac, provider
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_forwards_language_and_seed(tts_worker):
     client, provider = tts_worker
     resp = await client.post(
@@ -150,7 +149,6 @@ async def test_voice_clone_forwards_language_and_seed(tts_worker):
     assert provider.last_params["reference_text"] == "Hi"
 
 
-@pytest.mark.asyncio
 async def test_voice_clone_omits_unset_optional_params(tts_worker):
     client, provider = tts_worker
     resp = await client.post(
@@ -162,7 +160,6 @@ async def test_voice_clone_omits_unset_optional_params(tts_worker):
     assert not {"language", "seed", "reference_text"} & provider.last_params.keys()
 
 
-@pytest.mark.asyncio
 async def test_worker_health(text_worker):
     resp = await text_worker.get("/health")
     assert resp.status_code == 200
@@ -172,14 +169,12 @@ async def test_worker_health(text_worker):
     assert data["category"] == "text"
 
 
-@pytest.mark.asyncio
 async def test_worker_load(text_worker):
     resp = await text_worker.post("/load")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
 
 
-@pytest.mark.asyncio
 async def test_worker_text_generate(text_worker):
     resp = await text_worker.post("/generate", json={
         "messages": [{"role": "user", "content": "Hello"}],
@@ -190,7 +185,6 @@ async def test_worker_text_generate(text_worker):
     assert data["choices"][0]["message"]["role"] == "assistant"
 
 
-@pytest.mark.asyncio
 async def test_worker_image_generate(image_worker):
     resp = await image_worker.post("/generate", json={
         "prompt": "A red circle",
@@ -201,7 +195,6 @@ async def test_worker_image_generate(image_worker):
     assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-@pytest.mark.asyncio
 async def test_reload_identical_config_is_noop(text_worker):
     """Posting the current config back must not trigger a swap."""
     config = _make_config("text", "FakeTextProvider")
@@ -212,7 +205,6 @@ async def test_reload_identical_config_is_noop(text_worker):
     assert data["model"] == "test-text"
 
 
-@pytest.mark.asyncio
 async def test_reload_metadata_only_updates_config_in_place(text_worker):
     """Changing display_name / metadata.description must update state.config
     without rebuilding the provider (which would cost a load/unload cycle)."""
@@ -234,7 +226,6 @@ async def test_reload_metadata_only_updates_config_in_place(text_worker):
     assert h.json()["model"] == "test-text"
 
 
-@pytest.mark.asyncio
 async def test_reload_full_swap_on_model_change(text_worker):
     """Changing model.* forces a full rebuild: unload old, create new
     provider, load. Verified by peeking at provider identity via /health
@@ -252,7 +243,6 @@ async def test_reload_full_swap_on_model_change(text_worker):
     assert h.json()["status"] == "ok"
 
 
-@pytest.mark.asyncio
 async def test_reload_rejects_unknown_provider_class(text_worker):
     """Typo in provider_class returns 400, keeps old provider intact."""
     new_cfg_data = _make_config("text", "FakeTextProvider").model_dump(mode="json")
@@ -267,7 +257,6 @@ async def test_reload_rejects_unknown_provider_class(text_worker):
     assert h.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_reload_rejects_malformed_config(text_worker):
     """Garbage body: 400 with structured error, no crash."""
     resp = await text_worker.post("/reload", json={"this": "is not a ModelConfig"})
@@ -275,7 +264,6 @@ async def test_reload_rejects_malformed_config(text_worker):
     assert "invalid config" in resp.json()["error"]["message"]
 
 
-@pytest.mark.asyncio
 async def test_stats_returns_usage_snapshot(text_worker):
     """GET /stats returns the full envelope; fake-provider env has no
     CUDA so VRAM fields are 0, but the shape must be correct."""
@@ -293,7 +281,6 @@ async def test_stats_returns_usage_snapshot(text_worker):
     assert body["declared_vram_mb"] == 0
 
 
-@pytest.mark.asyncio
 async def test_stats_prefers_nvml_over_torch(text_worker, monkeypatch):
     """When pynvml is importable, /stats reports device-wide numbers
     and marks vram_source='nvml'; catches the shared-GPU case torch
@@ -367,7 +354,6 @@ async def async_worker():
         yield ac
 
 
-@pytest.mark.asyncio
 async def test_async_load_starts_in_background_and_status_transitions(async_worker):
     """POST /load when idle returns 202 + loading, eventually settles to ready."""
     resp = await async_worker.post("/load")
@@ -386,7 +372,6 @@ async def test_async_load_starts_in_background_and_status_transitions(async_work
     assert status_resp.json()["status"] == "ready"
 
 
-@pytest.mark.asyncio
 async def test_load_already_loaded_returns_200_sync(async_worker):
     """If load_state is already 'ready', /load returns 200 immediately (fast path)."""
     async_worker._app.state.load_state["status"] = "ready"
@@ -397,7 +382,6 @@ async def test_load_already_loaded_returns_200_sync(async_worker):
     assert resp.json()["status"] == "ok"
 
 
-@pytest.mark.asyncio
 async def test_inference_returns_503_when_not_ready(async_worker):
     """POST /generate while status='loading' must return 503 model_not_ready."""
     async_worker._app.state.load_state["status"] = "loading"
@@ -408,7 +392,6 @@ async def test_inference_returns_503_when_not_ready(async_worker):
     assert resp.json()["error"]["type"] == "model_not_ready"
 
 
-@pytest.mark.asyncio
 async def test_load_failure_marks_status_failed_and_can_retry(async_worker, monkeypatch):
     """Provider.load raises: status=failed, error set; subsequent /load can retry."""
     provider = async_worker._app.state.provider
@@ -442,7 +425,6 @@ async def test_load_failure_marks_status_failed_and_can_retry(async_worker, monk
     assert status2["status"] == "ready"
 
 
-@pytest.mark.asyncio
 async def test_unload_during_load_signals_cancelling(async_worker, monkeypatch):
     """POST /unload while loading: cancels background task, transitions away from 'loading'."""
     provider = async_worker._app.state.provider
@@ -467,7 +449,6 @@ async def test_unload_during_load_signals_cancelling(async_worker, monkeypatch):
     assert async_worker._app.state.load_state["status"] in ("idle", "cancelling")
 
 
-@pytest.mark.asyncio
 async def test_reload_serialises_with_generate(text_worker):
     """Reload must wait for an inflight /generate to finish before
     swapping the provider; otherwise the request's provider reference
@@ -485,7 +466,6 @@ async def test_reload_serialises_with_generate(text_worker):
     assert r_resp.json()["action"] == "noop"  # same config
 
 
-@pytest.mark.asyncio
 async def test_a_cuda_error_ends_the_worker_process_so_docker_restarts_it(monkeypatch):
     from fastapi import FastAPI
 
@@ -580,7 +560,6 @@ def _swap_config(hub_id: str) -> dict:
     return config
 
 
-@pytest.mark.asyncio
 async def test_full_reload_unloads_the_old_model_first(swap_worker):
     app, client = swap_worker
     resp = await client.post("/reload", json=_swap_config("test/new"))
@@ -589,7 +568,6 @@ async def test_full_reload_unloads_the_old_model_first(swap_worker):
     assert app.state.config.model["hub_id"] == "test/new"
 
 
-@pytest.mark.asyncio
 async def test_failed_reload_brings_the_old_model_back(swap_worker):
     app, client = swap_worker
     resp = await client.post("/reload", json=_swap_config("test/broken"))
@@ -600,7 +578,6 @@ async def test_failed_reload_brings_the_old_model_back(swap_worker):
     assert app.state.config.model["hub_id"] == "test/old"
 
 
-@pytest.mark.asyncio
 async def test_reload_of_an_unloaded_worker_loads_nothing(swap_worker):
     app, client = swap_worker
     app.state.load_state["status"] = "idle"
@@ -611,7 +588,6 @@ async def test_reload_of_an_unloaded_worker_loads_nothing(swap_worker):
     assert app.state.config.model["hub_id"] == "test/new"
 
 
-@pytest.mark.asyncio
 async def test_unload_waits_for_the_running_generation(swap_worker):
     from app.worker import unload
 
@@ -638,7 +614,6 @@ async def test_unload_waits_for_the_running_generation(swap_worker):
     assert _SWAPS == ["unload test/old"]
 
 
-@pytest.mark.asyncio
 async def test_reload_of_an_unloaded_worker_releases_what_the_old_model_kept(swap_worker):
     app, client = swap_worker
     app.state.load_state["status"] = "idle"
@@ -653,7 +628,6 @@ async def test_reload_of_an_unloaded_worker_releases_what_the_old_model_kept(swa
     assert released == ["test/old"]
 
 
-@pytest.mark.asyncio
 async def test_stream_holds_the_reload_lock_until_it_ends(swap_worker):
     from app.worker import _stream_text
 
@@ -665,7 +639,6 @@ async def test_stream_holds_the_reload_lock_until_it_ends(swap_worker):
     assert not app.state.reload_lock.locked()
 
 
-@pytest.mark.asyncio
 async def test_closed_stream_releases_the_reload_lock(swap_worker):
     from app.worker import _stream_text
 
@@ -749,7 +722,6 @@ async def previewing_worker():
         yield app, client
 
 
-@pytest.mark.asyncio
 async def test_image_stream_sends_ndjson_frames(previewing_worker):
     app, client = previewing_worker
 
@@ -765,7 +737,6 @@ async def test_image_stream_sends_ndjson_frames(previewing_worker):
     assert app.state.provider.last_stream == (1, {"seed": 3})
 
 
-@pytest.mark.asyncio
 async def test_image_stream_ends_with_an_error_line(previewing_worker):
     _, client = previewing_worker
 
@@ -790,7 +761,6 @@ def test_a_malformed_stream_line_is_a_worker_stream_error(line):
         parse_image_frame(line)
 
 
-@pytest.mark.asyncio
 async def test_image_stream_keeps_the_reload_lock_after_the_gateway_hangs_up(previewing_worker):
     import app.worker as worker_module
 

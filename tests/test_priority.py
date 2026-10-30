@@ -23,7 +23,6 @@ def submitted(services, monkeypatch):
     return seen
 
 
-@pytest.mark.asyncio
 async def test_higher_priority_waiter_runs_first():
     scheduler = GpuScheduler(max_queue_size=5)
     scheduler.register_model("test", 1)
@@ -46,7 +45,6 @@ async def test_higher_priority_waiter_runs_first():
     assert order == ["first", "high", "low"]
 
 
-@pytest.mark.asyncio
 async def test_header_sets_the_priority(client, submitted):
     resp = await client.post(
         "/v1/images/generations",
@@ -57,14 +55,12 @@ async def test_header_sets_the_priority(client, submitted):
     assert submitted == [Priority.HIGH]
 
 
-@pytest.mark.asyncio
 async def test_without_header_the_model_priority_applies(client, submitted):
     resp = await client.post("/v1/audio/speech", json={"model": "test-tts", "input": "hi"})
     assert resp.status_code == 200
     assert submitted == [Priority.MEDIUM]
 
 
-@pytest.mark.asyncio
 async def test_unknown_priority_is_rejected(client, submitted):
     resp = await client.post(
         "/v1/embeddings",

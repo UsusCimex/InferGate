@@ -183,7 +183,6 @@ async def fake_worker(monkeypatch):
     yield state
 
 
-@pytest.mark.asyncio
 async def test_e2e_load_unload_cycle(fake_worker):
     provider = remote_module.RemoteTextProvider(_make_remote_config("text"))
     assert not provider.is_loaded()
@@ -199,7 +198,6 @@ async def test_e2e_load_unload_cycle(fake_worker):
     assert fake_worker["unload_calls"] == 1
 
 
-@pytest.mark.asyncio
 async def test_e2e_load_fails_when_health_unreachable(monkeypatch):
     """If /health returns 500, load() must surface RuntimeError and not mark loaded."""
     bad_app = FastAPI()
@@ -223,7 +221,6 @@ async def test_e2e_load_fails_when_health_unreachable(monkeypatch):
     assert not provider.is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_e2e_text_generate(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteTextProvider(_make_remote_config("text"))
@@ -237,7 +234,6 @@ async def test_e2e_text_generate(fake_worker):
     assert fake_worker["last_payload"]["temperature"] == 0.7
 
 
-@pytest.mark.asyncio
 async def test_e2e_image_generate_returns_bytes(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteImageProvider(_make_remote_config("image"))
@@ -249,7 +245,6 @@ async def test_e2e_image_generate_returns_bytes(fake_worker):
     assert fake_worker["last_payload"]["size"] == "512x512"
 
 
-@pytest.mark.asyncio
 async def test_e2e_tts_synthesize_json_path(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteTtsProvider(_make_remote_config("tts"))
@@ -260,7 +255,6 @@ async def test_e2e_tts_synthesize_json_path(fake_worker):
     assert fake_worker["last_payload"]["voice"] == "alex"
 
 
-@pytest.mark.asyncio
 async def test_e2e_tts_voice_clone_path(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteTtsProvider(_make_remote_config("tts"))
@@ -277,7 +271,6 @@ async def test_e2e_tts_voice_clone_path(fake_worker):
     assert fake_worker["last_file_size"] == len(b"REF-AUDIO-BYTES")
 
 
-@pytest.mark.asyncio
 async def test_e2e_text_embedding(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteTextEmbeddingProvider(
@@ -291,7 +284,6 @@ async def test_e2e_text_embedding(fake_worker):
     assert vecs[1][0] == 11.0  # len("hello world")
 
 
-@pytest.mark.asyncio
 async def test_e2e_stt_transcribe(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteSttProvider(_make_remote_config("stt"))
@@ -304,7 +296,6 @@ async def test_e2e_stt_transcribe(fake_worker):
     assert fake_worker["last_form"]["language"] == "en"
 
 
-@pytest.mark.asyncio
 async def test_e2e_upscale(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteUpscaleProvider(_make_remote_config("upscale"))
@@ -315,7 +306,6 @@ async def test_e2e_upscale(fake_worker):
     assert fake_worker["last_file_size"] == len(b"PNG-INPUT")
 
 
-@pytest.mark.asyncio
 async def test_e2e_audio_embedding(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteAudioEmbeddingProvider(
@@ -327,7 +317,6 @@ async def test_e2e_audio_embedding(fake_worker):
     assert vec[0] == float(len(b"audio-bytes-here"))
 
 
-@pytest.mark.asyncio
 async def test_e2e_multimodal_embedding_text_and_image(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteMultimodalEmbeddingProvider(
@@ -342,7 +331,6 @@ async def test_e2e_multimodal_embedding_text_and_image(fake_worker):
     assert img_vec[0] == float(len(b"fake-jpeg-bytes"))
 
 
-@pytest.mark.asyncio
 async def test_e2e_video_embedding(fake_worker):
     fake_worker["loaded"] = True
     provider = remote_module.RemoteVideoEmbeddingProvider(
@@ -357,7 +345,6 @@ async def test_e2e_video_embedding(fake_worker):
     assert vid_vec[0] == float(len(b"mp4-bytes-payload"))
 
 
-@pytest.mark.asyncio
 async def test_e2e_request_id_propagated_to_worker(fake_worker):
     """X-Request-ID set in gateway must reach the worker on every call."""
     from app.monitoring import set_request_id
@@ -374,7 +361,6 @@ async def test_e2e_request_id_propagated_to_worker(fake_worker):
         set_request_id(None)
 
 
-@pytest.mark.asyncio
 async def test_e2e_streaming_text(monkeypatch):
     """Build a worker that emits SSE-style chunks; verify provider yields them."""
     from fastapi.responses import StreamingResponse
@@ -422,7 +408,6 @@ async def test_e2e_streaming_text(monkeypatch):
     assert "data: [DONE]" in out_lines
 
 
-@pytest.mark.asyncio
 async def test_e2e_load_after_unload_reconnects(fake_worker):
     """A provider can be cycled load, unload, load without errors."""
     fake_worker["loaded"] = True
@@ -439,7 +424,6 @@ async def test_e2e_load_after_unload_reconnects(fake_worker):
     assert fake_worker["unload_calls"] == 1
 
 
-@pytest.mark.asyncio
 async def test_e2e_check_health_routes_correctly(fake_worker, monkeypatch):
     """check_health() builds its own client; route that one too."""
     state = fake_worker
@@ -516,7 +500,6 @@ def _make_polling_worker(
     return app
 
 
-@pytest.mark.asyncio
 async def test_e2e_async_load_polling_succeeds(monkeypatch):
     """FakeWorker reports loading, loading, ready; gateway completes load via polling."""
     from app.providers import remote as r
@@ -542,7 +525,6 @@ async def test_e2e_async_load_polling_succeeds(monkeypatch):
     assert provider.is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_e2e_load_reissued_after_worker_restart(monkeypatch):
     """Worker restarted mid-load reports idle; gateway posts /load again and waits for ready."""
     from app.providers import remote as r
@@ -580,7 +562,6 @@ async def test_e2e_load_reissued_after_worker_restart(monkeypatch):
     assert calls["load"] == 2
 
 
-@pytest.mark.asyncio
 async def test_e2e_async_load_failure_propagates(monkeypatch):
     """FakeWorker reports failed; gateway raises RuntimeError carrying the error."""
     from app.providers import remote as r
@@ -605,7 +586,6 @@ async def test_e2e_async_load_failure_propagates(monkeypatch):
     assert not provider.is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_e2e_load_total_timeout(monkeypatch):
     """FakeWorker stays in loading forever; gateway raises after _LOAD_TIMEOUT."""
     from app.providers import remote as r
@@ -629,7 +609,6 @@ async def test_e2e_load_total_timeout(monkeypatch):
     assert not provider.is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_e2e_already_ready_returns_200_fast_path(monkeypatch):
     """Worker reports model already loaded: /load returns 200, gateway skips polling."""
     from app.providers import remote as r
@@ -658,7 +637,6 @@ async def test_e2e_already_ready_returns_200_fast_path(monkeypatch):
     assert provider.is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_e2e_load_cancellation_during_polling(monkeypatch):
     """Outer asyncio.wait_for cancels polling; gateway closes httpx client cleanly."""
     import asyncio as _asyncio
@@ -733,7 +711,6 @@ async def image_stream_worker(monkeypatch):
     yield worker, provider
 
 
-@pytest.mark.asyncio
 async def test_e2e_image_stream_passes_previews_and_the_final_image(image_stream_worker):
     worker, provider = image_stream_worker
 
@@ -747,7 +724,6 @@ async def test_e2e_image_stream_passes_previews_and_the_final_image(image_stream
     assert worker.state.provider.last_stream == (2, {"seed": 3})
 
 
-@pytest.mark.asyncio
 async def test_e2e_image_stream_error_reaches_the_gateway(image_stream_worker):
     _, provider = image_stream_worker
 
@@ -755,7 +731,6 @@ async def test_e2e_image_stream_error_reaches_the_gateway(image_stream_worker):
         [frame async for frame in provider.generate_stream("bad", 1)]
 
 
-@pytest.mark.asyncio
 async def test_e2e_image_stream_refused_by_the_worker_keeps_its_error_body(image_stream_worker):
     worker, provider = image_stream_worker
     worker.state.load_state = {"status": "loading"}

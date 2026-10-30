@@ -39,7 +39,6 @@ def test_lang_code_comes_from_the_voice(voice, code):
     assert _lang_code(voice, "a") == code
 
 
-@pytest.mark.asyncio
 async def test_load_builds_the_default_voice_pipeline(provider):
     await provider.load("models")
     pipeline = await provider._pipeline_for("b")
@@ -47,7 +46,6 @@ async def test_load_builds_the_default_voice_pipeline(provider):
     assert pipeline.device == "cpu"
 
 
-@pytest.mark.asyncio
 async def test_other_languages_share_the_model(provider):
     await provider.load("models")
     british = await provider._pipeline_for("b")

@@ -1,7 +1,6 @@
 """Tests for monitoring: Prometheus metrics, request ID, middleware."""
 from __future__ import annotations
 
-import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -24,7 +23,6 @@ async def monitored_app():
         yield ac
 
 
-@pytest.mark.asyncio
 async def test_request_id_header(monitored_app):
     resp = await monitored_app.get("/test")
     assert resp.status_code == 200
@@ -32,14 +30,12 @@ async def test_request_id_header(monitored_app):
     assert len(resp.headers["x-request-id"]) == 16
 
 
-@pytest.mark.asyncio
 async def test_request_id_unique(monitored_app):
     resp1 = await monitored_app.get("/test")
     resp2 = await monitored_app.get("/test")
     assert resp1.headers["x-request-id"] != resp2.headers["x-request-id"]
 
 
-@pytest.mark.asyncio
 async def test_prometheus_endpoint(client):
     resp = await client.get("/metrics/prometheus")
     assert resp.status_code == 200
@@ -48,7 +44,6 @@ async def test_prometheus_endpoint(client):
     assert "infergate_requests_total" in body or "text/plain" in resp.headers.get("content-type", "")
 
 
-@pytest.mark.asyncio
 async def test_prometheus_metrics_recorded(client):
     """After making a request, Prometheus counters should be incremented."""
     # Make a request to trigger metrics
@@ -61,7 +56,6 @@ async def test_prometheus_metrics_recorded(client):
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_json_metrics_still_works(client):
     """Original /metrics JSON endpoint still works."""
     resp = await client.get("/metrics")
@@ -71,7 +65,6 @@ async def test_json_metrics_still_works(client):
     assert "uptime_seconds" in data
 
 
-@pytest.mark.asyncio
 async def test_prometheus_scrape_refreshes_gauges(client):
     await client.post("/v1/models/test-text/load")
     body = (await client.get("/metrics/prometheus")).text
@@ -79,7 +72,6 @@ async def test_prometheus_scrape_refreshes_gauges(client):
     assert "infergate_queue_size 0.0" in body
 
 
-@pytest.mark.asyncio
 async def test_prometheus_scrape_publishes_http_pool_gauges(client, services):
     provider = services["manager"].get("test-text")
     provider.pool_stats = lambda: {"active": 1, "idle": 2, "waiting": 3}

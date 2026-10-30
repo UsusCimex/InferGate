@@ -1,7 +1,6 @@
 """Direct tests for CacheManager service."""
 from __future__ import annotations
 
-import pytest
 import pytest_asyncio
 
 from app.services.cache_manager import CacheManager
@@ -20,7 +19,6 @@ async def cache(tmp_path):
     await mgr.close()
 
 
-@pytest.mark.asyncio
 async def test_put_and_get(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     key = cache.make_key("model-a", {"prompt": "hello"})
@@ -30,13 +28,11 @@ async def test_put_and_get(cache):
     assert result == b"test data"
 
 
-@pytest.mark.asyncio
 async def test_get_nonexistent(cache):
     result = await cache.get("nonexistent-key")
     assert result is None
 
 
-@pytest.mark.asyncio
 async def test_ttl_expiration(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10, "ttl_hours": 0}
     key = cache.make_key("model-a", {"prompt": "expire"})
@@ -47,7 +43,6 @@ async def test_ttl_expiration(cache):
     assert result is None
 
 
-@pytest.mark.asyncio
 async def test_invalidate_key(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     key = cache.make_key("model-a", {"prompt": "delete me"})
@@ -58,7 +53,6 @@ async def test_invalidate_key(cache):
     assert await cache.invalidate_key(key) is False  # already deleted
 
 
-@pytest.mark.asyncio
 async def test_invalidate_model(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     for i in range(3):
@@ -69,7 +63,6 @@ async def test_invalidate_model(cache):
     assert count == 3
 
 
-@pytest.mark.asyncio
 async def test_invalidate_all(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     for model in ["m1", "m2"]:
@@ -80,7 +73,6 @@ async def test_invalidate_all(cache):
     assert count == 2
 
 
-@pytest.mark.asyncio
 async def test_invalidate_expired(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10, "ttl_hours": 0}
     for i in range(3):
@@ -91,7 +83,6 @@ async def test_invalidate_expired(cache):
     assert expired == 3
 
 
-@pytest.mark.asyncio
 async def test_stats(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     key = cache.make_key("model-s", {"prompt": "stats"})
@@ -103,7 +94,6 @@ async def test_stats(cache):
     assert "model-s" in stats["per_model"]
 
 
-@pytest.mark.asyncio
 async def test_stats_per_model(cache):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     key = cache.make_key("model-p", {"prompt": "per-model"})
@@ -113,7 +103,6 @@ async def test_stats_per_model(cache):
     assert stats["entries"] == 1
 
 
-@pytest.mark.asyncio
 async def test_should_cache_strategies():
     mgr = CacheManager({"enabled": True, "directory": "/tmp/test"})
 
@@ -124,13 +113,11 @@ async def test_should_cache_strategies():
     assert mgr.should_cache({"enabled": False, "strategy": "always"}, {}) is False
 
 
-@pytest.mark.asyncio
 async def test_should_cache_disabled():
     mgr = CacheManager({"enabled": False, "directory": "/tmp/test"})
     assert mgr.should_cache({"enabled": True, "strategy": "always"}, {}) is False
 
 
-@pytest.mark.asyncio
 async def test_record_miss(cache):
     await cache.record_miss("model-miss")
     await cache.record_miss("model-miss")
@@ -139,21 +126,18 @@ async def test_record_miss(cache):
     assert stats["miss_count"] >= 2
 
 
-@pytest.mark.asyncio
 async def test_make_key_deterministic(cache):
     key1 = cache.make_key("model", {"a": 1, "b": 2})
     key2 = cache.make_key("model", {"b": 2, "a": 1})
     assert key1 == key2  # sort_keys=True
 
 
-@pytest.mark.asyncio
 async def test_make_key_follows_model_defaults(cache):
     four = cache.make_key("model", {"prompt": "x"}, {"steps": 4})
     assert four != cache.make_key("model", {"prompt": "x"}, {"steps": 8})
     assert four == cache.make_key("model", {"prompt": "x", "steps": 4}, {"steps": 20})
 
 
-@pytest.mark.asyncio
 async def test_eviction_for_model(cache):
     # max_size_mb very small so eviction triggers
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 0.0005}
@@ -170,7 +154,6 @@ async def test_eviction_for_model(cache):
     assert result2 == big_data
 
 
-@pytest.mark.asyncio
 async def test_hit_rate_zero_when_no_records(cache):
     """Without recorded hits or misses, hit_rate must be 0.0, not derived from entries."""
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
@@ -183,7 +166,6 @@ async def test_hit_rate_zero_when_no_records(cache):
     assert stats["hit_rate_percent"] == 0.0
 
 
-@pytest.mark.asyncio
 async def test_hit_rate_after_hits_and_misses(cache):
     """hit_rate must reflect real hits and recorded misses."""
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
@@ -200,7 +182,6 @@ async def test_hit_rate_after_hits_and_misses(cache):
     assert stats["hit_rate_percent"] == 75.0
 
 
-@pytest.mark.asyncio
 async def test_close_and_operations(cache):
     await cache.close()
     # Operations on closed cache should return safely

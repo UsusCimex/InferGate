@@ -26,7 +26,6 @@ def _inline_hash(html: str, tag: str) -> str:
     return f"'sha256-{base64.b64encode(hashlib.sha256(content.encode()).digest()).decode()}'"
 
 
-@pytest.mark.asyncio
 async def test_page_allows_only_its_own_style_and_script(client):
     resp = await client.get("/ui")
 
@@ -38,7 +37,6 @@ async def test_page_allows_only_its_own_style_and_script(client):
     assert "unsafe-inline" not in csp
 
 
-@pytest.mark.asyncio
 async def test_history_lists_image_requests_newest_first(client):
     await client.post("/v1/images/generations", json={"prompt": "a fox", "seed": 1, "size": "512x512"})
     await client.post("/v1/images/generations", json={"prompt": "a fox", "seed": 1, "size": "512x512"})
@@ -57,7 +55,6 @@ async def test_history_lists_image_requests_newest_first(client):
     assert (await client.get("/ui/history", params={"limit": 1})).json()["data"] == [lake]
 
 
-@pytest.mark.asyncio
 async def test_history_marks_edits(client):
     await client.post(
         "/v1/images/edits",
@@ -69,7 +66,6 @@ async def test_history_marks_edits(client):
     assert entry["prompt"] == "add a hat" and entry["edit"] is True
 
 
-@pytest.mark.asyncio
 async def test_gallery_shows_cached_images_with_their_request(client):
     await client.post("/v1/images/generations", json={"prompt": "a fox", "seed": 1})
 
@@ -83,7 +79,6 @@ async def test_gallery_shows_cached_images_with_their_request(client):
     assert image.content.startswith(b"\x89PNG")
 
 
-@pytest.mark.asyncio
 async def test_gallery_and_image_route_skip_other_cached_media(client, services):
     key = "a" * 64
     await services["cache"].put(key, b"RIFF" + b"\x00" * 40, "test-tts", {"max_size_mb": 10})
@@ -92,13 +87,11 @@ async def test_gallery_and_image_route_skip_other_cached_media(client, services)
     assert (await client.get(f"/ui/images/{key}")).status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_image_route_answers_404_for_unknown_and_malformed_keys(client):
     assert (await client.get(f"/ui/images/{'b' * 64}")).status_code == 404
     assert (await client.get("/ui/images/not-a-key")).status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_no_history_is_kept_while_the_page_is_off(client):
     client._transport.app.state.prompt_history = None
 
@@ -129,7 +122,6 @@ def _app(monkeypatch, *, ui: bool, api_keys: list[str] | None = None):
     return main_module.create_app()
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(("ui", "api_keys"), [(False, ["secret"]), (True, None)])
 async def test_page_needs_ui_enabled_and_api_keys(monkeypatch, ui, api_keys):
     app = _app(monkeypatch, ui=ui, api_keys=api_keys)
@@ -149,7 +141,6 @@ def test_page_without_auth_keeps_no_history_and_warns(caplog):
     assert isinstance(main_module._prompt_history(cfg), PromptHistory)
 
 
-@pytest.mark.asyncio
 async def test_page_opens_without_a_key_and_its_data_needs_one(monkeypatch):
     app = _app(monkeypatch, ui=True, api_keys=["secret"])
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

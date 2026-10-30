@@ -63,7 +63,6 @@ async def _settle() -> None:
         await asyncio.wait(set(images_module._STREAMS))
 
 
-@pytest.mark.asyncio
 async def test_stream_sends_previews_then_the_final_image(client, previewing):
     resp = await client.post("/v1/images/generations", json={
         "model": "test-previews", "prompt": "a fox", "stream": True, "partial_images": 2,
@@ -83,7 +82,6 @@ async def test_stream_sends_previews_then_the_final_image(client, previewing):
     assert all(data["type"] == name and data["output_format"] == "png" for name, data in events)
 
 
-@pytest.mark.asyncio
 async def test_a_provider_without_previews_streams_only_the_final_image(client):
     resp = await client.post("/v1/images/generations", json={
         "prompt": "a fox", "stream": True, "partial_images": 3,
@@ -94,7 +92,6 @@ async def test_a_provider_without_previews_streams_only_the_final_image(client):
     assert base64.b64decode(data["b64_json"]).startswith(_PNG)
 
 
-@pytest.mark.asyncio
 async def test_a_streamed_image_is_cached_and_a_repeat_comes_from_the_cache(client, previewing):
     request = {
         "model": "test-previews", "prompt": "a fox", "seed": 7, "stream": True, "partial_images": 1,
@@ -112,7 +109,6 @@ async def test_a_streamed_image_is_cached_and_a_repeat_comes_from_the_cache(clie
     assert [entry["cache"] for entry in history] == ["HIT", "MISS"]
 
 
-@pytest.mark.asyncio
 async def test_an_error_before_the_first_frame_keeps_its_status(client, previewing):
     previewing.fail_after = 0
     previewing.fail_with = ValueError("scheduler 'x' is not supported")
@@ -125,7 +121,6 @@ async def test_an_error_before_the_first_frame_keeps_its_status(client, previewi
     assert resp.json()["error"] == {"message": "scheduler 'x' is not supported", "type": "invalid_request"}
 
 
-@pytest.mark.asyncio
 async def test_a_broken_worker_stream_before_the_first_frame_is_a_502(client, previewing):
     previewing.fail_after = 0
     previewing.fail_with = WorkerStreamError("malformed line in the worker's image stream")
@@ -138,7 +133,6 @@ async def test_a_broken_worker_stream_before_the_first_frame_is_a_502(client, pr
     assert resp.json()["error"]["type"] == "upstream_error"
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(("error", "kind"), [
     (RuntimeError("the GPU caught fire"), "server_error"),
     (WorkerStreamError("the GPU caught fire"), "upstream_error"),
@@ -159,7 +153,6 @@ async def test_an_error_after_a_preview_ends_the_stream_with_an_error_event(
     assert events[1][1] == {"error": {"message": "the GPU caught fire", "type": kind}}
 
 
-@pytest.mark.asyncio
 async def test_png_format_answers_with_the_image_itself(client):
     request = {"prompt": "a fox", "seed": 3, "response_format": "png"}
     resp = await client.post("/v1/images/generations", json=request)
@@ -172,7 +165,6 @@ async def test_png_format_answers_with_the_image_itself(client):
         assert answer.content.startswith(_PNG)
 
 
-@pytest.mark.asyncio
 async def test_a_cache_hit_keeps_the_url_format(client):
     request = {"prompt": "a fox", "seed": 3, "response_format": "url"}
     await client.post("/v1/images/generations", json=request)
@@ -182,7 +174,6 @@ async def test_a_cache_hit_keeps_the_url_format(client):
     assert repeat.json()["data"][0]["url"].startswith("data:image/png;base64,")
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("extra", [
     {"stream": True, "n": 2},
     {"response_format": "png", "n": 2},

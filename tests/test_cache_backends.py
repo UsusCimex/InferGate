@@ -61,12 +61,10 @@ async def backend(request, tmp_path) -> CacheBackend:
     await instance.close()
 
 
-@pytest.mark.asyncio
 async def test_contract_initialize_marks_ready(backend: CacheBackend):
     assert backend.is_initialized() is True
 
 
-@pytest.mark.asyncio
 async def test_contract_close_marks_not_ready(backend: CacheBackend):
     await backend.close()
     assert backend.is_initialized() is False
@@ -75,19 +73,16 @@ async def test_contract_close_marks_not_ready(backend: CacheBackend):
     assert await backend.invalidate_key("anything") is False
 
 
-@pytest.mark.asyncio
 async def test_contract_put_then_get_round_trip(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     await backend.put("k1", b"payload-1", "model-x", cfg)
     assert await backend.get("k1") == b"payload-1"
 
 
-@pytest.mark.asyncio
 async def test_contract_get_miss_returns_none(backend: CacheBackend):
     assert await backend.get("does-not-exist") is None
 
 
-@pytest.mark.asyncio
 async def test_contract_invalidate_key(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     await backend.put("k", b"x", "model-y", cfg)
@@ -97,7 +92,6 @@ async def test_contract_invalidate_key(backend: CacheBackend):
     assert await backend.invalidate_key("k") is False
 
 
-@pytest.mark.asyncio
 async def test_contract_invalidate_model_clears_only_that_model(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     await backend.put("a", b"1", "m1", cfg)
@@ -111,7 +105,6 @@ async def test_contract_invalidate_model_clears_only_that_model(backend: CacheBa
     assert await backend.get("c") == b"3"
 
 
-@pytest.mark.asyncio
 async def test_contract_invalidate_all(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     await backend.put("a", b"1", "m1", cfg)
@@ -122,7 +115,6 @@ async def test_contract_invalidate_all(backend: CacheBackend):
     assert await backend.get("a") is None
 
 
-@pytest.mark.asyncio
 async def test_contract_ttl_expiry(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10, "ttl_hours": 0}
     await backend.put("k", b"data", "m", cfg)
@@ -130,7 +122,6 @@ async def test_contract_ttl_expiry(backend: CacheBackend):
     assert await backend.get("k") is None
 
 
-@pytest.mark.asyncio
 async def test_contract_invalidate_expired(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10, "ttl_hours": 0}
     for i in range(3):
@@ -139,7 +130,6 @@ async def test_contract_invalidate_expired(backend: CacheBackend):
     assert expired == 3
 
 
-@pytest.mark.asyncio
 async def test_contract_record_miss_increments_stats(backend: CacheBackend):
     await backend.record_miss("m")
     await backend.record_miss("m")
@@ -148,7 +138,6 @@ async def test_contract_record_miss_increments_stats(backend: CacheBackend):
     assert stats["hit_count"] == 0
 
 
-@pytest.mark.asyncio
 async def test_contract_hit_count_tracks_reads(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     await backend.put("k", b"data", "m", cfg)
@@ -159,7 +148,6 @@ async def test_contract_hit_count_tracks_reads(backend: CacheBackend):
     assert stats["hit_count"] == 2
 
 
-@pytest.mark.asyncio
 async def test_contract_stats_global_shape(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     await backend.put("k", b"data", "m", cfg)
@@ -171,7 +159,6 @@ async def test_contract_stats_global_shape(backend: CacheBackend):
     assert "m" in stats["per_model"]
 
 
-@pytest.mark.asyncio
 async def test_contract_recent_images_lists_live_pngs_newest_first(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     png = b"\x89PNG\r\n\x1a\n" + b"pixels"
@@ -190,7 +177,6 @@ async def test_contract_recent_images_lists_live_pngs_newest_first(backend: Cach
     assert [i["key"] for i in await backend.recent_images(1)] == ["new"]
 
 
-@pytest.mark.asyncio
 async def test_contract_peek_reads_without_a_hit(backend: CacheBackend):
     cfg = {"enabled": True, "strategy": "always", "max_size_mb": 10}
     await backend.put("k", b"data", "m", cfg)
@@ -243,7 +229,6 @@ def test_factory_case_insensitive(tmp_path):
     assert isinstance(backend, LocalCacheBackend)
 
 
-@pytest.mark.asyncio
 async def test_cache_manager_exposes_backend_property(tmp_path):
     from app.services.cache_manager import CacheManager
 
@@ -258,7 +243,6 @@ async def test_cache_manager_exposes_backend_property(tmp_path):
         await mgr.close()
 
 
-@pytest.mark.asyncio
 async def test_cache_manager_accepts_injected_backend(tmp_path):
     """CacheManager(backend=...) must skip the factory and use the injected instance."""
     from app.services.cache_manager import CacheManager

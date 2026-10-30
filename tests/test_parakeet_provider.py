@@ -81,7 +81,6 @@ def test_the_full_precision_export_takes_its_external_weights(provider):
     assert "encoder-model.onnx*" in provider.allow_patterns()
 
 
-@pytest.mark.asyncio
 async def test_load_opens_the_snapshot_on_the_cpu(loaded):
     provider, _, seen = loaded
     await provider.load("/app/models")
@@ -94,7 +93,6 @@ async def test_load_opens_the_snapshot_on_the_cpu(loaded):
     assert provider.is_loaded()
 
 
-@pytest.mark.asyncio
 async def test_transcribe_hands_16_khz_samples_and_trims_the_text(loaded, monkeypatch):
     provider, asr, _ = loaded
     monkeypatch.setattr(parakeet_provider, "decode_audio", lambda audio: np.zeros(32_000, dtype=np.float32))
@@ -107,7 +105,6 @@ async def test_transcribe_hands_16_khz_samples_and_trims_the_text(loaded, monkey
     assert asr.calls[0][1] == 16_000
 
 
-@pytest.mark.asyncio
 async def test_silence_without_samples_gives_empty_text(loaded, monkeypatch):
     provider, asr, _ = loaded
     monkeypatch.setattr(parakeet_provider, "decode_audio", lambda audio: np.zeros(0, dtype=np.float32))

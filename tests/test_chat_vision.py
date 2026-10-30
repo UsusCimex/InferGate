@@ -33,14 +33,12 @@ def vision_model(services):
     return services["manager"].get("test-text")
 
 
-@pytest.mark.asyncio
 async def test_image_rejected_for_model_without_vision(client):
     resp = await client.post("/v1/chat/completions", json=_request(_data_url()))
     assert resp.status_code == 400
     assert resp.json()["error"]["type"] == "vision_not_supported"
 
 
-@pytest.mark.asyncio
 async def test_image_parts_reach_provider_without_null_fields(client, vision_model, monkeypatch):
     seen = []
     original = vision_model.generate
@@ -59,14 +57,12 @@ async def test_image_parts_reach_provider_without_null_fields(client, vision_mod
     ]
 
 
-@pytest.mark.asyncio
 async def test_remote_image_url_rejected(client, vision_model):
     resp = await client.post("/v1/chat/completions", json=_request("https://example.com/cat.png"))
     assert resp.status_code == 400
     assert resp.json()["error"]["type"] == "invalid_image"
 
 
-@pytest.mark.asyncio
 async def test_oversized_image_returns_413(client, vision_model):
     client._transport.app.state.upload_limits = UploadLimitsConfig(max_image_mb=1)
     url = "data:image/png;base64," + "A" * (2 * 1024 * 1024)
@@ -74,7 +70,6 @@ async def test_oversized_image_returns_413(client, vision_model):
     assert resp.status_code == 413
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("part", [
     {"type": "audio", "audio": "x"},
     {"type": "text", "text": "hi", "extra": 1},
@@ -86,7 +81,6 @@ async def test_malformed_content_part_is_422(client, part):
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_string_content_still_accepted(client):
     body = {"model": "test-text", "messages": [{"role": "user", "content": "Hi"}]}
     resp = await client.post("/v1/chat/completions", json=body)

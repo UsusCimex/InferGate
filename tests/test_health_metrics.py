@@ -1,17 +1,13 @@
 """Tests for health and metrics endpoints."""
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.asyncio
 async def test_health_ok(client):
     resp = await client.get("/health")
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
 
 
-@pytest.mark.asyncio
 async def test_health_v1_alias(client):
     """OpenAI-style clients prefix every path with /v1, so /v1/health must mirror /health."""
     resp = await client.get("/v1/health")
@@ -19,7 +15,6 @@ async def test_health_v1_alias(client):
     assert resp.json()["status"] == "ok"
 
 
-@pytest.mark.asyncio
 async def test_metrics(client):
     resp = await client.get("/metrics")
     assert resp.status_code == 200
@@ -32,7 +27,6 @@ async def test_metrics(client):
     assert data["uptime_seconds"] >= 0
 
 
-@pytest.mark.asyncio
 async def test_models_list(client):
     resp = await client.get("/v1/models")
     assert resp.status_code == 200
@@ -41,7 +35,6 @@ async def test_models_list(client):
     assert len(data["data"]) == 9  # image, text, tts, stt, upscale, embed-{text,audio,multi,video}
 
 
-@pytest.mark.asyncio
 async def test_model_load_unload(client):
     # Load
     resp = await client.post("/v1/models/test-text/load")
@@ -54,13 +47,11 @@ async def test_model_load_unload(client):
     assert resp.json()["loaded"] is False
 
 
-@pytest.mark.asyncio
 async def test_model_load_not_found(client):
     resp = await client.post("/v1/models/nonexistent/load")
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_model_unload_not_found(client):
     resp = await client.post("/v1/models/nonexistent/unload")
     assert resp.status_code == 404

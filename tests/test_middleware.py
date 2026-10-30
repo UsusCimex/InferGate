@@ -1,7 +1,6 @@
 """Tests for ASGI middleware: access log, rate limiter, auth."""
 from __future__ import annotations
 
-import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -67,20 +66,17 @@ async def app_with_auth():
         yield ac
 
 
-@pytest.mark.asyncio
 async def test_access_log_passes_through(app_with_access_log):
     resp = await app_with_access_log.get("/test")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
 
 
-@pytest.mark.asyncio
 async def test_access_log_skips_health(app_with_access_log):
     resp = await app_with_access_log.get("/health")
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_access_log_human_format_logs_request(app_with_access_log, caplog, monkeypatch):
     """Default format: 'client METHOD PATH status (N ms)' line."""
     import logging as _logging
@@ -93,7 +89,6 @@ async def test_access_log_human_format_logs_request(app_with_access_log, caplog,
     assert any("/test" in m and "200" in m for m in msgs)
 
 
-@pytest.mark.asyncio
 async def test_access_log_json_format_emits_structured_line(
     app_with_access_log, caplog, monkeypatch
 ):
@@ -116,7 +111,6 @@ async def test_access_log_json_format_emits_structured_line(
     assert isinstance(record["latency_ms"], int)
 
 
-@pytest.mark.asyncio
 async def test_access_log_includes_request_id_when_set(monkeypatch, caplog):
     """When RequestIdMiddleware is mounted upstream, JSON log carries request_id."""
     import json as _json
@@ -147,14 +141,12 @@ async def test_access_log_includes_request_id_when_set(monkeypatch, caplog):
     assert any(p.get("request_id") == "test-id-42" for p in parsed), parsed
 
 
-@pytest.mark.asyncio
 async def test_rate_limit_allows_under_limit(app_with_rate_limit):
     for _ in range(3):
         resp = await app_with_rate_limit.get("/test")
         assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_rate_limit_blocks_over_limit(app_with_rate_limit):
     for _ in range(3):
         await app_with_rate_limit.get("/test")
@@ -165,7 +157,6 @@ async def test_rate_limit_blocks_over_limit(app_with_rate_limit):
     assert "retry-after" in resp.headers
 
 
-@pytest.mark.asyncio
 async def test_rate_limit_skips_health(app_with_rate_limit):
     # Health endpoint is exempt from rate limiting
     for _ in range(10):
@@ -199,7 +190,6 @@ def _gateway(limiter) -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=_limited_app(limiter)), base_url="http://test")
 
 
-@pytest.mark.asyncio
 async def test_redis_rate_limit_is_shared_by_gateways():
     import fakeredis
 
@@ -218,7 +208,6 @@ async def test_redis_rate_limit_is_shared_by_gateways():
     assert 1 <= int(resp.headers["retry-after"]) <= 61
 
 
-@pytest.mark.asyncio
 async def test_redis_rate_limit_frees_a_slot_after_the_window(monkeypatch):
     import time
     import types
@@ -242,7 +231,6 @@ async def test_redis_rate_limit_frees_a_slot_after_the_window(monkeypatch):
     assert blocked.headers["retry-after"] == "31"
 
 
-@pytest.mark.asyncio
 async def test_redis_rate_limit_admits_requests_when_redis_is_down(caplog):
     import logging
 
@@ -258,7 +246,6 @@ async def test_redis_rate_limit_admits_requests_when_redis_is_down(caplog):
     assert sum("Rate limit store unavailable" in r.message for r in caplog.records) == 1
 
 
-@pytest.mark.asyncio
 async def test_redis_is_left_alone_for_a_while_after_a_failure(monkeypatch):
     import time
     import types
@@ -298,7 +285,6 @@ def test_rate_limit_is_switched_on_from_the_environment(monkeypatch):
     assert load_server_config("config/server.yaml").rate_limit.enabled is True
 
 
-@pytest.mark.asyncio
 async def test_make_rate_limiter_picks_the_backend():
     from app.config import RateLimitConfig
     from app.middleware.rate_limit import MemoryRateLimiter, RedisRateLimiter, make_rate_limiter
@@ -310,44 +296,37 @@ async def test_make_rate_limiter_picks_the_backend():
     await limiter.close()
 
 
-@pytest.mark.asyncio
 async def test_auth_allows_valid_bearer(app_with_auth):
     resp = await app_with_auth.get("/test", headers={"Authorization": "Bearer valid-key-123"})
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_auth_allows_raw_key(app_with_auth):
     resp = await app_with_auth.get("/test", headers={"Authorization": "valid-key-123"})
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_auth_rejects_invalid_key(app_with_auth):
     resp = await app_with_auth.get("/test", headers={"Authorization": "Bearer wrong-key"})
     assert resp.status_code == 401
     assert "authentication_error" in resp.json()["error"]["type"]
 
 
-@pytest.mark.asyncio
 async def test_auth_rejects_missing_key(app_with_auth):
     resp = await app_with_auth.get("/test")
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_auth_rejects_empty_token(app_with_auth):
     resp = await app_with_auth.get("/test", headers={"Authorization": ""})
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_auth_skips_health(app_with_auth):
     resp = await app_with_auth.get("/health")
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_auth_uses_constant_time_compare():
     """ApiKeyMiddleware._is_valid must accept the right key and reject anything else."""
     from app.middleware.auth import ApiKeyMiddleware
@@ -360,7 +339,6 @@ async def test_auth_uses_constant_time_compare():
     assert mw._is_valid("") is False
 
 
-@pytest.mark.asyncio
 async def test_request_id_middleware_sets_contextvar_and_header():
     """RequestIdMiddleware must set X-Request-ID and expose it via ContextVar."""
     from app.middleware.access_log import AccessLogMiddleware  # unrelated; for completeness
@@ -386,7 +364,6 @@ async def test_request_id_middleware_sets_contextvar_and_header():
     _ = AccessLogMiddleware  # silence unused import in this scope
 
 
-@pytest.mark.asyncio
 async def test_request_id_middleware_honours_inbound_id():
     """An inbound X-Request-ID must be propagated, not overwritten."""
     from app.monitoring import RequestIdMiddleware

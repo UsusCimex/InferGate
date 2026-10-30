@@ -23,7 +23,6 @@ def secured_app(monkeypatch):
     return app
 
 
-@pytest.mark.asyncio
 async def test_a_preflight_passes_without_a_key(secured_app):
     async with AsyncClient(transport=ASGITransport(app=secured_app), base_url="http://test") as client:
         resp = await client.options("/v1/ping", headers={
@@ -34,7 +33,6 @@ async def test_a_preflight_passes_without_a_key(secured_app):
     assert resp.headers["access-control-allow-origin"] == "https://app.example"
 
 
-@pytest.mark.asyncio
 async def test_a_request_without_a_key_is_refused_with_cors_and_request_id(secured_app):
     async with AsyncClient(transport=ASGITransport(app=secured_app), base_url="http://test") as client:
         resp = await client.get("/v1/ping", headers={"Origin": "https://app.example"})
@@ -44,7 +42,6 @@ async def test_a_request_without_a_key_is_refused_with_cors_and_request_id(secur
     assert resp.headers.get("x-request-id")
 
 
-@pytest.mark.asyncio
 async def test_a_request_with_the_key_goes_through(secured_app):
     async with AsyncClient(transport=ASGITransport(app=secured_app), base_url="http://test") as client:
         resp = await client.get("/v1/ping", headers={"Authorization": "Bearer secret"})
