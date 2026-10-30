@@ -14,15 +14,22 @@
 # all hosts. Use this file for host-specific layout: volumes, pinned-model
 # overrides, profile defaults. The GPU of a model is <ID>_GPU in deploy/.env,
 # which the gateway reads as well.
+#
+# A model setting goes to the gateway too: it plans VRAM by its own values and
+# sends them to the worker on /reload.
+
+x-server-env: &server-env
+  QWEN_IMAGE_QUANTIZATION: "null"
+  QWEN_IMAGE_OFFLOAD: "none"
+  FLUX1_DEV_OFFLOAD: "none"
+  FLUX1_DEV_STEPS: "50"
 
 services:
+  gateway:
+    environment: *server-env
+
   worker-qwen-image:
-    environment:
-      QWEN_IMAGE_QUANTIZATION: "null"
-      QWEN_IMAGE_OFFLOAD: "none"
-      QWEN_IMAGE_MAX_CONCURRENT: "2"
+    environment: *server-env
 
   worker-flux1-dev:
-    environment:
-      FLUX1_DEV_OFFLOAD: "none"
-      FLUX1_DEV_STEPS: "50"
+    environment: *server-env
