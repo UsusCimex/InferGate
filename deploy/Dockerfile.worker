@@ -53,9 +53,7 @@ RUN mkdir -p /app/models
 
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility
-# PYTORCH_CUDA_ALLOC_CONF intentionally NOT set here: expandable_segments
-# breaks enable_model_cpu_offload on Blackwell/WSL2. Override per-deployment
-# via docker-compose environment if a specific allocator config is needed.
+# PYTORCH_CUDA_ALLOC_CONF comes from deploy/docker-compose.yml.
 
 EXPOSE 8001
 
