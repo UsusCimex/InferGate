@@ -230,8 +230,6 @@ async def stats(request: Request):
         vm = psutil.virtual_memory()
         ram_total_mb = vm.total // (1024 * 1024)
         ram_used_mb = (vm.total - vm.available) // (1024 * 1024)
-    except ImportError:
-        pass
     except Exception:
         pass
 

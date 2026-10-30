@@ -163,7 +163,5 @@ class MemoryWatchdog:
                 (vm.total - vm.available) // (1024 * 1024),
                 vm.total // (1024 * 1024),
             )
-        except ImportError:
-            return 0, 0
         except Exception:
             return 0, 0

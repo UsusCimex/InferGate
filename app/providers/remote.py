@@ -247,10 +247,7 @@ class BaseRemoteMixin:
                     await self._client.aclose()
                     self._client = None
                     raise
-            elif 200 <= load_resp.status_code < 300:
-                # Fast path: worker reports model already ready.
-                pass
-            else:
+            elif not 200 <= load_resp.status_code < 300:
                 body = load_resp.text[:500]
                 await self._client.aclose()
                 self._client = None

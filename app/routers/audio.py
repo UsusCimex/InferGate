@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import json
 import time
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -17,6 +17,7 @@ from app.dependencies import (
 )
 from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prometheus_available
 from app.schemas.audio import AudioSpeechRequest
+from app.services.cache_manager import content_sha
 from app.utils import read_with_limit
 
 router = APIRouter()
@@ -246,7 +247,7 @@ async def create_transcription(
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
     cache_key = cache.make_key(
         model_id,
-        {"audio_len": len(audio_bytes), "audio_sha": _sha(audio_bytes), **params},
+        {"audio_len": len(audio_bytes), "audio_sha": content_sha(audio_bytes), **params},
         config.model.get("default_params"),
     )
     cache_status = "DISABLED"
@@ -282,8 +283,7 @@ async def create_transcription(
         )
 
     if should_cache:
-        import json as _json
-        await cache.put(cache_key, _json.dumps(result).encode(), model_id, cache_cfg)
+        await cache.put(cache_key, json.dumps(result).encode(), model_id, cache_cfg)
 
     elapsed = int((time.monotonic() - start) * 1000)
     return _transcription_response(
@@ -291,20 +291,13 @@ async def create_transcription(
     )
 
 
-def _sha(data: bytes) -> str:
-    """Return a short (32-hex) content hash for cache keying."""
-    import hashlib
-    return hashlib.sha256(data).hexdigest()[:32]
-
-
 def _transcription_response(
     result, response_format: str, model_id: str, elapsed_ms: int,
     cache_status: str, queue_position: int,
 ):
     """Format provider output as the requested `response_format` (json/text/srt/vtt/verbose_json)."""
-    import json as _json
     if isinstance(result, (bytes, bytearray)):
-        result = _json.loads(result.decode())
+        result = json.loads(result.decode())
 
     headers = {
         "X-InferGate-Cache": cache_status,
@@ -371,7 +364,7 @@ async def create_speech_voice_clone(
 
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
-    ref_sha = hashlib.sha256(ref_bytes).hexdigest()[:32]
+    ref_sha = content_sha(ref_bytes)
     cache_params = {
         "input": input, "ref_sha": ref_sha, "reference_text": reference_text or "",
         "output_format": output_format, "language": language or "",

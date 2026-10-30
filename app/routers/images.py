@@ -4,7 +4,6 @@ import asyncio
 import base64
 import contextlib
 import fnmatch
-import hashlib
 import json
 import logging
 import time
@@ -28,6 +27,7 @@ from app.dependencies import (
 from app.monitoring import CACHE_HITS, CACHE_MISSES, INFERENCE_DURATION, is_prometheus_available
 from app.providers.base import ImageFrame, WorkerStreamError
 from app.schemas.images import ImageData, ImageGenerationRequest, ImageGenerationResponse
+from app.services.cache_manager import content_sha
 from app.services.gpu_scheduler import RequestTimeoutError
 from app.utils import read_with_limit
 
@@ -408,7 +408,7 @@ async def upscale_image(
 
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
-    sha = hashlib.sha256(image_bytes).hexdigest()[:32]
+    sha = content_sha(image_bytes)
     params = {"sha": sha, "size": len(image_bytes)}
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
     cache_key = cache.make_key(model_id, params, config.model.get("default_params"))

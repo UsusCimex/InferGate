@@ -3,12 +3,8 @@ from __future__ import annotations
 import importlib
 import pkgutil
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from app.providers.base import BaseProvider
-
-if TYPE_CHECKING:
-    pass
 
 _REGISTRY: dict[str, type[BaseProvider]] = {}
 

@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 CACHE_KEY_VERSION = "v2"
 
 
+def content_sha(data: bytes) -> str:
+    """A short (32-hex) hash of uploaded bytes for a cache key."""
+    return hashlib.sha256(data).hexdigest()[:32]
+
+
 class CacheManager:
     """Cache facade: caching policy + key derivation; storage delegated to a CacheBackend."""
 
