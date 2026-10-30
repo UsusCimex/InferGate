@@ -17,7 +17,7 @@
 | `POST` | `/v1/audio/transcriptions` | распознавание речи, multipart |
 | `POST` | `/v1/embeddings` | эмбеддинги текста |
 | `POST` | `/v1/embeddings/audio`, `/v1/embeddings/image`, `/v1/embeddings/video` | эмбеддинг одного файла, multipart |
-| `GET` | `/v1/models` | все модели: категория, включена ли, загружена ли, метаданные и теги |
+| `GET` | `/v1/models` | включённые модели: категория, загружена ли, метаданные и теги |
 | `POST` | `/v1/models/{id}/load`, `/v1/models/{id}/unload` | загрузить или выгрузить модель |
 | `GET` | `/v1/admin/memory/status` | загруженные модели, объявленная VRAM и бюджет всего и по GPU (`gpus`), закреплённые модели |
 | `GET` | `/v1/admin/memory/preview-load/{id}` | план вытеснения при загрузке модели |
