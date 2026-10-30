@@ -20,7 +20,6 @@ def bench_chat(client: httpx.Client, n: int) -> list[float]:
         resp = client.post(
             "/v1/chat/completions",
             json={
-                "model": "qwen3.5-9b",
                 "messages": [{"role": "user", "content": "Say hello in one word."}],
                 "max_tokens": 16,
             },
