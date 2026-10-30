@@ -48,20 +48,7 @@ client.audio.speech.create(model="kokoro-82m", input="Hello, world!", voice="af_
 | [docs/architecture.md](docs/architecture.md) | шлюз и воркеры, путь запроса, менеджер моделей, очередь, кэш |
 | [docs/deployment.md](docs/deployment.md) | Docker Compose, сборка образов, HTTPS, мониторинг, веб-страница, Kubernetes, требования к железу |
 | [docs/testing.md](docs/testing.md) | pytest, CI, проверки на живых контейнерах |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | правила задач, коммитов, веток и текстов |
-| [CLAUDE.md](CLAUDE.md) | правила для Claude Code |
 | [Issues](https://github.com/UsusCimex/InferGate/issues) | задачи и известные проблемы |
-
-## Разработка
-
-```bash
-pip install -e ".[dev]"
-pytest
-ruff check app/ tests/
-uvicorn app.main:app --reload
-```
-
-Python 3.11+. Правила работы: [CONTRIBUTING.md](CONTRIBUTING.md), стиль кода: [CLAUDE.md](CLAUDE.md).
 
 ## Лицензия
 

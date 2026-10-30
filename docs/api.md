@@ -153,18 +153,7 @@
 
 ## Примеры
 
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="any")
-
-client.chat.completions.create(
-    model="qwen3.5-4b",
-    messages=[{"role": "user", "content": "Привет!"}],
-)
-client.images.generate(model="flux2-klein-4b", prompt="A red kite in the sky")
-client.audio.speech.create(model="kokoro-82m", input="Hello, world!", voice="af_heart")
-```
+Клиент OpenAI: [README](../README.md#быстрый-старт).
 
 ```bash
 curl http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" \
