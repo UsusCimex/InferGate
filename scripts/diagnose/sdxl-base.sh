@@ -32,7 +32,3 @@ wait_for_worker "$SERVICE" "$HF_CACHE" "$MODEL_ID" "$READY_TIMEOUT"
 log "POST /v1/images/generations (prompt=cyberpunk cat, 1024x1024)..."
 fire_image_request "$MODEL_ID" "a cyberpunk cat" "$OUTPUT"
 report_result "$SERVICE" "$OUTPUT"
-
-if [[ "$HTTP_CODE" == "200" ]]; then
-    echo "  Subsequent requests should be ~15-20s (30 steps, UNet)."
-fi

@@ -13,8 +13,8 @@ np = pytest.importorskip("numpy")
 sf = pytest.importorskip("soundfile")
 pyloudnorm = pytest.importorskip("pyloudnorm")
 
-from app.config import load_single_model_config  # noqa: E402
-from app.providers.tts.voxcpm2 import (  # noqa: E402
+from app.config import load_single_model_config  # noqa: E402 - after the importorskip guards
+from app.providers.tts.voxcpm2 import (  # noqa: E402 - after the importorskip guards
     VOICES_DIR,
     VoxCpm2TtsProvider,
     load_preset_voices,

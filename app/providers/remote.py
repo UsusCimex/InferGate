@@ -147,8 +147,7 @@ async def _retry_send(
     raise last_exc
 
 
-# Endpoint registry: declarative spec of every worker endpoint exposed by the gateway.
-# Adding a new category-only requires updating this map and adding a thin subclass below.
+# Worker endpoints the remote providers call.
 GENERATE_TEXT = JsonEndpoint(path="/generate", payload_key="messages")
 GENERATE_IMAGE = JsonEndpoint(path="/generate", payload_key="prompt", response_kind="bytes")
 SYNTHESIZE_TTS = JsonEndpoint(path="/synthesize", payload_key="text", response_kind="bytes")
@@ -557,7 +556,6 @@ class RemoteVideoEmbeddingProvider(BaseRemoteMixin, VideoEmbeddingProvider):
         return await self._call_multipart(EMBED_VIDEO, video, filename=filename)
 
 
-# Category to its Remote*Provider class; ProviderManager uses it for worker_url-backed configs.
 CATEGORY_REGISTRY: dict[str, type[BaseProvider]] = {
     "text": RemoteTextProvider,
     "image": RemoteImageProvider,

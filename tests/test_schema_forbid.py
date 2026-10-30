@@ -53,7 +53,6 @@ async def test_chat_rejects_unknown_response_format_field(client):
 
 @pytest.mark.asyncio
 async def test_audio_rejects_language_typo(client):
-    # The TODO's motivating example: `langauge` (transposed letters).
     resp = await client.post(
         "/v1/audio/speech",
         json={

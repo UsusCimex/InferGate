@@ -44,5 +44,4 @@ report_result "$SERVICE" "$OUTPUT"
 if [[ "$HTTP_CODE" == "200" ]]; then
     echo "  Compare $OUTPUT with janus_diag.png (1B); 7B should be"
     echo "    noticeably better at prompt fidelity + anatomy."
-    echo "  NF4 costs ~5-10% quality vs bf16 but saves ~9GB VRAM."
 fi

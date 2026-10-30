@@ -46,7 +46,6 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Build services on startup and tear them down on shutdown."""
-    # create_app() already loaded server config and stashed it on app.state.
     server_cfg = app.state.server_config
     model_cfgs = load_model_configs()
 

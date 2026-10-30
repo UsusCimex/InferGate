@@ -53,7 +53,7 @@ async def call_json(
 ) -> Any:
     """POST a JSON body and unwrap the response per `endpoint.response_kind`.
 
-    `send` lets callers wrap the underlying request in retry/circuit-breaker logic.
+    `send` lets callers wrap the underlying request in retry logic.
     Default: direct client.post.
     """
     body = {endpoint.payload_key: primary, **(extra or {})}

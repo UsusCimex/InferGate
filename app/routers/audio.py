@@ -90,7 +90,6 @@ async def create_speech(
     if body.seed is not None:
         params["seed"] = body.seed
 
-    # Cache check
     no_cache = request.headers.get("X-InferGate-No-Cache", "").lower() == "true"
     cache_cfg = config.cache.model_dump()
     should_cache = not no_cache and cache.should_cache(cache_cfg, params)
@@ -120,7 +119,6 @@ async def create_speech(
     elif no_cache:
         cache_status = "SKIP"
 
-    # Generate
     provider = await manager.ensure_loaded(model_id)
     timeout = config.queue.timeout_seconds
     priority = priority or config.queue.priority

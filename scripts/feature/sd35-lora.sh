@@ -45,7 +45,7 @@ READY_TIMEOUT=900  # SD3.5 + T5 download is heavier than SDXL
 # SD3.5 Medium itself. ByteDance's Hyper-SD3 is NOT compatible: it was
 # trained on SD3 Medium (2B, hidden=1536, norm1.linear out=9216), while
 # SD3.5 Medium has hidden=2304, norm1.linear out=13824. Same diffusers
-# class name, different tensor widths. See ByteDance/Hyper-SD#72.
+# class name, different tensor widths.
 LORA_ID="${LORA_ID:-tensorart/stable-diffusion-3.5-medium-turbo}"
 LORA_FILE="${LORA_FILE:-lora_sd3.5m_turbo_8steps.safetensors}"
 
