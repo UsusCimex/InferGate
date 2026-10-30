@@ -15,7 +15,7 @@ Self-hosted OpenAI-совместимый шлюз к локальным мод�
 | Апскейл | Real-ESRGAN x4 и 4x-UltraSharpV2 (spandrel), AuraSR v2 (aura-sr) |
 | Эмбеддинги | Multilingual E5, CLIP, SigLIP, CLAP, CLIP4Clip |
 
-Модель с существующим провайдером добавляется YAML-файлом, строкой в матрице сборки и сервисом Compose, без кода Python. Каталог, профили и VRAM: [docs/models.md](docs/models.md).
+Модель с существующим провайдером добавляется без кода Python. Каталог, профили, VRAM и шаги добавления: [docs/models.md](docs/models.md).
 
 ## Быстрый старт
 

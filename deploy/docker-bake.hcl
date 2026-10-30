@@ -8,11 +8,7 @@
 #   REGISTRY=myreg.io/infergate TAG=v1 \
 #     docker buildx bake -f deploy/docker-bake.hcl worker gateway --push
 #
-# Adding a new model:
-#   1. Create deploy/workers/<id>/requirements.txt
-#   2. Add one tuple to the `item` matrix below
-#   3. Add a service stanza in docker-compose.yml (~10 lines)
-# A GGUF model on llama.cpp gets its own target below instead of a matrix tuple.
+# Adding a model: docs/models.md. A GGUF model on llama.cpp gets its own target below instead of a matrix tuple.
 #
 # Build-arg semantics are documented in deploy/Dockerfile.worker.
 
