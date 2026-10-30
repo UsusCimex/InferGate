@@ -20,12 +20,10 @@ class WhisperProvider(SttProvider):
     def __init__(self, config):
         super().__init__(config)
         self._model = None
-        self._model_dir: str | None = None
 
     async def load(self, model_dir: str) -> None:
         from faster_whisper import WhisperModel
 
-        self._model_dir = model_dir
         hub_id = self.config.model["hub_id"]
         device = self.config.model.get("device", "cuda")
         compute_type = self.config.model.get("compute_type", "float16")

@@ -35,7 +35,6 @@ def _ready_load_state() -> dict:
         "error": None,
         "started_at": None,
         "duration_seconds": None,
-        "cancellation_requested": False,
     }
 
 
@@ -351,7 +350,6 @@ async def async_worker():
         "error": None,
         "started_at": None,
         "duration_seconds": None,
-        "cancellation_requested": False,
     }
     app.state.load_task = None
 

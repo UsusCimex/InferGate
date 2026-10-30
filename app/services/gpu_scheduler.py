@@ -49,8 +49,6 @@ class GpuScheduler:
         self._max_queue_size = max_queue_size
         self._queues: dict[str, _ModelQueue] = {}
         self._active_tasks = 0
-        self._total_submitted = 0
-        self._total_completed = 0
         self._lock = asyncio.Lock()
         self._last_position = 0
         self._seq = 0
@@ -87,7 +85,6 @@ class GpuScheduler:
                 self._queues[model_id] = queue
 
             self._active_tasks += 1
-            self._total_submitted += 1
             self._last_position = self._active_tasks
             self._seq += 1
             seq = self._seq
@@ -100,8 +97,6 @@ class GpuScheduler:
             try:
                 async with asyncio.timeout(timeout):
                     result = await coro
-                async with self._lock:
-                    self._total_completed += 1
                 return result
             except TimeoutError as e:
                 raise RequestTimeoutError(
@@ -155,10 +150,8 @@ class GpuScheduler:
         return self._last_position
 
     def queue_info(self) -> dict:
-        """Return the current queue state (used by /metrics)."""
+        """Return the current queue state (used by /health and the gauges)."""
         return {
             "queue_size": self._active_tasks,
             "max_queue_size": self._max_queue_size,
-            "total_submitted": self._total_submitted,
-            "total_completed": self._total_completed,
         }

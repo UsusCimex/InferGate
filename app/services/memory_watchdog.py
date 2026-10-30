@@ -51,7 +51,6 @@ class MemoryWatchdog:
         self._vram_threshold = vram_threshold
         self._ram_threshold = ram_threshold
         self._task: asyncio.Task | None = None
-        self._last_evict_tick = 0
 
     def start(self) -> None:
         if self._interval <= 0:

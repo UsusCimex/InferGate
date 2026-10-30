@@ -70,12 +70,8 @@ async def test_scheduler_counter_consistency():
         scheduler.submit("test", "medium", noop(), timeout=5.0)
         for _ in range(10)
     ]
-    await asyncio.gather(*coros)
-
-    info = scheduler.queue_info()
-    assert info["queue_size"] == 0
-    assert info["total_submitted"] == 10
-    assert info["total_completed"] == 10
+    assert await asyncio.gather(*coros) == [True] * 10
+    assert scheduler.queue_info()["queue_size"] == 0
 
 
 @pytest.mark.asyncio

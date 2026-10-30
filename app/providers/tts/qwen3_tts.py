@@ -21,7 +21,6 @@ class Qwen3TtsProvider(TtsProvider):
     def __init__(self, config):
         super().__init__(config)
         self._model = None
-        self._device = "cuda:0"
 
     async def load(self, model_dir: str) -> None:
         import torch
@@ -56,7 +55,6 @@ class Qwen3TtsProvider(TtsProvider):
             )
 
         self._model = await loop.run_in_executor(None, _load)
-        self._device = device
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
 

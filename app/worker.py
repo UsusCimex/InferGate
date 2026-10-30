@@ -33,7 +33,6 @@ def _initial_load_state() -> dict[str, Any]:
         "error": None,
         "started_at": None,
         "duration_seconds": None,
-        "cancellation_requested": False,
     }
 
 
@@ -311,7 +310,6 @@ async def unload(request: Request):
     task: asyncio.Task | None = app_state.load_task
 
     if task is not None and not task.done():
-        state["cancellation_requested"] = True
         state["status"] = "cancelling"
         task.cancel()
         try:

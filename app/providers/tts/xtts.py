@@ -21,7 +21,6 @@ class XttsTtsProvider(TtsProvider):
     def __init__(self, config):
         super().__init__(config)
         self._model = None
-        self._device = "cpu"
 
     async def load(self, model_dir: str) -> None:
         import torch
@@ -44,7 +43,6 @@ class XttsTtsProvider(TtsProvider):
             return tts.to(device)
 
         self._model = await loop.run_in_executor(None, _load)
-        self._device = device
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
 
