@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.providers.image._compel import has_weight_syntax, strip_weight_syntax
 
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.providers.image._lora import LoraCache
 
 
