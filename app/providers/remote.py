@@ -181,6 +181,7 @@ class BaseRemoteMixin:
     def __init__(self, config: Any) -> None:
         super().__init__(config)  # type: ignore[misc]
         self._client = None
+        self._unload_lock = asyncio.Lock()
         self._worker_url: str = config.worker_url
 
     def _build_client(self, timeout: httpx.Timeout) -> httpx.AsyncClient:
@@ -335,17 +336,18 @@ class BaseRemoteMixin:
                     await client.post("/load", timeout=_quick_timeout(), headers=_request_id_headers())
 
     async def unload(self) -> None:
-        """Best-effort /unload + close the HTTP client."""
-        if self._client:
-            with contextlib.suppress(httpx.HTTPError):
-                await self._client.post(
-                    "/unload",
-                    timeout=_quick_timeout(),
-                    headers=_request_id_headers(),
-                )
-            await self._client.aclose()
-            self._client = None
-        self._loaded = False  # type: ignore[attr-defined]
+        """Best-effort /unload + close the HTTP client; a call made during another one waits for it."""
+        async with self._unload_lock:
+            if self._client:
+                with contextlib.suppress(httpx.HTTPError):
+                    await self._client.post(
+                        "/unload",
+                        timeout=_quick_timeout(),
+                        headers=_request_id_headers(),
+                    )
+                await self._client.aclose()
+                self._client = None
+            self._loaded = False  # type: ignore[attr-defined]
         logger.info("Disconnected from worker %s", self._worker_url)
 
     async def check_health(self) -> bool:

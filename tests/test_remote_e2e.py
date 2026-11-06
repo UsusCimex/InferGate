@@ -6,6 +6,7 @@ the full HTTP serialization round-trip.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -44,6 +45,7 @@ def _make_fake_worker() -> tuple[FastAPI, dict[str, Any]]:
         "loaded": False,
         "load_calls": 0,
         "unload_calls": 0,
+        "unload_delay": 0.0,
         "last_request_id": None,
         "last_payload": None,
         "last_form": None,
@@ -67,6 +69,7 @@ def _make_fake_worker() -> tuple[FastAPI, dict[str, Any]]:
 
     @app.post("/unload")
     async def unload():
+        await asyncio.sleep(state["unload_delay"])
         state["loaded"] = False
         state["unload_calls"] += 1
         return {"status": "ok"}
@@ -421,6 +424,19 @@ async def test_e2e_load_after_unload_reconnects(fake_worker):
     await provider.load("/tmp")
     assert provider.is_loaded()
     assert fake_worker["load_calls"] == 2
+    assert fake_worker["unload_calls"] == 1
+
+
+async def test_e2e_second_unload_waits_for_the_first(fake_worker):
+    """Eviction and the worker monitor may unload one model at once; the later call must not fail."""
+    fake_worker["loaded"] = True
+    fake_worker["unload_delay"] = 0.05
+    provider = remote_module.RemoteTextProvider(_make_remote_config("text"))
+    await provider.load("/tmp")
+
+    await asyncio.gather(provider.unload(), provider.unload())
+
+    assert not provider.is_loaded()
     assert fake_worker["unload_calls"] == 1
 
 
