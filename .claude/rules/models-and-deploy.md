@@ -11,5 +11,5 @@ paths:
 - Hardware-dependent values are `${oc.env:<ID>_<FIELD>,default}` / `${oc.decode:${oc.env:...}}` (ID upper-cased, every non-alphanumeric character becomes `_`); keep the defaults safe for a 12 GB card.
 - A model YAML comments only a measured number or a non-obvious value, `pyproject.toml` has no comments; capabilities go in the `capabilities` block, client-facing tags (`voice-clone`) in `metadata.tags`.
 - `deploy/.env` holds `HF_TOKEN`: never print or commit it. After changing it, recreate the affected worker.
-- Python under `app/` is baked into the images: rebuild the worker image (`docker buildx bake -f deploy/docker-bake.hcl worker-<id>`) after code changes. YAMLs and weights are bind-mounted.
+- Python under `app/` is baked into the images: after code changes rebuild with `docker compose -f deploy/docker-compose.yml --profile <id> build worker-<id>` and recreate the container. `docker buildx bake` tags `infergate/*` for a registry, which local compose never runs. YAMLs and weights are bind-mounted.
 - Keep `docs/models.md` (catalog and profiles) and `docs/configuration.md` in step with these files.

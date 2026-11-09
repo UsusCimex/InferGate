@@ -20,7 +20,8 @@ WORKER_MODEL_CONFIG=config/models/qwen3.5-4b.yaml uvicorn app.worker:app --port 
 
 docker compose -f deploy/docker-compose.yml --profile text --profile tts up -d
 docker compose -f deploy/docker-compose.yml --profile flux2-klein-4b up -d
-docker buildx bake -f deploy/docker-bake.hcl worker-flux2-klein-4b
+docker compose -f deploy/docker-compose.yml --profile flux2-klein-4b build gateway worker-flux2-klein-4b  # images compose runs
+docker buildx bake -f deploy/docker-bake.hcl worker-flux2-klein-4b   # registry images (infergate/*), compose does not run them
 python scripts/download_models.py --models flux2-klein-4b   # prefetch weights on the host (HF_TOKEN in env)
 ```
 
@@ -37,7 +38,7 @@ A request goes through the router (`app/routers/`), the capability checks, the c
 
 ## Invariants that are easy to break
 
-- **Code is baked into the Docker images**: a change in `app/` reaches running workers only after rebuilding their image. `config/models/*.yaml` and the weights folder are bind-mounted and apply immediately (YAML through `ConfigWatcher`).
+- **Code is baked into the Docker images**: a change in `app/` reaches running containers only after `docker compose build` of their image. `app/providers/<category>/` and `app/worker.py` run in the workers of that category; `app/routers/`, `app/schemas/`, `app/services/` and `app/providers/remote.py` in the gateway; `app/config/` in both. `config/models/*.yaml` and the weights folder are bind-mounted and apply immediately (YAML through `ConfigWatcher`).
 - **`deploy/.env` holds `HF_TOKEN`**: never print it or commit it; show only filtered lines. A worker must be recreated to see a changed `.env`.
 - **Adding a model** touches five places: the YAML, `deploy/workers/<id>/requirements.txt`, a `docker-bake.hcl` row, a `worker-<id>` service in `docker-compose.yml`, and `WORKER_URL_<ID>` on the gateway service. Env names are `<ID>_<FIELD>` with every non-alphanumeric character turned into `_`; service names turn dots into dashes.
 - **`scripts/diagnose/*.sh` and several `scripts/feature/*.sh` rewrite `deploy/.env`** (profiles, quantization flags) without restoring it; check `.env` after running them.

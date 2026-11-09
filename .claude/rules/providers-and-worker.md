@@ -11,5 +11,6 @@ paths:
 - Each category exists three times: the local provider, its gateway-side proxy in `app/providers/remote.py` (`CATEGORY_REGISTRY`, endpoint specs in `_remote_protocol.py`) and the matching endpoint in `app/worker.py`. A new parameter or method must be threaded through all three.
 - Raise `ValueError` for bad input: the worker turns it into 400 `invalid_request`; anything else becomes a 500 that the gateway forwards.
 - Worker inference runs under `reload_lock`, one request at a time; blocking model calls go through `asyncio.to_thread` or the provider's executor.
+- Library versions come from the worker's base image (vLLM from `VLLM_IMAGE` in `docker-bake.hcl` and the compose service) and are not installed on the host: read their API inside the image, e.g. `docker run --rm --entrypoint python3 deploy-worker-qwen3-5-4b -c "import vllm, inspect; ..."`.
 - Heavy dependencies belong only in `deploy/workers/<id>/requirements.txt`, never in `requirements/base.txt` (the gateway image has no torch). `compel` is installed only for sdxl-base, `peft` only for the diffusers image workers.
 - `tests/conftest.py` fakes and `tests/test_remote_e2e.py` (fake worker over ASGITransport) must keep covering the gateway side of any change.

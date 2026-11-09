@@ -37,9 +37,9 @@ curl http://localhost:8000/health
 - **`deploy/docker-bake.hcl`**: матрица сборки, строка на модель, цели `worker-<id с дефисами>`, переменные `REGISTRY` и `TAG`.
 
 ```bash
-docker buildx bake -f deploy/docker-bake.hcl                         # все воркеры параллельно
+docker buildx bake -f deploy/docker-bake.hcl                         # все воркеры параллельно, теги REGISTRY/worker-<id> для реестра
 docker buildx bake -f deploy/docker-bake.hcl worker-flux2-klein-4b    # один
-docker compose -f deploy/docker-compose.yml build worker-flux2-klein-4b
+docker compose -f deploy/docker-compose.yml build worker-flux2-klein-4b   # образ, который запускает compose
 REGISTRY=myreg.io/infergate TAG=v1 docker buildx bake -f deploy/docker-bake.hcl --push
 ```
 
