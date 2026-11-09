@@ -70,6 +70,7 @@ def _provider(
 
 
 MESSAGES = [{"role": "user", "content": "A tale as JSON."}]
+SCHEMA = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
 
 
 async def test_json_object_holds_the_answer_to_the_json_grammar(vllm):
@@ -94,6 +95,15 @@ async def test_a_reasoning_parser_lets_the_grammar_hold_the_answer_after_thinkin
     await provider.generate(MESSAGES, response_format="json_object", thinking=True)
 
     assert provider._engine.sampling["structured_outputs"] == {"json_object": True}
+
+
+async def test_json_schema_holds_the_answer_to_the_schema_and_shows_it_to_the_model(vllm):
+    provider = _provider()
+
+    await provider.generate(MESSAGES, response_format="json_schema", json_schema=SCHEMA, thinking=False)
+
+    assert provider._engine.sampling["structured_outputs"] == {"json": SCHEMA}
+    assert json.dumps(SCHEMA) in provider.prompts[0][0]["content"]
 
 
 async def test_plain_text_has_no_grammar(vllm):

@@ -121,8 +121,11 @@ class LlamaCppTextProvider(TextProvider):
         body.pop("thinking", None)
         body.pop("reasoning_effort", None)
         response_format = body.pop("response_format", None)
-        if response_format:
-            body["response_format"] = {"type": response_format}
+        schema = body.pop("json_schema", None)
+        if response_format == "json_schema" and schema is not None:
+            body["response_format"] = {"type": "json_schema", "json_schema": {"schema": schema}}
+        elif response_format:
+            body["response_format"] = {"type": "json_object" if response_format == "json_schema" else response_format}
         body.update(model=self.model_id, messages=messages, stream=stream)
         return body
 

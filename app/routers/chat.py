@@ -59,6 +59,8 @@ def chat_params(body: ChatCompletionRequest) -> dict[str, Any]:
     }
     if body.response_format is not None:
         params["response_format"] = body.response_format.type
+        if body.response_format.json_schema and body.response_format.json_schema.schema_ is not None:
+            params["json_schema"] = body.response_format.json_schema.schema_
     thinking = body.thinking
     if thinking is None and body.reasoning_effort is not None:
         thinking = body.reasoning_effort != "none"

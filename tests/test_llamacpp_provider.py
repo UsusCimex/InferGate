@@ -67,6 +67,19 @@ def test_the_body_asks_for_json_and_leaves_thinking_to_the_server(provider):
     }
 
 
+def test_the_body_passes_the_json_schema_to_llama_server(provider):
+    schema = {"type": "object", "properties": {"title": {"type": "string"}}}
+
+    body = provider.request_body(
+        [{"role": "user", "content": "hi"}],
+        {"response_format": "json_schema", "json_schema": schema, "reasoning_effort": "low"},
+        stream=False,
+    )
+
+    assert body["response_format"] == {"type": "json_schema", "json_schema": {"schema": schema}}
+    assert "reasoning_effort" not in body
+
+
 async def test_an_answer_carries_the_model_id(provider):
     sent = []
 

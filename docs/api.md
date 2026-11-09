@@ -41,7 +41,7 @@
 | `top_p` | 0-1 |
 | `max_tokens` | 1-131072 |
 | `stream` | SSE-поток, в конце `data: [DONE]` |
-| `response_format` | `{"type": "json_object"}`: ответ держит грамматика JSON; vLLM ещё добавляет системную инструкцию "отвечай только JSON", а модель без `reasoning_parser` с `thinking` обходится одной ей |
+| `response_format` | `{"type": "json_object"}`: ответ держит грамматика JSON; `{"type": "json_schema", "json_schema": {"name", "schema", "strict"?}}`: ответ держит схема (без `schema` - как `json_object`). vLLM ещё добавляет системную инструкцию с JSON или схемой; модель без `reasoning_parser` с `thinking` обходится одной инструкцией |
 | `thinking` | расширение: рассуждения модели (по умолчанию из YAML модели); когда включено, `max_tokens` не меньше 4096 |
 | `reasoning_effort` | `none` выключает рассуждения, `minimal`, `low`, `medium` ограничивают их 128, 512 и 2048 токенами (у моделей с `reasoning_parser`), `high` и `xhigh` не ограничивают; `thinking` в том же запросе важнее |
 

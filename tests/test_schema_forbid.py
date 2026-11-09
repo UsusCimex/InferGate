@@ -39,11 +39,11 @@ async def test_chat_rejects_unknown_response_format_field(client):
         json={
             "model": "test-text",
             "messages": [{"role": "user", "content": "Hi"}],
-            "response_format": {"type": "json_schema", "json_schema": {}},
+            "response_format": {"type": "json_object", "schema": {}},
         },
     )
     assert resp.status_code == 422
-    assert resp.json()["error"]["param"] == "response_format.json_schema"
+    assert resp.json()["error"]["param"] == "response_format.schema"
 
 
 async def test_audio_rejects_language_typo(client):

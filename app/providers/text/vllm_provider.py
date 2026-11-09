@@ -20,6 +20,7 @@ from app.providers.text._chat_images import (
 logger = logging.getLogger(__name__)
 
 
+_JSON_FORMATS = ("json_object", "json_schema")
 # Thinking tokens per OpenAI reasoning_effort; high and xhigh leave the length to the model.
 _EFFORT_BUDGETS = {"minimal": 128, "low": 512, "medium": 2048}
 
@@ -160,6 +161,7 @@ class VllmTextProvider(TextProvider):
 
         max_tokens = defaults.pop("max_tokens", 4096)
         response_format = defaults.pop("response_format", None)
+        schema = defaults.pop("json_schema", None)
         thinking = defaults.pop("thinking", True)
         effort = defaults.pop("reasoning_effort", None)
         budget = _EFFORT_BUDGETS.get(effort) if thinking and self._reasoning is not None else None
@@ -172,24 +174,30 @@ class VllmTextProvider(TextProvider):
             max_tokens=max_tokens,
             temperature=defaults.pop("temperature", 0.7),
             top_p=defaults.pop("top_p", 0.9),
-            structured_outputs=self._grammar(response_format, thinking),
+            structured_outputs=self._grammar(response_format, schema, thinking),
             thinking_token_budget=budget,
         )
 
-        if response_format == "json_object":
+        if response_format == "json_schema" and schema is not None:
+            messages = with_system_instruction(
+                messages, f"Respond with JSON that matches this JSON schema: {json.dumps(schema)}"
+            )
+        elif response_format in _JSON_FORMATS:
             messages = with_system_instruction(messages, "Respond with valid JSON only.")
 
         images = await asyncio.to_thread(self._decode_images, messages)
         prompt = self._build_prompt(messages, thinking=thinking, images=images)
         return prompt, sampling, thinking and self._reasoning is not None
 
-    def _grammar(self, response_format: str | None, thinking: bool):
+    def _grammar(self, response_format: str | None, schema: dict | None, thinking: bool):
         """The JSON grammar holds the answer; without a reasoning parser it would hold the <think> block too, so
         thinking then leaves only the instruction."""
-        if response_format != "json_object" or (thinking and self._reasoning is None):
+        if response_format not in _JSON_FORMATS or (thinking and self._reasoning is None):
             return None
         from vllm.sampling_params import StructuredOutputsParams
 
+        if response_format == "json_schema" and schema is not None:
+            return StructuredOutputsParams(json=schema)
         return StructuredOutputsParams(json_object=True)
 
     async def generate(self, messages: list[dict], **params: Any) -> dict:

@@ -148,11 +148,34 @@ def test_reasoning_effort_drives_thinking_unless_thinking_is_given(fields, param
     assert _params(**fields) == params
 
 
+def test_json_schema_reaches_the_provider():
+    schema = {"type": "object", "properties": {"title": {"type": "string"}}}
 
-async def test_chat_accepts_reasoning_effort(client):
+    params = _params(response_format={
+        "type": "json_schema", "json_schema": {"name": "note", "strict": True, "schema": schema},
+    })
+
+    assert params == {"response_format": "json_schema", "json_schema": schema}
+
+
+async def test_chat_accepts_openai_structured_output_and_reasoning_effort(client):
     resp = await client.post("/v1/chat/completions", json={
         "model": "test-text",
         "messages": [{"role": "user", "content": "Hi"}],
         "reasoning_effort": "none",
+        "response_format": {"type": "json_schema", "json_schema": {"name": "note", "schema": {"type": "object"}}},
     })
     assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("response_format", [
+    {"type": "json_schema"},
+    {"type": "json_object", "json_schema": {"name": "note"}},
+])
+async def test_json_schema_goes_only_with_its_type(client, response_format):
+    resp = await client.post("/v1/chat/completions", json={
+        "model": "test-text",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "response_format": response_format,
+    })
+    assert resp.status_code == 422
