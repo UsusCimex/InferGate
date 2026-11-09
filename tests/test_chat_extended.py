@@ -1,6 +1,11 @@
 """Extended chat tests: parameters, cache, edge cases."""
 from __future__ import annotations
 
+import pytest
+
+from app.routers.chat import chat_params
+from app.schemas.chat import ChatCompletionRequest
+
 
 async def test_chat_with_temperature(client):
     resp = await client.post("/v1/chat/completions", json={
@@ -127,3 +132,27 @@ async def test_audio_validation_speed_too_high(client):
         "speed": 10.0,
     })
     assert resp.status_code == 422
+
+
+def _params(**fields):
+    return chat_params(ChatCompletionRequest(messages=[{"role": "user", "content": "Hi"}], **fields))
+
+
+@pytest.mark.parametrize(("fields", "params"), [
+    ({"reasoning_effort": "none"}, {"thinking": False}),
+    ({"reasoning_effort": "low"}, {"thinking": True, "reasoning_effort": "low"}),
+    ({"reasoning_effort": "high", "thinking": False}, {"thinking": False}),
+    ({"thinking": True}, {"thinking": True}),
+])
+def test_reasoning_effort_drives_thinking_unless_thinking_is_given(fields, params):
+    assert _params(**fields) == params
+
+
+
+async def test_chat_accepts_reasoning_effort(client):
+    resp = await client.post("/v1/chat/completions", json={
+        "model": "test-text",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "reasoning_effort": "none",
+    })
+    assert resp.status_code == 200

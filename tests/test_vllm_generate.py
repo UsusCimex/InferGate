@@ -126,6 +126,23 @@ async def test_without_thinking_the_whole_reply_is_the_answer(vllm):
     assert result["choices"][0]["message"] == {"role": "assistant", "content": '{"a": 1}'}
 
 
+@pytest.mark.parametrize(("effort", "budget"), [("minimal", 128), ("low", 512), ("medium", 2048), ("high", None)])
+async def test_reasoning_effort_sets_the_thinking_budget(vllm, effort, budget):
+    provider = _provider(parser=True)
+
+    await provider.generate(MESSAGES, thinking=True, reasoning_effort=effort)
+
+    assert provider._engine.sampling["thinking_token_budget"] == budget
+
+
+async def test_reasoning_effort_without_a_reasoning_parser_sets_no_budget(vllm):
+    provider = _provider()
+
+    await provider.generate(MESSAGES, thinking=True, reasoning_effort="low")
+
+    assert provider._engine.sampling["thinking_token_budget"] is None
+
+
 async def test_an_answer_cut_at_max_tokens_finishes_with_length(vllm):
     result = await _provider(finish_reason="length").generate(MESSAGES, thinking=False)
 

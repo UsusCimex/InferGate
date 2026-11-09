@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -49,6 +50,25 @@ def _image_error(urls: list[str], config: ModelConfig, limits: UploadLimitsConfi
     return None
 
 
+def chat_params(body: ChatCompletionRequest) -> dict[str, Any]:
+    """Provider params of a request; `thinking` wins over `reasoning_effort`, whose "none" turns thinking off."""
+    params: dict[str, Any] = {
+        key: value
+        for key, value in (("temperature", body.temperature), ("top_p", body.top_p), ("max_tokens", body.max_tokens))
+        if value is not None
+    }
+    if body.response_format is not None:
+        params["response_format"] = body.response_format.type
+    thinking = body.thinking
+    if thinking is None and body.reasoning_effort is not None:
+        thinking = body.reasoning_effort != "none"
+    if thinking is not None:
+        params["thinking"] = thinking
+    if thinking is not False and body.reasoning_effort not in (None, "none"):
+        params["reasoning_effort"] = body.reasoning_effort
+    return params
+
+
 @router.post("/v1/chat/completions")
 async def chat_completions(
     body: ChatCompletionRequest,
@@ -70,18 +90,7 @@ async def chat_completions(
         return error
 
     start = time.monotonic()
-
-    params = {}
-    if body.temperature is not None:
-        params["temperature"] = body.temperature
-    if body.top_p is not None:
-        params["top_p"] = body.top_p
-    if body.max_tokens is not None:
-        params["max_tokens"] = body.max_tokens
-    if body.response_format is not None:
-        params["response_format"] = body.response_format.type
-    if body.thinking is not None:
-        params["thinking"] = body.thinking
+    params = chat_params(body)
 
     # exclude_none: the Qwen templates treat any part with an "image_url" key as an image.
     messages = [m.model_dump(exclude_none=True) for m in body.messages]

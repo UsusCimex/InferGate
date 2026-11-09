@@ -119,6 +119,7 @@ class LlamaCppTextProvider(TextProvider):
         body = dict(self.config.model.get("default_params", {}))
         body.update(params)
         body.pop("thinking", None)
+        body.pop("reasoning_effort", None)
         response_format = body.pop("response_format", None)
         if response_format:
             body["response_format"] = {"type": response_format}

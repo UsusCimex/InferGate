@@ -20,6 +20,10 @@ from app.providers.text._chat_images import (
 logger = logging.getLogger(__name__)
 
 
+# Thinking tokens per OpenAI reasoning_effort; high and xhigh leave the length to the model.
+_EFFORT_BUDGETS = {"minimal": 128, "low": 512, "medium": 2048}
+
+
 @register_provider
 class VllmTextProvider(TextProvider):
     """vLLM-backed LLM provider with streaming and optional thinking mode."""
@@ -60,7 +64,9 @@ class VllmTextProvider(TextProvider):
         reasoning_parser = self.config.model.get("reasoning_parser")
         reasoning: dict[str, Any] = {}
         if reasoning_parser:
-            reasoning = {"reasoning_parser": reasoning_parser}
+            from vllm.config import ReasoningConfig
+
+            reasoning = {"reasoning_parser": reasoning_parser, "reasoning_config": ReasoningConfig()}
         multimodal = {
             key: self.config.model[key]
             for key in ("limit_mm_per_prompt", "mm_processor_kwargs")
@@ -155,6 +161,8 @@ class VllmTextProvider(TextProvider):
         max_tokens = defaults.pop("max_tokens", 4096)
         response_format = defaults.pop("response_format", None)
         thinking = defaults.pop("thinking", True)
+        effort = defaults.pop("reasoning_effort", None)
+        budget = _EFFORT_BUDGETS.get(effort) if thinking and self._reasoning is not None else None
 
         # Thinking mode needs headroom for the <think> block.
         if thinking and max_tokens < 4096:
@@ -165,6 +173,7 @@ class VllmTextProvider(TextProvider):
             temperature=defaults.pop("temperature", 0.7),
             top_p=defaults.pop("top_p", 0.9),
             structured_outputs=self._grammar(response_format, thinking),
+            thinking_token_budget=budget,
         )
 
         if response_format == "json_object":

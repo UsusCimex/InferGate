@@ -64,3 +64,4 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
     response_format: ResponseFormat | None = None
     thinking: bool | None = None
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh"] | None = None
