@@ -13,6 +13,7 @@ model:
   trust_remote_code: ${oc.decode:${oc.env:QWEN3_5_9B_TRUST_REMOTE_CODE,true}}
   gpu_memory_utilization: ${oc.decode:${oc.env:QWEN3_5_9B_GPU_MEM_UTIL,0.90}}
   context_length: ${oc.decode:${oc.env:QWEN3_5_9B_CONTEXT_LENGTH,32768}}
+  reasoning_parser: qwen3
   default_params:
     max_tokens: ${oc.decode:${oc.env:QWEN3_5_9B_MAX_TOKENS,2048}}
     temperature: ${oc.decode:${oc.env:QWEN3_5_9B_TEMPERATURE,0.7}}

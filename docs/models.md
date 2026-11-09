@@ -87,7 +87,7 @@
 | `image` | `JanusImageProvider` | DeepSeek Janus-Pro (авторегрессия) |
 | `image` | `MeissonicImageProvider` | Meissonic (пайплайн из репозитория авторов) |
 | `image` | `Flux3ImageProvider` | FLUX 3 Image Klein через модульный конвейер diffusers: текст в картинку и референсы, трансформер fp8r или nvfp4 из `variants/`, текстовый энкодер в nf4; без negative prompt, guidance, img2img и LoRA |
-| `text` | `VllmTextProvider` | любая LLM через vLLM: потоковый вывод, шаблоны чата, картинки во входе |
+| `text` | `VllmTextProvider` | любая LLM через vLLM: потоковый вывод, шаблоны чата, картинки во входе; `model.reasoning_parser` (парсер vLLM, у Qwen `qwen3`) отделяет рассуждения от ответа |
 | `text` | `LlamaCppTextProvider` | GGUF через llama-server: воркер запускает его на `/load` и передаёт запросы чата; флаги сервера в `model.server_args`, файл зрения того же репозитория в `model.mmproj_file` (тогда в сообщениях чата можно передавать картинки), образ `deploy/Dockerfile.llamacpp` |
 | `tts` | `KokoroTtsProvider`, `VoxCpm2TtsProvider`, `Qwen3TtsProvider`, `XttsTtsProvider`, `FishSpeechTtsProvider` | синтез и клонирование голоса |
 | `stt` | `WhisperProvider`, `ParakeetProvider` | faster-whisper (CTranslate2); Parakeet TDT из ONNX-экспорта через onnx-asr, звук любого формата читает PyAV |

@@ -14,6 +14,7 @@ model:
   trust_remote_code: ${oc.decode:${oc.env:QWEN3_5_4B_TRUST_REMOTE_CODE,true}}
   gpu_memory_utilization: ${oc.decode:${oc.env:QWEN3_5_4B_GPU_MEM_UTIL,0.90}}
   context_length: ${oc.decode:${oc.env:QWEN3_5_4B_CONTEXT_LENGTH,8192}}
+  reasoning_parser: qwen3
   # On eviction 0 shuts the engine down, 1 sleeps with the weights in the worker's RAM, 2 sleeps and reads them
   # again: docs/architecture.md, vLLM sleep.
   sleep_level: ${oc.decode:${oc.env:QWEN3_5_4B_SLEEP_LEVEL,0}}

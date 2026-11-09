@@ -41,10 +41,10 @@
 | `top_p` | 0-1 |
 | `max_tokens` | 1-131072 |
 | `stream` | SSE-поток, в конце `data: [DONE]` |
-| `response_format` | `{"type": "json_object"}`: ответ держит грамматика JSON; vLLM ещё добавляет системную инструкцию "отвечай только JSON", а с `thinking` обходится одной ей |
+| `response_format` | `{"type": "json_object"}`: ответ держит грамматика JSON; vLLM ещё добавляет системную инструкцию "отвечай только JSON", а модель без `reasoning_parser` с `thinking` обходится одной ей |
 | `thinking` | расширение: рассуждения модели (по умолчанию из YAML модели); когда включено, `max_tokens` не меньше 4096 |
 
-Картинки принимаются только как `data:`-URL и только моделями с `capabilities.vision: true` (иначе 400 `vision_not_supported`); число картинок на запрос ограничено `limit_mm_per_prompt` модели. Ответ возвращается как есть: рассуждения не отделяются, `finish_reason` - `stop` или `length`, если ответ упёрся в `max_tokens`. Поля OpenAI `stop`, `n`, `seed`, `tools`, `presence_penalty` не поддерживаются (422).
+Картинки принимаются только как `data:`-URL и только моделями с `capabilities.vision: true` (иначе 400 `vision_not_supported`); число картинок на запрос ограничено `limit_mm_per_prompt` модели. У моделей vLLM с `reasoning_parser` в YAML рассуждения приходят в `message.reasoning_content` (в потоке `delta.reasoning_content`), в `content` только ответ, пустой, если рассуждения упёрлись в `max_tokens`; у остальных ответ как есть. `finish_reason` - `stop` или `length`, если ответ упёрся в `max_tokens`. Поля OpenAI `stop`, `n`, `seed`, `tools`, `presence_penalty` не поддерживаются (422).
 
 ## Картинки
 

@@ -20,16 +20,6 @@ from app.providers.text._chat_images import (
 logger = logging.getLogger(__name__)
 
 
-def _json_grammar(response_format: str | None, thinking: bool):
-    """json_object holds the answer to the JSON grammar; with thinking the <think> block comes first, so only the
-    instruction asks for JSON."""
-    if response_format != "json_object" or thinking:
-        return None
-    from vllm.sampling_params import StructuredOutputsParams
-
-    return StructuredOutputsParams(json_object=True)
-
-
 @register_provider
 class VllmTextProvider(TextProvider):
     """vLLM-backed LLM provider with streaming and optional thinking mode."""
@@ -38,6 +28,7 @@ class VllmTextProvider(TextProvider):
         super().__init__(config)
         self._engine = None
         self._tokenizer = None
+        self._reasoning = None
         self._sleeping = False
 
     @property
@@ -66,6 +57,10 @@ class VllmTextProvider(TextProvider):
         quantization = self.config.model.get("quantization", None)
         kv_cache_dtype = self.config.model.get("kv_cache_dtype", "auto")
         trust_remote_code = self.config.model.get("trust_remote_code", False)
+        reasoning_parser = self.config.model.get("reasoning_parser")
+        reasoning: dict[str, Any] = {}
+        if reasoning_parser:
+            reasoning = {"reasoning_parser": reasoning_parser}
         multimodal = {
             key: self.config.model[key]
             for key in ("limit_mm_per_prompt", "mm_processor_kwargs")
@@ -84,6 +79,7 @@ class VllmTextProvider(TextProvider):
             kv_cache_dtype=kv_cache_dtype,
             enable_sleep_mode=self.sleep_level > 0,
             **multimodal,
+            **reasoning,
         )
         self._engine = AsyncLLMEngine.from_engine_args(engine_args)
 
@@ -92,6 +88,10 @@ class VllmTextProvider(TextProvider):
         except Exception:
             self._tokenizer = None
             logger.warning("Could not get tokenizer for %s, falling back to ChatML", self.model_id)
+        if reasoning_parser and self._tokenizer is not None:
+            from vllm.reasoning import ReasoningParserManager
+
+            self._reasoning = ReasoningParserManager.get_reasoning_parser(reasoning_parser)(self._tokenizer)
 
         self._loaded = True
         logger.info("Loaded %s", self.model_id)
@@ -133,6 +133,7 @@ class VllmTextProvider(TextProvider):
             del self._engine
             self._engine = None
         self._tokenizer = None
+        self._reasoning = None
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, gc.collect)
@@ -145,15 +146,13 @@ class VllmTextProvider(TextProvider):
         self._loaded = False
         logger.info("Unloaded %s", self.model_id)
 
-    async def generate(self, messages: list[dict], **params: Any) -> dict:
+    async def _prepare(self, messages: list[dict], params: dict[str, Any]):
         from vllm import SamplingParams
 
         defaults = dict(self.config.model.get("default_params", {}))
         defaults.update(params)
 
         max_tokens = defaults.pop("max_tokens", 4096)
-        temperature = defaults.pop("temperature", 0.7)
-        top_p = defaults.pop("top_p", 0.9)
         response_format = defaults.pop("response_format", None)
         thinking = defaults.pop("thinking", True)
 
@@ -163,9 +162,9 @@ class VllmTextProvider(TextProvider):
 
         sampling = SamplingParams(
             max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            structured_outputs=_json_grammar(response_format, thinking),
+            temperature=defaults.pop("temperature", 0.7),
+            top_p=defaults.pop("top_p", 0.9),
+            structured_outputs=self._grammar(response_format, thinking),
         )
 
         if response_format == "json_object":
@@ -173,33 +172,43 @@ class VllmTextProvider(TextProvider):
 
         images = await asyncio.to_thread(self._decode_images, messages)
         prompt = self._build_prompt(messages, thinking=thinking, images=images)
-        request_id = str(uuid.uuid4())
+        return prompt, sampling, thinking and self._reasoning is not None
 
-        output_text = ""
-        prompt_tokens = 0
-        completion_tokens = 0
-        finish_reason = "stop"
+    def _grammar(self, response_format: str | None, thinking: bool):
+        """The JSON grammar holds the answer; without a reasoning parser it would hold the <think> block too, so
+        thinking then leaves only the instruction."""
+        if response_format != "json_object" or (thinking and self._reasoning is None):
+            return None
+        from vllm.sampling_params import StructuredOutputsParams
+
+        return StructuredOutputsParams(json_object=True)
+
+    async def generate(self, messages: list[dict], **params: Any) -> dict:
+        prompt, sampling, split = await self._prepare(messages, params)
+        request_id = str(uuid.uuid4())
 
         async for output in self._engine.generate(prompt, sampling, request_id):
             final = output
+        text = ""
+        completion_tokens = 0
+        finish_reason = "stop"
         if final.outputs:
-            output_text = final.outputs[0].text
+            text = final.outputs[0].text
             completion_tokens = len(final.outputs[0].token_ids)
             finish_reason = final.outputs[0].finish_reason or "stop"
         prompt_tokens = len(final.prompt_token_ids) if final.prompt_token_ids else 0
+
+        message: dict[str, Any] = {"role": "assistant", "content": text}
+        if split:
+            reasoning, content = self._reasoning.extract_reasoning(text, None)
+            message.update(content=content or "", reasoning_content=reasoning)
 
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": self.model_id,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": output_text},
-                    "finish_reason": finish_reason,
-                }
-            ],
+            "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
             "usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
@@ -209,74 +218,52 @@ class VllmTextProvider(TextProvider):
 
     async def generate_stream(self, messages: list[dict], **params: Any) -> AsyncIterator[str]:
         """Stream chat completion as SSE chunks."""
-        from vllm import SamplingParams
-
-        defaults = dict(self.config.model.get("default_params", {}))
-        defaults.update(params)
-
-        max_tokens = defaults.pop("max_tokens", 4096)
-        temperature = defaults.pop("temperature", 0.7)
-        top_p = defaults.pop("top_p", 0.9)
-        response_format = defaults.pop("response_format", None)
-        thinking = defaults.pop("thinking", True)
-
-        if thinking and max_tokens < 4096:
-            max_tokens = 4096
-
-        sampling = SamplingParams(
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            structured_outputs=_json_grammar(response_format, thinking),
-        )
-
-        if response_format == "json_object":
-            messages = with_system_instruction(messages, "Respond with valid JSON only.")
-
-        images = await asyncio.to_thread(self._decode_images, messages)
-        prompt = self._build_prompt(messages, thinking=thinking, images=images)
+        prompt, sampling, split = await self._prepare(messages, params)
         request_id = str(uuid.uuid4())
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
 
-        prev_text_len = 0
+        def chunk(delta: dict[str, Any], finish_reason: str | None) -> str:
+            body = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": self.model_id,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+            }
+            return f"data: {json.dumps(body)}\n\n"
+
+        text = ""
+        token_ids: list[int] = []
         finish_reason = "stop"
         try:
             async for output in self._engine.generate(prompt, sampling, request_id):
-                if output.outputs:
-                    finish_reason = output.outputs[0].finish_reason or finish_reason
-                    new_text = output.outputs[0].text[prev_text_len:]
-                    prev_text_len = len(output.outputs[0].text)
-                    if new_text:
-                        chunk = {
-                            "id": completion_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": self.model_id,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {"content": new_text},
-                                "finish_reason": None,
-                            }],
-                        }
-                        yield f"data: {json.dumps(chunk)}\n\n"
+                if not output.outputs:
+                    continue
+                out = output.outputs[0]
+                finish_reason = out.finish_reason or finish_reason
+                current_ids = list(out.token_ids)
+                delta_text = out.text[len(text):]
+                if split:
+                    parsed = self._reasoning.extract_reasoning_streaming(
+                        text, out.text, delta_text, token_ids, current_ids, current_ids[len(token_ids):]
+                    )
+                    delta = {} if parsed is None else {
+                        key: value
+                        for key, value in (("reasoning_content", parsed.reasoning), ("content", parsed.content))
+                        if value
+                    }
+                else:
+                    delta = {"content": delta_text} if delta_text else {}
+                text, token_ids = out.text, current_ids
+                if delta:
+                    yield chunk(delta, None)
         except (asyncio.CancelledError, GeneratorExit):
             # Client disconnected: abort so the GPU frees immediately.
             await self._abort_request(request_id)
             raise
 
-        final_chunk = {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": self.model_id,
-            "choices": [{
-                "index": 0,
-                "delta": {},
-                "finish_reason": finish_reason,
-            }],
-        }
-        yield f"data: {json.dumps(final_chunk)}\n\n"
+        yield chunk({}, finish_reason)
         yield "data: [DONE]\n\n"
 
     async def _abort_request(self, request_id: str) -> None:
