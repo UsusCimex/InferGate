@@ -441,7 +441,7 @@ services:
       <<: *build
       args:
         BASE_IMAGE: python:3.12-slim
-        APT_PACKAGES: gcc
+        APT_PACKAGES: build-essential cmake
         WORKER_REQUIREMENTS: deploy/workers/kokoro-82m/requirements.txt
         POST_INSTALL: python -m spacy download en_core_web_sm
     volumes:

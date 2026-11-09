@@ -84,7 +84,7 @@ target "worker" {
       # Masked non-autoregressive
       { id = "meissonic",         base = GPU_BASE_IMAGE, apt = "git",             post = "git clone --depth=1 https://github.com/viiika/Meissonic.git /app/_meissonic" },
       # TTS
-      { id = "kokoro-82m",        base = CPU_BASE_IMAGE, apt = "gcc",             post = "python -m spacy download en_core_web_sm" },
+      { id = "kokoro-82m",        base = CPU_BASE_IMAGE, apt = "build-essential cmake", post = "python -m spacy download en_core_web_sm" },
       { id = "openaudio-s1-mini", base = GPU_BASE_IMAGE, apt = "git build-essential portaudio19-dev", post = "" },
       { id = "xtts-v2",           base = GPU_BASE_IMAGE, apt = "",                post = "" },
       { id = "qwen3-tts-06b",     base = GPU_BASE_IMAGE, apt = "",                post = "" },

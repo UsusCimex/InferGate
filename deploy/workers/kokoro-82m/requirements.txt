@@ -2,3 +2,9 @@ kokoro>=0.9.0
 soundfile>=0.12.0
 # Without the bound, huggingface-hub 2 pushes uv back to transformers 4.12, which needs Rust to build.
 transformers>=5.5,<6
+# Japanese G2P of misaki (voices jf_*, jm_*); pyopenjtalk builds with cmake and make.
+fugashi>=1.3
+unidic-lite>=1.0.8
+jaconv>=0.4
+mojimoji>=0.0.13
+pyopenjtalk>=0.4
